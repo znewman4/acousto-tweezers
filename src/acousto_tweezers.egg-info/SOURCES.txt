@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
-src/acousto/__init__.py
+src/acousto/solvers/__init__.py
+src/acousto/solvers/fd_helmholtz_1d.py
 src/acousto_tweezers.egg-info/PKG-INFO
 src/acousto_tweezers.egg-info/SOURCES.txt
 src/acousto_tweezers.egg-info/dependency_links.txt
