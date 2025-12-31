@@ -30,8 +30,10 @@ def classify_endpoint(xs, ys, traps, tol=2e-5):
 
 
 def main() -> None:
-    results_dir = Path("results")
+    REPO = Path(__file__).resolve().parents[1]
+    results_dir = REPO / "results" / "basin"
     results_dir.mkdir(parents=True, exist_ok=True)
+
 
     # Geometry + medium
     Lx = 2e-3

@@ -4,6 +4,8 @@ from .fd_helmholtz_2d import (
     solve_helmholtz_2d_dirichlet,
     solve_helmholtz_2d_neumann_velocity,
 )
+from .fd_helmholtz_2d_forced_25d import solve_helmholtz_2d_forced_25d
+
 
 __all__ = [
     "Field1D",
@@ -11,4 +13,6 @@ __all__ = [
     "solve_helmholtz_1d_dirichlet",
     "solve_helmholtz_2d_dirichlet",
     "solve_helmholtz_2d_neumann_velocity",
+    "solve_helmholtz_2d_forced_25d",
 ]
+

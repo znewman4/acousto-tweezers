@@ -24,8 +24,10 @@ def phase_schedule(frame: int, n_frames: int, mode: str = "ramp") -> float:
 
 
 def main() -> None:
-    results_dir = Path("results")
+    REPO = Path(__file__).resolve().parents[1]
+    results_dir = REPO / "results" / "dynamics"
     results_dir.mkdir(parents=True, exist_ok=True)
+
 
     # -----------------------
     # Domain + medium settings

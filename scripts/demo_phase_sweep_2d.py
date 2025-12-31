@@ -57,8 +57,12 @@ def save_snapshot(results_dir: Path, tag: str, field, U, stable_traps, extent):
 
 
 def main() -> None:
-    results_dir = Path("results")
+    from pathlib import Path
+    REPO = Path(__file__).resolve().parents[1]
+    results_dir = REPO / "results" / "phase_sweep"
     results_dir.mkdir(parents=True, exist_ok=True)
+
+
 
     # --- Sweep settings (keep smaller grid for speed) ---
     Lx = 2e-3

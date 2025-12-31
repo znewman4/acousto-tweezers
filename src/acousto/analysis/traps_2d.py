@@ -1,3 +1,4 @@
+# src/acousto/analysis/traps_2d.py
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -32,6 +32,20 @@ Using COMSOL alone obscures numerical details, limits optimisation and machine-l
 9. What success looks like
 At completion, the project will deliver a clean, modular modelling codebase with validated physics, an optimisation-ready architecture, control-ready linear models, intuitive three-dimensional visualisations of trapping landscapes, and demonstrable interactivity. Crucially, it will provide a clear pathway to experimental integration, supporting camera-based perception and closed-loop robotic control for the autonomous assembly of particle structures using acoustic tweezers. This represents a full modelling-to-control workflow rather than a standalone numerical experiment.
 
+TO CLARIFY (IMPORTANT) - THIS SYSTEM WILL NOT HAVE FIXED TRANSDUCERS. THE TRANSDUCERS WILL BE MOVED BY ROBOTS. NO FIXED TRANSDUCERS. 
+
+
+# =========================
+# ALREADY COMPLETED
+# =========================
+This repository currently implements a working end-to-end modelling pipeline for a robotic acoustic tweezers system in which transducers are physically moved by robots to shape the acoustic field. A reduced 2.5D forced Helmholtz model is used to compute steady-state acoustic pressure fields in a planar domain, with moving transducers represented as spatially localised velocity source distributions that change position over time. From the solved pressure field, the Gor’kov radiation potential and force are computed, stable and unstable trapping points are identified via local force minima and Hessian analysis, and three-dimensional visualisations of the resulting energy landscape are generated. The current system supports multiple moving transducers, real-time landscape rendering, trap classification, and diagnostic analysis of how transducer motion reshapes the trapping topology.
+
+# =========================
+# NEXT STEP
+# =========================
+The next phase of development is to move from global landscape visualisation toward controlled manipulation by tracking and maintaining a single trap and particle as transducers move. This requires introducing trap identity continuity (selecting and following the same stable trap across frames rather than re-selecting global minima), integrating overdamped particle dynamics using interpolated radiation forces to test capture and retention, and restructuring the solver so that the Helmholtz operator is assembled and factorised once and reused efficiently as transducer positions change. These steps preserve the existing physics model while enabling fast repeated evaluations, smooth trap motion, and quantitative assessment of capture robustness, forming the foundation for closed-loop robotic control and autonomous acoustic assembly.
+
+
 # =========================
 # Repo scaffold
 # =========================

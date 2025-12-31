@@ -12,8 +12,15 @@ from acousto.analysis import find_traps_from_force
 
 def main() -> None:
 
-    results_dir = Path("results") / "fields"
-    results_dir.mkdir(parents=True, exist_ok=True)
+    REPO = Path(__file__).resolve().parents[1]
+    RESULTS = REPO / "results"
+
+    fields_dir = RESULTS / "fields"
+    gorkov_dir = RESULTS / "gorkov"
+    dyn_dir = RESULTS / "dynamics"
+
+    for d in (fields_dir, gorkov_dir, dyn_dir):
+        d.mkdir(parents=True, exist_ok=True)
 
 
     # Default geometry + medium (water-ish)
@@ -54,7 +61,7 @@ def main() -> None:
     plt.ylabel("y (mm)")
     plt.title("|p(x,y)| (arb.)")
     plt.colorbar(label="|p|")
-    out = results_dir / "helmholtz_2d_abs_p.png"
+    out = fields_dir / "helmholtz_2d_abs_p.png"
     plt.tight_layout()
     plt.savefig(out, dpi=200)
     plt.close()
@@ -109,7 +116,7 @@ def main() -> None:
     plt.ylabel("y (mm)")
     plt.title("Gor'kov potential U(x,y) (arb.)")
     plt.colorbar(label="U")
-    outU = results_dir / "gorkov_2d_potential.png"
+    outU = gorkov_dir / "gorkov_2d_potential.png"
 
     if stable_traps:
         xs_tr = [t.x * 1e3 for t in stable_traps]
@@ -140,7 +147,7 @@ def main() -> None:
     plt.xlabel("x (mm)")
     plt.ylabel("y (mm)")
     plt.title("Radiation force F = -∇U (quiver on U)")
-    outF = results_dir / "gorkov_2d_force_quiver.png"
+    outF = gorkov_dir / "gorkov_2d_force_quiver.png"
     plt.tight_layout()
     plt.savefig(outF, dpi=200)
     plt.close()
@@ -176,7 +183,7 @@ def main() -> None:
     plt.ylabel("y (mm)")
     plt.title("Overdamped trajectory on U")
     plt.colorbar(label="U")
-    outT = results_dir / "trajectory_overdamped_2d.png"
+    outT = dyn_dir / "trajectory_overdamped_2d.png"
     plt.tight_layout()
     plt.savefig(outT, dpi=200)
     plt.close()
