@@ -1,4 +1,4 @@
-# scripts/animate_bottom_drive_25d_3d.py
+# scripts/animate_bottom25d.py
 from __future__ import annotations
 
 import matplotlib
@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import imageio.v2 as imageio
 
-from acousto.solvers import solve_helmholtz_2d_forced_25d
+from acousto.solvers import solve_helmholtz_2d_forced_25d, build_helmholtz_2d_forced_25d_operator
 from acousto.force import ParticleProps, gorkov_potential_and_force_2d
 from acousto.analysis import find_traps_from_force
 
@@ -84,6 +84,18 @@ def main() -> None:
     y = np.linspace(0.0, Ly, Ny)
     X, Y = np.meshgrid(x, y)
 
+    op = build_helmholtz_2d_forced_25d_operator(
+    Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny,
+    f=f, c0=c0, rho0=rho0,
+    left_type="neumann", right_type="neumann",
+    bottom_type="neumann", top_type="neumann",
+    left=0.0, right=0.0, bottom=0.0, top=0.0,
+    kz=kz,
+    coupling_alpha=coupling_alpha,
+    loss_eta=loss_eta,
+)
+
+
     for k in range(nframes):
         xA = float(xA_path[k])
         xB = float(xB_path[k])
@@ -115,17 +127,8 @@ def main() -> None:
             )
 
         # Solve forced 2.5D Helmholtz
-        field = solve_helmholtz_2d_forced_25d(
-            Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny,
-            f=f, c0=c0, rho0=rho0,
-            left_type="neumann", right_type="neumann",
-            bottom_type="neumann", top_type="neumann",
-            left=0.0, right=0.0, bottom=0.0, top=0.0,
-            kz=kz,
-            vb=vb_xy,                 # array works directly
-            coupling_alpha=coupling_alpha,
-            loss_eta=loss_eta,
-        )
+        field = field = op.solve_for_vb(vb_xy)
+
 
         # Field diagnostics
         p = field.p

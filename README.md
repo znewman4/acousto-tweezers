@@ -35,15 +35,36 @@ At completion, the project will deliver a clean, modular modelling codebase with
 TO CLARIFY (IMPORTANT) - THIS SYSTEM WILL NOT HAVE FIXED TRANSDUCERS. THE TRANSDUCERS WILL BE MOVED BY ROBOTS. NO FIXED TRANSDUCERS. 
 
 
-# =========================
-# ALREADY COMPLETED
-# =========================
-This repository currently implements a working end-to-end modelling pipeline for a robotic acoustic tweezers system in which transducers are physically moved by robots to shape the acoustic field. A reduced 2.5D forced Helmholtz model is used to compute steady-state acoustic pressure fields in a planar domain, with moving transducers represented as spatially localised velocity source distributions that change position over time. From the solved pressure field, the Gor’kov radiation potential and force are computed, stable and unstable trapping points are identified via local force minima and Hessian analysis, and three-dimensional visualisations of the resulting energy landscape are generated. The current system supports multiple moving transducers, real-time landscape rendering, trap classification, and diagnostic analysis of how transducer motion reshapes the trapping topology.
+=========================
+ALREADY COMPLETED
+=========================
 
-# =========================
-# NEXT STEP
-# =========================
-The next phase of development is to move from global landscape visualisation toward controlled manipulation by tracking and maintaining a single trap and particle as transducers move. This requires introducing trap identity continuity (selecting and following the same stable trap across frames rather than re-selecting global minima), integrating overdamped particle dynamics using interpolated radiation forces to test capture and retention, and restructuring the solver so that the Helmholtz operator is assembled and factorised once and reused efficiently as transducer positions change. These steps preserve the existing physics model while enabling fast repeated evaluations, smooth trap motion, and quantitative assessment of capture robustness, forming the foundation for closed-loop robotic control and autonomous acoustic assembly.
+This repository currently implements a working end-to-end modelling pipeline for a robotic acoustic tweezers system in which transducers are physically repositioned by robots to actively shape the acoustic field. A reduced 2.5D forced Helmholtz model is used to compute steady-state acoustic pressure fields in a planar domain, with moving transducers represented as spatially localised velocity source distributions that vary continuously in space and time. From the resulting pressure field, the Gor’kov radiation potential and force are computed, candidate equilibrium points are identified and classified, and overdamped particle dynamics can be simulated. The system supports multiple independently moving transducers, repeated high-frequency field evaluations, and real-time three-dimensional visualisation of evolving energy landscapes, providing a predictive physics engine linking robotic actuation to particle motion.
+
+=========================
+NEXT STEP
+=========================
+
+The next phase of development is to move beyond qualitative landscape exploration toward path-following particle control, in which a desired particle trajectory is prescribed and transducer positions, amplitudes, and phases are adjusted to drive the particle along that path. Rather than explicitly targeting traps, the particle motion will be controlled directly using a model-predictive or trajectory-optimisation framework that repeatedly solves the acoustic field, evaluates radiation forces, and predicts particle motion over a short horizon. This requires smoothing force sampling for stable optimisation, structuring the solver for fast repeated evaluations, and introducing an objective-driven control loop that selects actuation parameters to minimise path-tracking error under physical and robotic constraints. These developments transform the model from a visualisation tool into a control-ready engine suitable for autonomous manipulation and robotic acoustic assembly.
+
+=========================
+IMMEDIATE NEXT STEPS
+=========================
+
+Upgrade particle dynamics to smooth force interpolation
+Replace nearest-neighbour force sampling with bilinear interpolation so particle motion varies smoothly with control inputs, making optimisation stable and meaningful.
+
+Wrap the physics pipeline as a control evaluation function
+Create a callable that maps proposed controls (transducer positions / amplitudes / phases) and current particle state to predicted particle motion and a scalar tracking loss.
+
+Implement single-step trajectory optimisation (H = 1)
+At each timestep, choose control updates that minimise next-step tracking error plus a regularisation term penalising rapid actuation changes.
+
+Extend to short-horizon MPC (H > 1)
+Roll out particle dynamics over multiple future steps to anticipate curvature and avoid loss of control during sharper path segments.
+
+Visualise desired path vs actual trajectory
+Overlay the prescribed path, predicted rollout, and realised particle trajectory to directly assess control performance and failure modes.
 
 
 # =========================
