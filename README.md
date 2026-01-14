@@ -37,35 +37,57 @@ TO CLARIFY (IMPORTANT) - THIS SYSTEM WILL NOT HAVE FIXED TRANSDUCERS. THE TRANSD
 
 =========================
 ALREADY COMPLETED
-=========================
 
-This repository currently implements a working end-to-end modelling pipeline for a robotic acoustic tweezers system in which transducers are physically repositioned by robots to actively shape the acoustic field. A reduced 2.5D forced Helmholtz model is used to compute steady-state acoustic pressure fields in a planar domain, with moving transducers represented as spatially localised velocity source distributions that vary continuously in space and time. From the resulting pressure field, the Gor’kov radiation potential and force are computed, candidate equilibrium points are identified and classified, and overdamped particle dynamics can be simulated. The system supports multiple independently moving transducers, repeated high-frequency field evaluations, and real-time three-dimensional visualisation of evolving energy landscapes, providing a predictive physics engine linking robotic actuation to particle motion.
+This repository now implements a full end-to-end modelling pipeline for a robotic acoustic tweezers system, where transducers are physically repositioned by robots to dynamically sculpt the acoustic field. A reduced but fast 2.5D forced Helmholtz model computes the steady-state acoustic pressure on a planar domain using bottom-driven Neumann boundary conditions, with mobile transducers represented as spatially localised velocity boundary sources.
+
+From this pressure field, the Gor’kov radiation potential and force are computed using a dimension-agnostic architecture (2D now, 3D-ready), candidate equilibrium points are extracted and classified, and overdamped particle dynamics can be simulated. The model supports high-frequency solver calls, optimisation-driven transducer control, and real-time 3D visualisation of evolving energy landscapes.
+
+A full control pipeline exists linking robotic actuation → acoustic field → radiation forces → particle motion → rendering. A path-following controller is in place and the particle does move under control.
 
 =========================
 NEXT STEP
-=========================
 
-The next phase of development is to move beyond qualitative landscape exploration toward path-following particle control, in which a desired particle trajectory is prescribed and transducer positions, amplitudes, and phases are adjusted to drive the particle along that path. Rather than explicitly targeting traps, the particle motion will be controlled directly using a model-predictive or trajectory-optimisation framework that repeatedly solves the acoustic field, evaluates radiation forces, and predicts particle motion over a short horizon. This requires smoothing force sampling for stable optimisation, structuring the solver for fast repeated evaluations, and introducing an objective-driven control loop that selects actuation parameters to minimise path-tracking error under physical and robotic constraints. These developments transform the model from a visualisation tool into a control-ready engine suitable for autonomous manipulation and robotic acoustic assembly.
+The next phase is transforming the visualising demo into a robust, control-ready manipulation engine. This requires identifying why the Gor’kov landscape rendering intermittently collapses into a flat yellow plane (a numerical or visualisation failure) even while:
+
+the pressure field is valid
+
+forces are nonzero
+
+the particle continues to move
+
+This indicates a decoupling between the numerical pipeline and the renderer: either the Gor’kov potential is collapsing to a near-zero dynamic range for certain frames, or the normalisation/denominator in the 3D renderer is going to zero, producing flat surfaces even though the physics is still active.
+
+Fixing this issue is critical because reliable control requires reliable state feedback; if the energy landscape is sometimes visually meaningless but the particle still moves, optimisation becomes untrustworthy and debugging becomes blind.
+
+Once this stability issue is solved, we continue toward path-tracking control that uses smooth force interpolation, physically correct 2.5D/3D coupling, and short-horizon predictive optimisation.
 
 =========================
 IMMEDIATE NEXT STEPS
-=========================
+1. Diagnose & fix the “flat yellow Gor’kov surface” bug
 
-Upgrade particle dynamics to smooth force interpolation
-Replace nearest-neighbour force sampling with bilinear interpolation so particle motion varies smoothly with control inputs, making optimisation stable and meaningful.
+We must determine why the Gor’kov potential becomes nearly constant for many frames. Possible causes include:
 
-Wrap the physics pipeline as a control evaluation function
-Create a callable that maps proposed controls (transducer positions / amplitudes / phases) and current particle state to predicted particle motion and a scalar tracking loss.
+Umin ≈ Umax leading to normalisation collapse
 
-Implement single-step trajectory optimisation (H = 1)
-At each timestep, choose control updates that minimise next-step tracking error plus a regularisation term penalising rapid actuation changes.
+temporary NaNs or tiny values in potential components
 
-Extend to short-horizon MPC (H > 1)
-Roll out particle dynamics over multiple future steps to anticipate curvature and avoid loss of control during sharper path segments.
+incorrectly scaled α_g producing saturation
 
-Visualise desired path vs actual trajectory
-Overlay the prescribed path, predicted rollout, and realised particle trajectory to directly assess control performance and failure modes.
+visualisation clipping / autoscaling issues
 
+force gradients meaningful but potential nearly constant
+
+Immediate tasks:
+
+Log Umin, Umax, std(U) for each frame
+
+Freeze colour scale across frames
+
+Add quiver + contour 2D debug render (already planned)
+
+Ensure return_fields=True is returning correct U each step
+
+This must be fixed before any higher-level control development.
 
 # =========================
 # Repo scaffold

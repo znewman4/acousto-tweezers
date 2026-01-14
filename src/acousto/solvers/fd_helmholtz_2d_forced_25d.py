@@ -22,8 +22,12 @@ class Helmholtz25DOperator:
     c0: float
     rho0: float
     coupling_alpha: float
-    # reusable solver closure: p_vec = solve(b_vec)
     solve: Callable[[np.ndarray], np.ndarray]
+
+    # base RHS with boundary conditions baked in
+    b0: np.ndarray
+    # row indices for bottom boundary (j=0, i=0..Nx-1) to allow fast Neumann updates
+    bottom_rows: np.ndarray
 
     def solve_for_vb(self, vb_xy: np.ndarray) -> Field2D:
         # vb_xy shape (Ny, Nx), complex
@@ -37,6 +41,26 @@ class Helmholtz25DOperator:
         for j in range(1, self.Ny - 1):
             for i in range(1, self.Nx - 1):
                 b[idx(j, i)] = s_xy[j, i]
+
+        p_vec = self.solve(b)
+        p = p_vec.reshape((self.Ny, self.Nx))
+        return Field2D(x=self.x, y=self.y, p=p, omega=self.omega, c0=self.c0, rho0=self.rho0)
+
+
+    def solve_for_bottom_vb(self, vb_x: np.ndarray) -> Field2D:
+        """Solve with a *bottom-wall* prescribed normal velocity profile vb_x(x).
+
+        Boundary condition used:
+            ∂p/∂y (y=0) = - i ω ρ0 v_b(x)
+
+        vb_x must have shape (Nx,) and may be complex to include phase.
+        """
+        if vb_x.shape != (self.Nx,):
+            raise ValueError(f"vb_x must have shape (Nx,), got {vb_x.shape}")
+
+        b = self.b0.copy()
+        dpdy_bottom = self.coupling_alpha * (-1j * self.omega * self.rho0) * vb_x.astype(np.complex128)
+        b[self.bottom_rows] = dpdy_bottom
 
         p_vec = self.solve(b)
         p = p_vec.reshape((self.Ny, self.Nx))
@@ -244,7 +268,7 @@ def build_helmholtz_2d_forced_25d_operator(
         A[rg, :] = 0.0
         A[rg, rg] = 1.0
         b0[rg] = 0.0 + 0.0j
-
+  
     # Factorize once
     A_csc = A.tocsc()
     solve = spla.factorized(A_csc)
@@ -254,8 +278,10 @@ def build_helmholtz_2d_forced_25d_operator(
         omega=omega, c0=c0, rho0=rho0,
         coupling_alpha=coupling_alpha,
         solve=solve,
+        b0=b0,
+        bottom_rows=np.array([idx(0, i) for i in range(Nx)], dtype=np.int64),
     )
-
+        
 
 
 def solve_helmholtz_2d_forced_25d(

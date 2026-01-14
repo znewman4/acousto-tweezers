@@ -1,0 +1,3 @@
+"""High-level project modules (actuation, control, visualisation)."""
+
+__all__: list[str] = []

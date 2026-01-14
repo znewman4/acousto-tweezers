@@ -1,8 +1,0 @@
-numpy
-scipy
-matplotlib
-pyyaml
-
-[dev]
-pytest
-ruff

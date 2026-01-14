@@ -15,6 +15,91 @@ except Exception:  # pragma: no cover
     import imageio  # type: ignore
 
 
+def normalize_gorkov_field(U: np.ndarray, verbose: bool = False, frame_id: str = "") -> tuple[np.ndarray, bool]:
+    """
+    Normalize Gorkov potential U to [0, 1] range for visualization.
+    
+    Uses PERCENTILE-BASED normalization to handle outliers:
+    - Clips extreme values at 1st and 99th percentile
+    - Maps the remaining range to [0, 1]
+    - This ensures landscape topology is visible even with huge outlier values
+    
+    Handles edge cases:
+    - Completely flat (Umin == Umax)
+    - Nearly flat (tiny dynamic range)
+    - NaN/Inf values
+    
+    Returns:
+    --------
+    Uvis : normalized U in [0, 1] 
+    is_flat : True if the landscape was flat/nearly-flat
+    
+    When is_flat=True, the caller should consider reusing the previous frame
+    instead of displaying a constant surface.
+    """
+    U = np.asarray(U, dtype=float)
+    
+    # Handle non-finite values
+    finite_mask = np.isfinite(U)
+    non_finite_count = int((~finite_mask).sum())
+    total_count = U.size
+    
+    if non_finite_count == total_count:
+        # All values are non-finite
+        print(f"  [normalize {frame_id}] ALL NON-FINITE: returning mid-plane")
+        return 0.5 * np.ones_like(U, dtype=float), True
+    
+    # Work with finite values only for statistics
+    U_finite = U[finite_mask]
+    
+    # Use percentile-based clipping to handle outliers
+    # This is KEY: the huge negative values are OUTLIERS that shouldn't dominate the colormap
+    p1 = float(np.percentile(U_finite, 1))    # 1st percentile
+    p99 = float(np.percentile(U_finite, 99))  # 99th percentile
+    p50 = float(np.percentile(U_finite, 50))  # Median
+    
+    Umin_raw = float(np.nanmin(U))
+    Umax_raw = float(np.nanmax(U))
+    
+    # Use percentile range for normalization
+    den = p99 - p1
+    
+    is_flat = False
+    
+    if den <= 0 or den < 1e-15 * max(1.0, abs(p99)):
+        # Completely flat or nearly flat based on percentile range
+        print(f"  [normalize {frame_id}] FLAT: p1={p1:.3e}, p99={p99:.3e}, den={den:.3e}")
+        Uvis = 0.5 * np.ones_like(U, dtype=float)
+        is_flat = True
+    else:
+        # PERCENTILE-BASED NORMALIZATION (ignores outliers!)
+        # Clip to percentile range then normalize
+        U_clipped = np.clip(U, p1, p99)
+        Uvis = (U_clipped - p1) / den
+        Uvis = np.clip(Uvis, 0, 1)
+        
+        # Check the actual visible range
+        Uvis_min = float(np.nanmin(Uvis))
+        Uvis_max = float(np.nanmax(Uvis))
+        Uvis_range = Uvis_max - Uvis_min
+        
+        # Only print if explicitly verbose
+        if verbose:
+            print(f"  [normalize {frame_id}] PERCENTILE_BASED:")
+            print(f"           Raw range: [{Umin_raw:.3e}, {Umax_raw:.3e}]")
+            print(f"           Percentile range (1%-99%): [{p1:.3e}, {p99:.3e}]")
+            print(f"           Median: {p50:.3e}")
+            print(f"           Uvis range: [{Uvis_min:.3f}, {Uvis_max:.3f}]")
+        
+        # If even after percentile normalization the range is tiny, flag as flat
+        if Uvis_range < 0.1:
+            if verbose:
+                print(f"  [normalize {frame_id}] WARNING: Uvis range too small ({Uvis_range:.3f}), landscape may appear flat")
+            is_flat = True
+    
+    return Uvis, is_flat
+
+
 def classify_trap(eigvals: np.ndarray) -> str:
     """Classify critical point type from Hessian eigenvalues."""
     if np.all(eigvals > 0):
@@ -120,14 +205,12 @@ def render_gorkov_landscape_frame_3d(
     """
     X, Y = np.meshgrid(x_mm, y_mm)
 
-    Umin = float(np.min(U))
-    Umax = float(np.max(U))
+    # Use centralized normalization
+    Uvis, is_flat = normalize_gorkov_field(U, verbose=True)
+    
+    Umin = float(np.nanmin(U))
+    Umax = float(np.nanmax(U))
     den = Umax - Umin
-
-    if den == 0.0 or not np.isfinite(den):
-        Uvis = np.zeros_like(U, dtype=float)
-    else:
-        Uvis = (U - Umin) / den
 
     Xs = X[::surface_stride, ::surface_stride]
     Ys = Y[::surface_stride, ::surface_stride]
