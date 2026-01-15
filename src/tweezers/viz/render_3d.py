@@ -15,7 +15,29 @@ except Exception:  # pragma: no cover
     import imageio  # type: ignore
 
 
-def normalize_gorkov_field(U: np.ndarray, verbose: bool = False, frame_id: str = "") -> tuple[np.ndarray, bool]:
+@dataclass
+class FieldDiagnostics:
+    """Diagnostic information about a field for debugging."""
+    is_flat: bool = False
+    has_nan: bool = False
+    has_inf: bool = False
+    nan_frac: float = 0.0
+    inf_frac: float = 0.0
+    raw_min: float = np.nan
+    raw_max: float = np.nan
+    raw_ptp: float = np.nan
+    p1: float = np.nan
+    p99: float = np.nan
+    percentile_range: float = np.nan
+    failure_reason: str = ""
+
+
+def normalize_gorkov_field(
+    U: np.ndarray,
+    verbose: bool = False,
+    frame_id: str = "",
+    return_diagnostics: bool = False,
+) -> tuple[np.ndarray, bool] | tuple[np.ndarray, bool, FieldDiagnostics]:
     """
     Normalize Gorkov potential U to [0, 1] range for visualization.
     
@@ -33,21 +55,40 @@ def normalize_gorkov_field(U: np.ndarray, verbose: bool = False, frame_id: str =
     --------
     Uvis : normalized U in [0, 1] 
     is_flat : True if the landscape was flat/nearly-flat
+    diagnostics : (optional) FieldDiagnostics with detailed info
     
     When is_flat=True, the caller should consider reusing the previous frame
     instead of displaying a constant surface.
     """
     U = np.asarray(U, dtype=float)
+    diag = FieldDiagnostics()
     
     # Handle non-finite values
+    nan_mask = np.isnan(U)
+    inf_mask = np.isinf(U)
     finite_mask = np.isfinite(U)
+    
     non_finite_count = int((~finite_mask).sum())
     total_count = U.size
     
+    diag.nan_frac = float(nan_mask.sum()) / total_count
+    diag.inf_frac = float(inf_mask.sum()) / total_count
+    diag.has_nan = diag.nan_frac > 0
+    diag.has_inf = diag.inf_frac > 0
+    
+    if diag.has_nan and verbose:
+        print(f"  [normalize {frame_id}] WARNING: NaN in U ({diag.nan_frac*100:.1f}%)")
+    if diag.has_inf and verbose:
+        print(f"  [normalize {frame_id}] WARNING: Inf in U ({diag.inf_frac*100:.1f}%)")
+    
     if non_finite_count == total_count:
         # All values are non-finite
-        print(f"  [normalize {frame_id}] ALL NON-FINITE: returning mid-plane")
-        return 0.5 * np.ones_like(U, dtype=float), True
+        diag.is_flat = True
+        diag.failure_reason = "ALL_NON_FINITE"
+        if verbose:
+            print(f"  [normalize {frame_id}] ALL NON-FINITE: returning mid-plane")
+        result = (0.5 * np.ones_like(U, dtype=float), True)
+        return (*result, diag) if return_diagnostics else result
     
     # Work with finite values only for statistics
     U_finite = U[finite_mask]
@@ -61,14 +102,45 @@ def normalize_gorkov_field(U: np.ndarray, verbose: bool = False, frame_id: str =
     Umin_raw = float(np.nanmin(U))
     Umax_raw = float(np.nanmax(U))
     
+    diag.raw_min = Umin_raw
+    diag.raw_max = Umax_raw
+    diag.raw_ptp = Umax_raw - Umin_raw
+    diag.p1 = p1
+    diag.p99 = p99
+    diag.percentile_range = p99 - p1
+    
     # Use percentile range for normalization
     den = p99 - p1
     
     is_flat = False
     
-    if den <= 0 or den < 1e-15 * max(1.0, abs(p99)):
-        # Completely flat or nearly flat based on percentile range
-        print(f"  [normalize {frame_id}] FLAT: p1={p1:.3e}, p99={p99:.3e}, den={den:.3e}")
+    # More detailed flat detection
+    eps_relative = 1e-15 * max(1.0, abs(p99))
+    eps_absolute = 1e-20  # Physical fields should have some range
+    
+    # Also check absolute ptp - if the raw range is reasonable, it's not flat
+    raw_ptp = Umax_raw - Umin_raw
+    raw_is_reasonable = raw_ptp > 1e-12  # Potential range > 1 pJ is reasonable
+    
+    if den <= 0:
+        diag.is_flat = True
+        diag.failure_reason = "ZERO_RANGE"
+        if verbose:
+            print(f"  [normalize {frame_id}] FLAT (zero range): p1={p1:.3e}, p99={p99:.3e}")
+        Uvis = 0.5 * np.ones_like(U, dtype=float)
+        is_flat = True
+    elif den < eps_relative and not raw_is_reasonable:
+        diag.is_flat = True
+        diag.failure_reason = "TINY_RELATIVE_RANGE"
+        if verbose:
+            print(f"  [normalize {frame_id}] FLAT (tiny relative): p1={p1:.3e}, p99={p99:.3e}, den={den:.3e}")
+        Uvis = 0.5 * np.ones_like(U, dtype=float)
+        is_flat = True
+    elif den < eps_absolute and not raw_is_reasonable:
+        diag.is_flat = True
+        diag.failure_reason = "TINY_ABSOLUTE_RANGE"
+        if verbose:
+            print(f"  [normalize {frame_id}] FLAT (tiny absolute): den={den:.3e} < {eps_absolute:.3e}")
         Uvis = 0.5 * np.ones_like(U, dtype=float)
         is_flat = True
     else:
@@ -93,11 +165,133 @@ def normalize_gorkov_field(U: np.ndarray, verbose: bool = False, frame_id: str =
         
         # If even after percentile normalization the range is tiny, flag as flat
         if Uvis_range < 0.1:
+            diag.is_flat = True
+            diag.failure_reason = "NORMALIZED_RANGE_TINY"
             if verbose:
                 print(f"  [normalize {frame_id}] WARNING: Uvis range too small ({Uvis_range:.3f}), landscape may appear flat")
             is_flat = True
     
+    if return_diagnostics:
+        return Uvis, is_flat, diag
     return Uvis, is_flat
+
+
+def diagnose_field(
+    U: np.ndarray,
+    p: np.ndarray | None = None,
+    vb: np.ndarray | None = None,
+    control = None,
+    frame_id: str = "",
+) -> dict:
+    """
+    Comprehensive field diagnostics for debugging flat frames.
+    
+    Call this when normalize_gorkov_field reports is_flat=True to understand why.
+    
+    Returns dict with:
+    - U_* : potential field stats
+    - p_* : pressure field stats (if provided)
+    - vb_* : forcing boundary stats (if provided)
+    - diagnosis : string explaining likely cause
+    """
+    result = {}
+    
+    # Potential diagnostics
+    if U is not None:
+        U_finite = U[np.isfinite(U)]
+        result["U_nan_count"] = int(np.isnan(U).sum())
+        result["U_inf_count"] = int(np.isinf(U).sum())
+        result["U_finite_count"] = len(U_finite)
+        
+        if len(U_finite) > 0:
+            result["U_min"] = float(np.min(U_finite))
+            result["U_max"] = float(np.max(U_finite))
+            result["U_ptp"] = float(np.ptp(U_finite))
+            result["U_mean"] = float(np.mean(U_finite))
+            result["U_std"] = float(np.std(U_finite))
+            result["U_p1"] = float(np.percentile(U_finite, 1))
+            result["U_p99"] = float(np.percentile(U_finite, 99))
+            result["U_percentile_range"] = result["U_p99"] - result["U_p1"]
+            
+            # Check for clustering (values concentrated in narrow band)
+            iqr = float(np.percentile(U_finite, 75) - np.percentile(U_finite, 25))
+            result["U_iqr"] = iqr
+            result["U_is_skewed"] = result["U_ptp"] > 100 * iqr if iqr > 0 else False
+    
+    # Pressure diagnostics
+    if p is not None:
+        p_abs = np.abs(p) if np.iscomplexobj(p) else p
+        p_finite = p_abs[np.isfinite(p_abs)]
+        result["p_nan_count"] = int(np.isnan(p_abs).sum())
+        result["p_inf_count"] = int(np.isinf(p_abs).sum())
+        result["p_finite_count"] = len(p_finite)
+        
+        if len(p_finite) > 0:
+            result["p_min"] = float(np.min(p_finite))
+            result["p_max"] = float(np.max(p_finite))
+            result["p_ptp"] = float(np.ptp(p_finite))
+            result["p_mean"] = float(np.mean(p_finite))
+            result["p_is_zero"] = result["p_max"] < 1e-15
+            result["p_is_reasonable"] = result["p_max"] > 1e3  # > 1 kPa is reasonable
+    
+    # Forcing boundary diagnostics
+    if vb is not None:
+        vb_abs = np.abs(vb) if np.iscomplexobj(vb) else vb
+        vb_finite = vb_abs[np.isfinite(vb_abs)]
+        result["vb_nan_count"] = int(np.isnan(vb_abs).sum())
+        result["vb_finite_count"] = len(vb_finite)
+        
+        if len(vb_finite) > 0:
+            result["vb_min"] = float(np.min(vb_finite))
+            result["vb_max"] = float(np.max(vb_finite))
+            result["vb_mean"] = float(np.mean(vb_finite))
+            result["vb_is_zero"] = result["vb_max"] < 1e-15
+            result["vb_is_tiny"] = result["vb_max"] < 1e-10
+    
+    # Control diagnostics
+    if control is not None:
+        if hasattr(control, "vA"):
+            result["ctrl_vA"] = float(control.vA)
+            result["ctrl_vB"] = float(control.vB)
+            result["ctrl_vC"] = float(control.vC) if hasattr(control, "vC") else None
+            result["ctrl_v_max"] = max(v for v in [control.vA, control.vB, getattr(control, "vC", 0)] if v is not None)
+            result["ctrl_all_v_zero"] = result["ctrl_v_max"] < 1e-10
+    
+    # Determine diagnosis
+    diagnoses = []
+    
+    if result.get("vb_is_zero"):
+        diagnoses.append("FORCING_ZERO: vb boundary is all zeros")
+    elif result.get("vb_is_tiny"):
+        diagnoses.append("FORCING_TINY: vb boundary values very small")
+    
+    if result.get("p_is_zero"):
+        diagnoses.append("PRESSURE_ZERO: solver produced zero pressure field")
+    elif not result.get("p_is_reasonable", True):
+        diagnoses.append("PRESSURE_WEAK: pressure field max < 1 kPa")
+    
+    if result.get("U_nan_count", 0) > 0:
+        diagnoses.append(f"U_HAS_NAN: {result['U_nan_count']} NaN values in potential")
+    
+    if result.get("U_ptp", float("inf")) < 1e-20:
+        diagnoses.append("U_FLAT: potential has no spatial variation")
+    elif result.get("U_is_skewed", False):
+        diagnoses.append("U_SKEWED: potential has outliers (percentile normalization may fail)")
+    
+    if result.get("ctrl_all_v_zero"):
+        diagnoses.append("CONTROL_V_ZERO: all transducer amplitudes are zero")
+    
+    # Check for normalization artifact (field has structure but percentile range is small)
+    if result.get("U_ptp", 0) > 1e-12 and result.get("U_percentile_range", float("inf")) < 1e-15:
+        diagnoses.append("NORMALIZATION_ARTIFACT: raw ptp reasonable but percentile range tiny - skewed distribution")
+    
+    if not diagnoses:
+        diagnoses.append("FIELD_OK: no obvious issues detected")
+    
+    result["diagnosis"] = "; ".join(diagnoses)
+    result["frame_id"] = frame_id
+    
+    return result
 
 
 def classify_trap(eigvals: np.ndarray) -> str:

@@ -10,6 +10,12 @@ Key components:
 - ControlVector: Full control parameterization with bounds and rate limits
 - JacobianEstimator: Finite-difference estimation of stiffness and control effectiveness
 - ParticleController: Main controller with one-step and MPC modes
+
+Stage B/C/D/E upgrades:
+- Trap-centre detection integrated into cost function
+- TrapTracker for identity continuity
+- Sequential rate limiting in MPC
+- Near-saturation soft penalties
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from enum import Enum
 import numpy as np
 
 from .evaluator import Control2Pucks, BottomFootprint25DEvaluator
+from acousto.analysis import TrapTracker, TrapCenterResult
 
 
 # =============================================================================
@@ -653,6 +660,13 @@ class ParticleController:
         # Previous control for rate limiting
         self._prev_control: Optional[ControlVector] = None
         self._step_count = 0
+        
+        # STAGE C: TrapTracker for identity continuity
+        self.trap_tracker = TrapTracker(
+            max_distance=0.2e-3,  # 0.2 mm max distance for matching
+            stiffness_weight=0.1,
+            lost_threshold=5,
+        )
     
     def compute_drag_coefficient(self) -> float:
         """Compute Stokes drag coefficient γ = 6πηa."""
@@ -778,6 +792,8 @@ class ParticleController:
         """
         One-step control law using random shooting with Jacobian bias.
         
+        STAGE D: Uses trap_centre from evaluator for trap-steering objective.
+        
         Returns
         -------
         (best_control, info_dict)
@@ -794,10 +810,14 @@ class ParticleController:
         rejected_candidates: list[tuple[ControlVector, list[str]]] = []
         
         best_eval_info = {}  # Store eval info from best candidate
+        best_trap_xy = None
         
         for i, ctrl in enumerate(candidates):
-            # Predict next state (now returns eval_info with limiter diagnostics)
+            # Predict next state (now returns eval_info with trap_xy)
             predicted, eval_info = self.predict_motion(state, ctrl)
+            
+            # STAGE D: Extract trap centre from evaluator output
+            trap_xy = eval_info.get("trap_xy", None)
             
             # Check safety
             pred_jacobian = self.jacobian_estimator.estimate(predicted, ctrl, use_cache=False)
@@ -807,11 +827,12 @@ class ParticleController:
                 rejected_candidates.append((ctrl, violations))
                 continue
             
-            # Evaluate cost
+            # STAGE D: Evaluate cost with trap_centre
             cost = self.evaluate_cost(
                 predicted, target, ctrl,
                 prev_control=self._prev_control,
                 jacobian=pred_jacobian,
+                trap_centre=trap_xy,  # Pass trap centre for trap-steering
             )
             
             # Saturation penalty: penalize candidates that hit the step limiter
@@ -822,11 +843,19 @@ class ParticleController:
                 saturation_penalty = 0.1 * (1.0 - step_scale)**2
                 cost += saturation_penalty
             
+            # STAGE E: Near-saturation soft penalty
+            step_scale = eval_info.get("step_scale", 1.0)
+            if step_scale < 0.9:
+                # Soft penalty when approaching saturation
+                near_saturation_penalty = 0.05 * (0.9 - step_scale)**2
+                cost += near_saturation_penalty
+            
             if cost < best_cost:
                 best_cost = cost
                 best_control = ctrl
                 best_predicted = predicted
                 best_eval_info = eval_info
+                best_trap_xy = trap_xy
         
         info = {
             "jacobian": jacobian,
@@ -841,6 +870,10 @@ class ParticleController:
             "step_mm": best_eval_info.get("step_mm", 0.0),
             "fx": best_eval_info.get("fx", 0.0),
             "fy": best_eval_info.get("fy", 0.0),
+            # STAGE D: Trap centre from best candidate
+            "trap_xy": best_trap_xy,
+            "trap_stiffness_eigs": best_eval_info.get("trap_stiffness_eigs", None),
+            "trap_is_stable": best_eval_info.get("trap_is_stable", False),
         }
         
         return best_control, info
@@ -853,6 +886,9 @@ class ParticleController:
     ) -> tuple[ControlVector, dict]:
         """
         Model Predictive Control with receding horizon.
+        
+        STAGE D/E: Uses trap centres for cost evaluation and applies rate limits
+        sequentially inside the rollout (not just from prev_control at start).
         
         Parameters
         ----------
@@ -873,17 +909,29 @@ class ParticleController:
         best_sequence: list[ControlVector] = []
         best_total_cost = float("inf")
         best_trajectory: list[ControlState] = []
+        best_trap_xy = None
         
         # Generate candidate control sequences
         for _ in range(n_candidates):
             # Generate a sequence of controls
             sequence: list[ControlVector] = []
             ctrl = current_control
+            # STAGE E: Track previous control within sequence for rate limiting
+            seq_prev_ctrl = self._prev_control
+            
             for h in range(H):
                 # Perturb from previous in sequence
                 candidates = self.generate_candidates(ctrl, 5)
-                ctrl = self._rng.choice(candidates)  # type: ignore
-                sequence.append(ctrl)
+                new_ctrl = self._rng.choice(candidates)  # type: ignore
+                
+                # STAGE E: Apply rate limits SEQUENTIALLY inside rollout
+                if seq_prev_ctrl is not None:
+                    new_ctrl = new_ctrl.apply_rate_limits(seq_prev_ctrl)
+                new_ctrl = new_ctrl.clamp_to_bounds()
+                
+                sequence.append(new_ctrl)
+                seq_prev_ctrl = new_ctrl  # Update for next step in sequence
+                ctrl = new_ctrl
             
             # Simulate forward and compute total cost
             total_cost = 0.0
@@ -891,11 +939,17 @@ class ParticleController:
             sim_state = state
             prev_ctrl = self._prev_control
             is_feasible = True
+            first_trap_xy = None
             
             for h, ctrl in enumerate(sequence):
-                # Predict motion
+                # Predict motion (returns trap_xy in eval_info)
                 pred_state, eval_info = self.predict_motion(sim_state, ctrl)
                 trajectory.append(pred_state)
+                
+                # STAGE D: Extract trap centre
+                trap_xy = eval_info.get("trap_xy", None)
+                if h == 0:
+                    first_trap_xy = trap_xy
                 
                 # Safety check
                 is_safe, _ = self.safety.check(pred_state, ctrl)
@@ -903,17 +957,23 @@ class ParticleController:
                     is_feasible = False
                     break
                 
-                # Accumulate cost (discounted)
+                # Accumulate cost (discounted) - STAGE D: with trap centre
                 discount = 0.9 ** h
                 step_cost = self.evaluate_cost(
                     pred_state, targets[h], ctrl,
                     prev_control=prev_ctrl,
+                    trap_centre=trap_xy,  # Pass trap centre
                 )
                 
                 # Saturation penalty in MPC rollout
                 if eval_info.get("step_limited", False):
                     step_scale = eval_info.get("step_scale", 1.0)
                     step_cost += 0.1 * (1.0 - step_scale)**2
+                
+                # STAGE E: Near-saturation soft penalty
+                step_scale = eval_info.get("step_scale", 1.0)
+                if step_scale < 0.9:
+                    step_cost += 0.05 * (0.9 - step_scale)**2
                 
                 total_cost += discount * step_cost
                 
@@ -924,6 +984,7 @@ class ParticleController:
                 best_total_cost = total_cost
                 best_sequence = sequence
                 best_trajectory = trajectory
+                best_trap_xy = first_trap_xy
         
         # Return first control in best sequence (receding horizon)
         if best_sequence:
@@ -933,19 +994,24 @@ class ParticleController:
             first_control = current_control
             # Task 3: Ensure we ALWAYS have a predicted trajectory
             # Even if no feasible sequence, predict one step with current control
-            fallback_pred, _ = self.predict_motion(state, current_control)
+            fallback_pred, fallback_info = self.predict_motion(state, current_control)
             best_trajectory = [state, fallback_pred]
+            best_trap_xy = fallback_info.get("trap_xy", None)
         
         # Task 3: Ensure predicted_trajectory is never empty
         if not best_trajectory or len(best_trajectory) < 2:
-            fallback_pred, _ = self.predict_motion(state, first_control)
+            fallback_pred, fallback_info = self.predict_motion(state, first_control)
             best_trajectory = [state, fallback_pred]
+            if best_trap_xy is None:
+                best_trap_xy = fallback_info.get("trap_xy", None)
         
         info = {
             "horizon": H,
             "best_cost": best_total_cost,
             "predicted_trajectory": best_trajectory,
             "sequence_length": len(best_sequence),
+            # STAGE D: Trap centre from first step of best sequence
+            "trap_xy": best_trap_xy,
         }
         
         return first_control, info
@@ -960,6 +1026,8 @@ class ParticleController:
     ) -> tuple[ControlVector, ControlState, dict]:
         """
         Main control step interface.
+        
+        STAGE D: Returns trap_xy in info dict for visualization.
         
         Parameters
         ----------
@@ -1001,6 +1069,32 @@ class ParticleController:
         info["fx"] = actual_info.get("fx", 0.0)
         info["fy"] = actual_info.get("fy", 0.0)
         
+        # STAGE D: Ensure trap_xy is in info (from actual evaluation)
+        if "trap_xy" not in info or info["trap_xy"] is None:
+            info["trap_xy"] = actual_info.get("trap_xy", None)
+        info["trap_stiffness_eigs"] = actual_info.get("trap_stiffness_eigs", None)
+        info["trap_is_stable"] = actual_info.get("trap_is_stable", False)
+        info["trap_min_eigenvalue"] = actual_info.get("trap_min_eigenvalue", 0.0)
+        
+        # STAGE C: Update TrapTracker if trap_xy is available
+        trap_xy = info.get("trap_xy")
+        if trap_xy is not None:
+            # Create a minimal TrapCenterResult for the tracker
+            trap_result = TrapCenterResult(
+                x=trap_xy[0],
+                y=trap_xy[1],
+                stiffness_eigvals=info.get("trap_stiffness_eigs", np.array([0.0, 0.0])),
+                is_stable=info.get("trap_is_stable", False),
+                min_eigenvalue=info.get("trap_min_eigenvalue", 0.0),
+                U_at_trap=0.0,  # Not available here
+                distance_from_particle=0.0,
+                method="controller",
+            )
+            tracked = self.trap_tracker.update(trap_result)
+            info["trap_track_id"] = tracked.track_id
+            info["trap_lost"] = tracked.lost
+            info["trap_frames_tracked"] = tracked.frames_tracked
+        
         # Log
         jacobian = info.get("jacobian")
         self.logger.log(
@@ -1028,6 +1122,7 @@ class ParticleController:
         self._step_count = 0
         self.jacobian_estimator.reset_cache()
         self.logger = ControlLogger()
+        self.trap_tracker.reset()  # STAGE C: Reset trap tracker
 
 
 # =============================================================================

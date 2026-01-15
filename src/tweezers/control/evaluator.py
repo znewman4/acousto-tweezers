@@ -13,6 +13,9 @@ We represent each bottom transducer as an *effective* complex-valued drive
 footprint ``vb(x,y)`` confined to a thin band near the bottom (y≈0). This
 lets the transducer move anywhere on the bottom *surface* (2D) while keeping
 the current 2.5D planar solver.
+
+Stage A upgrade: 2D forcing band with sigma_y for true y-control authority.
+Stage B upgrade: Trap centre detection integrated into step().
 """
 
 from dataclasses import dataclass
@@ -20,6 +23,7 @@ import numpy as np
 
 from acousto.solvers import build_helmholtz_2d_forced_25d_operator
 from acousto.force import ParticleProps, gorkov_potential_and_force_2d, bilinear_sample_vec
+from acousto.analysis import find_trap_center, TrapCenterResult
 
 
 @dataclass(frozen=True)
@@ -59,14 +63,18 @@ class Control2Pucks:
 
 @dataclass(frozen=True)
 class EvaluatorConfig:
-    sigma_x: float  # width of 1D bottom actuator footprint (meters)
-    bottom_band: float
+    sigma_x: float  # width of actuator footprint in x (meters)
+    bottom_band: float  # alias for y_band; retained for backward compatibility
     dt: float
     viscosity: float
     border_penalty: float = 1e6
     smooth_u: float = 1e-2
     alpha_g: float = 1.0  # Gor'kov force scaling (1.0 = physical, >1 = scaled for development)
     max_step: float = 0.1e-3  # Maximum displacement per timestep (meters), prevents instability
+    # Stage A: 2D forcing band parameters for y-control authority
+    sigma_y: float = 0.05e-3  # width of actuator footprint in y (meters), default ~sigma_x/2
+    y_band: float | None = None  # if None, uses bottom_band; explicit 2D band height
+    use_2d_forcing: bool = True  # if True, use 2D forcing band; if False, use legacy 1D bottom BC
 
 
 class BottomFootprint25DEvaluator:
@@ -129,6 +137,8 @@ class BottomFootprint25DEvaluator:
         
         Returns array of shape (Nx,) with bottom velocity at each x position.
         Uses Gaussian footprints centered at transducer x-positions.
+        
+        Note: This is the LEGACY method. Use control_to_forcing_band_vb() for 2D forcing.
         """
         x = self.op.x
         sigma_x = float(self.cfg.sigma_x)
@@ -139,6 +149,53 @@ class BottomFootprint25DEvaluator:
         
         # Combine: amplitude * phase * footprint
         vb_x = (u.vA * np.exp(1j * u.phiA) * gA) + (u.vB * np.exp(1j * u.phiB) * gB)
+        return vb_x.astype(np.complex128)
+
+    def control_to_forcing_band_vb(self, u: Control2Pucks) -> np.ndarray:
+        """Map control to bottom boundary velocity field with y-dependent amplitude.
+        
+        STAGE A: Restores y-control authority by making transducer y-positions
+        affect the amplitude of their contribution at the bottom boundary (y=0).
+        
+        Physics model:
+        - Each transducer has a 2D Gaussian footprint centered at (x_i, y_i)
+        - The boundary forcing at y=0 samples the tail of this 2D Gaussian
+        - Moving the transducer in y changes how strongly it couples to the boundary
+        
+        Boundary velocity profile:
+            vb(x) = sum_i A_i * exp(j*phi_i) * exp(-(x-x_i)^2/(2*sigma_x^2)) 
+                                            * exp(-(0-y_i)^2/(2*sigma_y^2))
+        
+        This keeps the proper acoustic physics (bottom boundary excitation) while
+        giving transducer y-position real influence on the field.
+        
+        Returns
+        -------
+        vb_x : np.ndarray, shape (Nx,), complex
+            Bottom boundary velocity profile (still uses solve_for_bottom_vb).
+        """
+        x = self.op.x  # shape (Nx,)
+        
+        sigma_x = float(self.cfg.sigma_x)
+        sigma_y = float(self.cfg.sigma_y) if hasattr(self.cfg, 'sigma_y') else sigma_x * 0.5
+        
+        # X-direction Gaussian footprints (same as legacy)
+        gA_x = np.exp(-(x - u.xA)**2 / (2.0 * sigma_x * sigma_x))
+        gB_x = np.exp(-(x - u.xB)**2 / (2.0 * sigma_x * sigma_x))
+        
+        # Y-direction coupling factor: how much of the transducer footprint 
+        # reaches the bottom boundary at y=0. When y_i=0, this is 1.0.
+        # When y_i > 0, the transducer is "lifted" and couples less to the boundary.
+        # Note: we evaluate exp(-(0 - y_i)^2 / (2*sigma_y^2)) = exp(-y_i^2/(2*sigma_y^2))
+        gA_y = np.exp(-(u.yA)**2 / (2.0 * sigma_y * sigma_y))
+        gB_y = np.exp(-(u.yB)**2 / (2.0 * sigma_y * sigma_y))
+        
+        # Combine: amplitude * phase * x-footprint * y-coupling
+        vb_x = (
+            (u.vA * np.exp(1j * u.phiA) * gA_x * gA_y) +
+            (u.vB * np.exp(1j * u.phiB) * gB_x * gB_y)
+        )
+        
         return vb_x.astype(np.complex128)
 
     def clip_control(self, u: Control2Pucks) -> Control2Pucks:
@@ -179,8 +236,17 @@ class BottomFootprint25DEvaluator:
         If ``return_fields`` is True, returns (xp1, yp1, loss, info, field, U, Fx, Fy).
         """
         u = self.clip_control(u)
-        vb_x = self.control_to_bottom_vb(u)  # 1D bottom velocity profile
-        field = self.op.solve_for_bottom_vb(vb_x)  # Physically correct boundary condition
+        
+        # STAGE A: Choose between y-aware forcing (new) vs legacy 1D
+        # Both use solve_for_bottom_vb (boundary forcing) for correct physics.
+        # The difference is whether transducer y-position affects amplitude.
+        use_2d = getattr(self.cfg, 'use_2d_forcing', True)
+        if use_2d:
+            vb_x = self.control_to_forcing_band_vb(u)  # Y-aware 1D profile
+        else:
+            vb_x = self.control_to_bottom_vb(u)  # Legacy 1D profile
+        field = self.op.solve_for_bottom_vb(vb_x)  # Always use bottom BC
+        
         U, Fx, Fy = gorkov_potential_and_force_2d(field, self.particle)
         
         # STEP 1 PATCH: Apply Gor'kov force scaling factor
@@ -242,6 +308,18 @@ class BottomFootprint25DEvaluator:
             )
             loss += float(self.cfg.smooth_u) * float(np.dot(du, du))
 
+        # STAGE B: Compute trap centre near particle
+        trap_result = find_trap_center(
+            x=field.x,
+            y=field.y,
+            U=U,
+            Fx=Fx,
+            Fy=Fy,
+            particle_x=float(xp),
+            particle_y=float(yp),
+            search_radius=0.3e-3,  # 0.3 mm search window
+        )
+
         info = {
             "fx": float(fx),
             "fy": float(fy),
@@ -254,6 +332,12 @@ class BottomFootprint25DEvaluator:
             "step_scale": float(step_scale),
             "raw_step_mm": float(raw_displacement * 1e3),
             "step_mm": float(final_displacement * 1e3),
+            # STAGE B: Trap centre outputs
+            "trap_xy": (trap_result.x, trap_result.y),
+            "trap_stiffness_eigs": trap_result.stiffness_eigvals,
+            "trap_is_stable": trap_result.is_stable,
+            "trap_min_eigenvalue": trap_result.min_eigenvalue,
+            "trap_distance_from_particle": trap_result.distance_from_particle,
         }
 
         if return_fields:
@@ -284,8 +368,16 @@ class BottomFootprint25DEvaluator:
             - 'warning': string if |F| < warn_threshold
         """
         u = self.clip_control(u)
-        vb_x = self.control_to_bottom_vb(u)
-        field = self.op.solve_for_bottom_vb(vb_x)
+        
+        # STAGE A: Use same 2D/1D logic as step()
+        use_2d = getattr(self.cfg, 'use_2d_forcing', True)
+        if use_2d:
+            vb_xy = self.control_to_forcing_band_vb(u)
+            field = self.op.solve_for_vb(vb_xy)
+        else:
+            vb_x = self.control_to_bottom_vb(u)
+            field = self.op.solve_for_bottom_vb(vb_x)
+        
         U, Fx, Fy = gorkov_potential_and_force_2d(field, self.particle)
         
         # Apply force scaling
