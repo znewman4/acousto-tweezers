@@ -1,93 +1,80 @@
+# ============================================================
+# Acoustic Tweezers: Modelling + Control (Robot-Moved Transducers)
+# ============================================================
 
-Acoustic Tweezers Modelling Engine
-
-Linear acoustics → radiation force → trap dynamics → optimisation
-
-1. Purpose of this repository
-This repository implements a COMSOL-independent modelling engine for acoustic tweezers and particle manipulation. The goal is to build a predictive, optimisation-ready model that maps actuation parameters to acoustic fields, radiation forces, and resulting particle motion. The emphasis is on linear acoustic field modelling, physically justified radiation force modelling, and the extraction of linearised trap dynamics (including stiffness matrices and characteristic time constants), with a view toward optimisation, reduced-order modelling, and control readiness. COMSOL is used only as a validation reference and not as the core solver, ensuring that the physics and numerical methods remain transparent, extensible, and suitable for integration with optimisation, machine learning, and control algorithms.
-
-2. What the final product is
-The final product is not just a numerical solver, but a modelling platform intended to support the wider project. At completion, the codebase will allow a user to define geometries and actuation schemes, compute acoustic pressure and velocity fields, derive radiation force fields acting on particles, automatically identify trapping points, extract linearised trap stiffness and dynamics, simulate particle trajectories, optimise actuation parameters to meet design objectives, and interactively explore system behaviour in real time. Beyond offline analysis, the modelling engine is explicitly designed to operate as part of a robotic manipulation system. In the intended workflow, particle positions are observed using a camera-based perception system, and actuation parameters are updated in closed loop to achieve target configurations and assembled structures. The model therefore provides a predictive mapping from actuation to particle motion, enabling model-based control, online calibration, and autonomous acoustic assembly.
-
-3. Architectural overview (conceptual)
-The repository is structured as a layered modelling pipeline. Core abstractions define what is being modelled rather than how: geometry describes the domain (for example, a 2D rectangular microchannel), actuation specifies transducer parameters such as frequency, phase, amplitude, and boundary location, the field represents acoustic pressure and velocity fields, the force model derives radiation forces from the field, and the linear model captures local linearisations of forces around traps in the form of stiffness matrices and time constants. These abstractions allow multiple solvers and optimisation methods to plug into a common framework without altering downstream components.
-
-Forward solvers replace COMSOL as the primary modelling tool. A fast finite-difference or spectral solver is used for rectangular domains, providing extremely rapid evaluations suitable for optimisation, reduced-order modelling, and interactive use. A finite-element solver based on FEniCS supports arbitrary geometries and higher-fidelity simulations for validation and realism. COMSOL is optionally used as a reference to validate pressure fields and trap stiffness, but is never included inside optimisation loops. All solvers return the same Field object, ensuring solver-independent downstream analysis.
-
-4. Physics-to-mechanics mapping (core modelling contribution)
-The scientifically central contribution of the project lies in the mapping from acoustic physics to particle mechanics. A linear acoustic field is solved using the Helmholtz equation, from which the Gor’kov radiation potential is computed. The radiation force field is obtained as the gradient of this potential, and equilibrium points (traps) are detected automatically. Forces are then linearised about these traps to obtain stiffness matrices, stable and unstable directions, and characteristic time constants. This explicitly separates the nonlinear physics of acoustic radiation forces from the locally linear particle dynamics that are most relevant for control and optimisation. Interpreting the Gor’kov potential as an energy landscape also enables powerful geometric intuition: stable traps correspond to local minima, unstable equilibria appear as saddle points, and stiffness eigenvalues correspond to local curvatures. Visualising this potential as a three-dimensional surface therefore provides an intuitive way to understand trapping, stability, and control authority, and directly supports the design of gradient-based and model-predictive control strategies.
-
-5. Particle dynamics
-Particle motion is modelled using overdamped dynamics appropriate for microscale acoustofluidic systems, where Stokes drag dominates inertia. This produces particle trajectories, capture behaviour, and convergence rates toward traps. Optional extensions, such as Brownian diffusion, are identified as future work but are not required for the initial control-focused modelling framework.
-
-6. Optimisation and reduced-order modelling
-An advanced optimisation layer makes the model practical for design and control. Bayesian optimisation is used to automatically tune phases and amplitudes to achieve objectives such as trap placement, stiffness maximisation, and robustness to disturbances. Gradient-based optimisation using adjoint methods or automatic differentiation is identified as a stretch goal for high-dimensional parameter spaces. Reduced-order models based on snapshot generation and POD/PCA are used to enable near real-time evaluation of fields and forces, which is essential for interactive visualisation and closed-loop control.
-
-7. Interfaces
-The system is designed to be used through multiple interfaces. A Python API allows integration with control algorithms, tracking pipelines, and experimental software. A command-line interface supports batch runs, parameter sweeps, and reproducible figure generation. An interactive user interface, implemented using Streamlit, provides real-time sliders for phase, amplitude, and frequency, along with live visualisation of fields, forces, trajectories, and potential surfaces, supporting both development and demonstration.
-
-8. Why this approach (and why not COMSOL-only)
-Using COMSOL alone obscures numerical details, limits optimisation and machine-learning integration, and reduces learning and originality. By contrast, this repository owns the physics, enables optimisation and control, allows deep understanding and systematic validation, and still leverages COMSOL where it is strongest as a reference solution. This hybrid approach mirrors real research workflows and supports the ultimate goal of autonomous, robot-controlled acoustic manipulation.
-
-9. What success looks like
-At completion, the project will deliver a clean, modular modelling codebase with validated physics, an optimisation-ready architecture, control-ready linear models, intuitive three-dimensional visualisations of trapping landscapes, and demonstrable interactivity. Crucially, it will provide a clear pathway to experimental integration, supporting camera-based perception and closed-loop robotic control for the autonomous assembly of particle structures using acoustic tweezers. This represents a full modelling-to-control workflow rather than a standalone numerical experiment.
-
-TO CLARIFY (IMPORTANT) - THIS SYSTEM WILL NOT HAVE FIXED TRANSDUCERS. THE TRANSDUCERS WILL BE MOVED BY ROBOTS. NO FIXED TRANSDUCERS. 
+This repository is a COMSOL-independent modelling and control engine for robotic acoustic tweezers. Transducers are not fixed: they are treated as control inputs and are intended to be moved by robots to reshape the acoustic field in real time. The core loop is: actuation parameters → acoustic field → Gor’kov potential → radiation force → overdamped particle motion → visualisation and logging.
 
 
-=========================
-ALREADY COMPLETED
+# ============================================================
+# What we have right now (working end-to-end)
+# ============================================================
 
-This repository now implements a full end-to-end modelling pipeline for a robotic acoustic tweezers system, where transducers are physically repositioned by robots to dynamically sculpt the acoustic field. A reduced but fast 2.5D forced Helmholtz model computes the steady-state acoustic pressure on a planar domain using bottom-driven Neumann boundary conditions, with mobile transducers represented as spatially localised velocity boundary sources.
+The codebase can run repeated fast forward solves of a 2.5D forced Helmholtz model on a planar domain, where moving transducers are represented as spatially localised velocity boundary sources. From each solved field, the Gor’kov radiation potential and radiation force are computed, and the particle is advanced under overdamped dynamics using interpolated forces at the particle position. The system supports trap finding and stiffness extraction, but control does not rely on trap stability and can move even through unstable regions.
 
-From this pressure field, the Gor’kov radiation potential and force are computed using a dimension-agnostic architecture (2D now, 3D-ready), candidate equilibrium points are extracted and classified, and overdamped particle dynamics can be simulated. The model supports high-frequency solver calls, optimisation-driven transducer control, and real-time 3D visualisation of evolving energy landscapes.
+A complete path-following demo exists in scripts/demo_surf_greedy.py that produces a reproducible “control run” with outputs saved to results/demo_surf_greedy/run_YYYYMMDD_HHMMSS. Each run produces an animated GIF, a summary plot, a step-by-step CSV log, and a JSON summary.
 
-A full control pipeline exists linking robotic actuation → acoustic field → radiation forces → particle motion → rendering. A path-following controller is in place and the particle does move under control.
 
-=========================
-NEXT STEP
+# ============================================================
+# The baseline controller that proves the physics can steer particles
+# ============================================================
 
-The next phase is transforming the visualising demo into a robust, control-ready manipulation engine. This requires identifying why the Gor’kov landscape rendering intermittently collapses into a flat yellow plane (a numerical or visualisation failure) even while:
+The baseline controller is a truth-model greedy “surf controller”. At every timestep it enumerates a discrete set of macro actions. Each macro action modifies actuation parameters (transducer positions and optionally phase/amplitude knobs depending on the action set). For each candidate action, the solver is called, the radiation force at the particle position is sampled, a score is computed based on alignment and push along the desired direction, and the best action is chosen. The chosen action’s field is then used to integrate particle dynamics.
 
-the pressure field is valid
+This controller is intentionally expensive but reliable, because it uses the PDE as the oracle. It establishes the key fact: the particle can be moved by “surfing” a changing force field, rather than requiring a stable static trap.
 
-forces are nonzero
 
-the particle continues to move
+# ============================================================
+# Circle tracking improvements that are now implemented
+# ============================================================
 
-This indicates a decoupling between the numerical pipeline and the renderer: either the Gor’kov potential is collapsing to a near-zero dynamic range for certain frames, or the normalisation/denominator in the 3D renderer is going to zero, producing flat surfaces even though the physics is still active.
+Circle tracking is handled differently from a straight line. A waypoint-chasing direction can cause oscillation on a circle, so the demo supports a circle-specific desired direction mode that combines tangential motion with a radial correction back toward the circle. This stabilises progress around the loop.
 
-Fixing this issue is critical because reliable control requires reliable state feedback; if the energy landscape is sometimes visually meaningless but the particle still moves, optimisation becomes untrustworthy and debugging becomes blind.
+Circle target advancement is also handled explicitly. Instead of the target point running away or freezing, the circle target index can advance based on angle progress so that the target remains consistently “ahead” of the particle around the loop. This produces more realistic desired directions and better-looking runs.
 
-Once this stability issue is solved, we continue toward path-tracking control that uses smooth force interpolation, physically correct 2.5D/3D coupling, and short-horizon predictive optimisation.
 
-=========================
-IMMEDIATE NEXT STEPS
-1. Diagnose & fix the “flat yellow Gor’kov surface” bug
+# ============================================================
+# Visualisation that exists now
+# ============================================================
 
-We must determine why the Gor’kov potential becomes nearly constant for many frames. Possible causes include:
+The GIF output overlays the particle trajectory, target marker, force vectors, and a 2D contour of the Gor’kov potential U for the chosen action at each timestep. The contour colour scaling is designed to be stable enough to watch changes over time instead of flickering wildly between frames, and the contour displayed should always correspond to the chosen action’s field for that timestep.
 
-Umin ≈ Umax leading to normalisation collapse
 
-temporary NaNs or tiny values in potential components
+# ============================================================
+# Bayesian acceleration layer (working, but not yet the final answer)
+# ============================================================
 
-incorrectly scaled α_g producing saturation
+A Bayesian action-selection layer exists in the same demo script. It does not change the physics, scoring, dynamics, or path logic. Its only job is to reduce how many candidate actions require a full PDE solve.
 
-visualisation clipping / autoscaling issues
+The Bayes controller uses a learned surrogate model to predict action quality and chooses only K candidate actions per step for truth evaluation using an acquisition rule (UCB). The chosen action is still selected by the true PDE score among the evaluated subset, so the Bayes layer is an acceleration mechanism rather than a replacement controller.
 
-force gradients meaningful but potential nearly constant
+In short runs, the Bayes layer achieves a clear reduction in PDE solves per step and still produces sensible motion. In longer runs, Bayes can sometimes lock onto a locally good action and become less robust than the greedy oracle, especially on closed paths where long-horizon exploration matters.
 
-Immediate tasks:
 
-Log Umin, Umax, std(U) for each frame
+# ============================================================
+# What we are trying to achieve next (the immediate practical goal)
+# ============================================================
 
-Freeze colour scale across frames
+The immediate goal is a dependable “final demo run” that is visually compelling and technically honest: the particle completes the full circle with good cross-track error and smooth progress, while the Gor’kov contours clearly evolve as the controller applies different actions.
 
-Add quiver + contour 2D debug render (already planned)
+At the moment the system can produce runs that either complete large angle progress but track poorly, or track well but stall later. The next step is to understand the parameter/setting differences behind “good looking” runs (for example, comparing runs like run_20260115_221636 against later runs), and to stabilise those conditions into a reliable configuration.
 
-Ensure return_fields=True is returning correct U each step
 
-This must be fixed before any higher-level control development.
+# ============================================================
+# What comes after that (toward the real final system)
+# ============================================================
+
+Once we have repeatable robust path-following, the project transitions from discrete surfing toward continuous optimal control.
+
+The intended endgame is adjoint-based model predictive control, where actuation parameters (including robot transducer positions and phase/amplitude knobs) are optimised over a short horizon to minimise tracking error and enforce constraints. Bayesian optimisation and learned surrogates remain useful in that future system as accelerators, warm-start tools, and model-mismatch compensators, while reinforcement learning becomes relevant when experimental feedback and unmodelled dynamics dominate.
+
+The direction is therefore hybrid: keep the physics exact, add gradient-based planning for control authority, and use learning methods to reduce compute and handle uncertainty.
+
+
+# ============================================================
+# How to run the current demos
+# ============================================================
+
+The main demo lives in scripts/demo_surf_greedy.py. It supports line and circle paths, greedy or Bayes controllers, controllable rendering stride, and produces a timestamped results folder containing demo_surf_greedy.gif, summary.png, steps.csv, and summary.json.
 
 # =========================
 # Repo scaffold
