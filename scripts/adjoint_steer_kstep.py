@@ -14,12 +14,18 @@ Key insight: K-step lookahead can achieve lower total J by "repositioning"
 the particle now to reach better states later, even if the immediate
 objective increases.
 
-Gradient computation:
-- Direct term: ∂U(x_t;u_t)/∂u_t via adjoint (exact)
-- State sensitivity: ∂x_{t+1}/∂u_t via FD on dynamics (approximate)
+Gradient computation (--use_discrete_adjoint, default):
+- Uses exact discrete-time adjoint backpropagation
+- Direct term: ∂U(x_t;u_t)/∂u_t via field adjoint (exact)
+- Dynamics term: λ_{t+1}^T (∂x_{t+1}/∂u_t) with ∂F/∂u via FD
+- State propagation: ∂x_{t+1}/∂x_t = I + dt*μ*∂F/∂x via FD
+
+Legacy mode (--no_discrete_adjoint):
+- Uses old FD-based state sensitivity (slower, less accurate)
 
 Usage:
     python scripts/adjoint_steer_kstep.py [--fast] [--K 10] [--n_iters 10]
+    python scripts/adjoint_steer_kstep.py --gradcheck_trajectory --fast --K 5
 """
 
 from __future__ import annotations
@@ -47,6 +53,11 @@ from acousto.adjoint.gradients import (
     compute_dJdp_gorkov_potential,
     compute_dbdu_single_transducer,
     adjoint_gradient_vectorized,
+)
+from acousto.adjoint.trajectory import (
+    compute_trajectory_gradient,
+    forward_rollout,
+    gradcheck_trajectory_scalar,
 )
 
 
@@ -85,9 +96,10 @@ class KStepConfig:
     n_iters: int = 10
     alphas: Tuple[float, ...] = (0.0, 0.01, 0.1, 0.3, 1.0)
     
-    # FD epsilon for state sensitivity
-    fd_eps_v: float = 1e-4
-    fd_eps_phi: float = 1e-4
+    # FD epsilon for derivatives
+    fd_eps_v: float = 1e-5
+    fd_eps_phi: float = 1e-5
+    fd_eps_x: float = 1e-7  # for spatial derivatives
     
     # Control bounds
     v_min: float = 0.01
@@ -96,6 +108,9 @@ class KStepConfig:
     # Initial particle position
     x0_frac: float = 0.35  # fraction of Lx
     y0_frac: float = 0.5   # fraction of Ly
+    
+    # Gradient method
+    use_discrete_adjoint: bool = True  # use discrete-time adjoint backprop
 
 
 def build_vb_from_control(v: float, phi: float, x_trans: float, y_trans: float,
@@ -144,6 +159,62 @@ def overdamped_step(x: float, y: float, Fx: float, Fy: float, cfg: KStepConfig) 
     return x_new, y_new
 
 
+# =============================================================================
+# Wrapper functions for discrete-time adjoint trajectory module
+# =============================================================================
+
+def make_compute_force_fn(op, cfg: KStepConfig, particle: ParticleProps):
+    """Create a closure for computing force at (v, phi, x, y)."""
+    def compute_force_fn(v: float, phi: float, x: float, y: float):
+        return compute_U_and_F_at_pos(op, v, phi, cfg, x, y, particle)
+    return compute_force_fn
+
+
+def make_compute_dU_du_fn(op, cfg: KStepConfig, particle: ParticleProps):
+    """Create a closure for computing ∂U/∂(v, phi) via adjoint."""
+    def compute_dU_du_fn(v: float, phi: float, x: float, y: float):
+        return compute_adjoint_gradient_at_step(op, v, phi, x, y, cfg, particle)
+    return compute_dU_du_fn
+
+
+def get_mobility(cfg: KStepConfig) -> float:
+    """Compute particle mobility μ = 1/(6πηa)."""
+    gamma = 6.0 * np.pi * cfg.mu * cfg.particle_a
+    return 1.0 / gamma
+
+
+def compute_kstep_gradients_discrete_adjoint(
+    op, controls: List[Tuple[float, float]], x0: float, y0: float,
+    cfg: KStepConfig, particle: ParticleProps
+) -> List[Tuple[float, float]]:
+    """
+    Compute gradients via discrete-time adjoint backpropagation.
+    
+    This is the new, exact method that properly propagates gradients
+    through the dynamics.
+    """
+    compute_force_fn = make_compute_force_fn(op, cfg, particle)
+    compute_dU_du_fn = make_compute_dU_du_fn(op, cfg, particle)
+    mobility = get_mobility(cfg)
+    
+    gradients, state = compute_trajectory_gradient(
+        controls=controls,
+        x0=x0, y0=y0,
+        compute_force_fn=compute_force_fn,
+        compute_dU_du_fn=compute_dU_du_fn,
+        dt=cfg.dt,
+        mobility=mobility,
+        x_bounds=(0, cfg.Lx),
+        y_bounds=(0, cfg.Ly),
+        beta_terminal=cfg.beta_terminal,
+        eps_x=cfg.fd_eps_x,
+        eps_v=cfg.fd_eps_v,
+        eps_phi=cfg.fd_eps_phi,
+    )
+    
+    return gradients
+
+
 def rollout_trajectory(op, controls: List[Tuple[float, float]], x0: float, y0: float,
                        cfg: KStepConfig, particle: ParticleProps) -> Tuple[List[Tuple[float, float]], List[float]]:
     """Roll out trajectory for K steps given control sequence.
@@ -182,23 +253,47 @@ def compute_trajectory_objective(U_values: List[float], positions: List[Tuple[fl
 
 def compute_adjoint_gradient_at_step(op, v: float, phi: float, x_p: float, y_p: float,
                                       cfg: KStepConfig, particle: ParticleProps) -> Tuple[float, float]:
-    """Compute adjoint gradient ∂U/∂(v, phi) at particle position and control."""
-    # Nearest grid point
-    ix = int(np.clip(round((x_p - op.x[0]) / op.dx), 0, op.Nx - 1))
-    iy = int(np.clip(round((y_p - op.y[0]) / op.dy), 0, op.Ny - 1))
+    """
+    Compute adjoint gradient ∂U_interp/∂(v, phi) at particle position.
     
-    # Forward solve
+    Uses bilinear interpolation to match compute_U_and_F_at_pos.
+    For U_interp = sum_k w_k * U_k, the adjoint seed is sum_k w_k * dU_k/dp.
+    """
+    # Bilinear interpolation indices and weights (matching compute_U_and_F_at_pos)
+    ix_f = (x_p - op.x[0]) / op.dx
+    iy_f = (y_p - op.y[0]) / op.dy
+    
+    ix0 = int(np.clip(np.floor(ix_f), 0, op.Nx - 2))
+    iy0 = int(np.clip(np.floor(iy_f), 0, op.Ny - 2))
+    ix1, iy1 = ix0 + 1, iy0 + 1
+    
+    fx = np.clip(ix_f - ix0, 0, 1)
+    fy = np.clip(iy_f - iy0, 0, 1)
+    
+    # Bilinear weights for 4 corners
+    w00 = (1 - fx) * (1 - fy)
+    w10 = fx * (1 - fy)
+    w01 = (1 - fx) * fy
+    w11 = fx * fy
+    
+    # Forward solve (needed for adjoint)
     x_trans = cfg.Lx * 0.5
     y_trans = 0.02 * cfg.Ly
     vb = build_vb_from_control(v, phi, x_trans, y_trans, cfg.sigma_x, cfg.sigma_y, op.x)
     field = op.solve_for_bottom_vb(vb)
     
-    # Adjoint gradient
-    dJ_dp = compute_dJdp_gorkov_potential(
-        ix, iy, cfg.Nx, cfg.Ny, op.dx, op.dy,
-        field.p, op.omega, cfg.rho0, cfg.c0,
-        cfg.particle_a, cfg.particle_rho_p, cfg.particle_c_p,
-    )
+    # Accumulate adjoint seed from all 4 corners
+    # dJ_dp = sum_k w_k * dU_k/dp
+    dJ_dp = np.zeros(cfg.Nx * cfg.Ny, dtype=np.complex128)
+    
+    for (ix, iy, w) in [(ix0, iy0, w00), (ix1, iy0, w10), (ix0, iy1, w01), (ix1, iy1, w11)]:
+        if w > 1e-12:  # Only add if weight is significant
+            dU_k_dp = compute_dJdp_gorkov_potential(
+                ix, iy, cfg.Nx, cfg.Ny, op.dx, op.dy,
+                field.p, op.omega, cfg.rho0, cfg.c0,
+                cfg.particle_a, cfg.particle_rho_p, cfg.particle_c_p,
+            )
+            dJ_dp += w * dU_k_dp
     
     # Create transducer params for db/du computation
     trans = TransducerParams(x=x_trans, y=y_trans, v=v, phi=phi,
@@ -251,10 +346,13 @@ def compute_spatial_gradient_U(op, v: float, phi: float, x_p: float, y_p: float,
     return np.array([(U_xp - U_xm) / (2 * eps), (U_yp - U_ym) / (2 * eps)])
 
 
-def compute_kstep_gradients(op, controls: List[Tuple[float, float]], x0: float, y0: float,
+def compute_kstep_gradients_legacy(op, controls: List[Tuple[float, float]], x0: float, y0: float,
                              cfg: KStepConfig, particle: ParticleProps) -> List[Tuple[float, float]]:
     """
-    Compute gradients ∂J/∂u_t for each step in the trajectory.
+    Compute gradients ∂J/∂u_t for each step in the trajectory (LEGACY METHOD).
+    
+    This is the old method that uses FD for state sensitivity and approximates
+    ∂x_{t+1}/∂x_t ≈ I. Kept for comparison.
     
     For step t, the gradient includes:
     1. Direct term: ∂U(x_t; u_t)/∂u_t
@@ -314,6 +412,21 @@ def compute_kstep_gradients(op, controls: List[Tuple[float, float]], x0: float, 
     
     gradients.reverse()  # now in order t=0..K-1
     return gradients
+
+
+def compute_kstep_gradients(op, controls: List[Tuple[float, float]], x0: float, y0: float,
+                             cfg: KStepConfig, particle: ParticleProps) -> List[Tuple[float, float]]:
+    """
+    Compute gradients ∂J/∂u_t for each step in the trajectory.
+    
+    Dispatches to either:
+    - Discrete-time adjoint backpropagation (use_discrete_adjoint=True, default)
+    - Legacy FD-based method (use_discrete_adjoint=False)
+    """
+    if cfg.use_discrete_adjoint:
+        return compute_kstep_gradients_discrete_adjoint(op, controls, x0, y0, cfg, particle)
+    else:
+        return compute_kstep_gradients_legacy(op, controls, x0, y0, cfg, particle)
 
 
 def clamp(val: float, lo: float, hi: float) -> float:
@@ -524,39 +637,136 @@ def create_comparison_plot(results_dir: Path, results: Dict[str, Dict]):
         print("\n   Warning: matplotlib not available, skipping plot")
 
 
+def run_gradcheck_trajectory(cfg: KStepConfig, op, particle: ParticleProps, x0: float, y0: float,
+                               v_init: float, phi_init: float) -> dict:
+    """Run gradient check for trajectory adjoint against finite differences."""
+    print("=" * 80)
+    print("TRAJECTORY GRADIENT CHECK")
+    print("=" * 80)
+    print(f"\nVerifying discrete-time adjoint gradients against finite differences...")
+    
+    compute_force_fn = make_compute_force_fn(op, cfg, particle)
+    compute_dU_du_fn = make_compute_dU_du_fn(op, cfg, particle)
+    mobility = get_mobility(cfg)
+    
+    # === First, verify the direct term dU/du at a single point ===
+    print("\n--- Direct term verification (no dynamics) ---")
+    print(f"Testing at position ({x0*1e3:.3f}, {y0*1e3:.3f}) mm, control (v={v_init}, phi={phi_init})")
+    
+    _, U0, Fx0, Fy0 = compute_force_fn(v_init, phi_init, x0, y0)
+    print(f"  U = {U0:.6e}")
+    
+    dU_dv_adj, dU_dphi_adj = compute_dU_du_fn(v_init, phi_init, x0, y0)
+    print(f"  Adjoint: dU/dv = {dU_dv_adj:.6e}")
+    
+    # FD for direct term
+    eps = 1e-5
+    _, U_vp, _, _ = compute_force_fn(v_init + eps, phi_init, x0, y0)
+    _, U_vm, _, _ = compute_force_fn(v_init - eps, phi_init, x0, y0)
+    dU_dv_fd = (U_vp - U_vm) / (2 * eps)
+    print(f"  FD:      dU/dv = {dU_dv_fd:.6e}")
+    
+    rel_err_direct = abs(dU_dv_adj - dU_dv_fd) / (abs(dU_dv_adj) + abs(dU_dv_fd) + 1e-30)
+    print(f"  Relative error: {rel_err_direct:.4e} {'✓' if rel_err_direct < 0.01 else '✗'}")
+    mobility = get_mobility(cfg)
+    
+    # Initialize constant controls
+    controls = [(v_init, phi_init) for _ in range(cfg.K)]
+    
+    results = []
+    eps_values = [1e-5, 1e-6, 1e-7]
+    
+    print(f"\n   Checking gradients for K={cfg.K} steps")
+    print(f"   Controls: v={v_init}, φ={phi_init}")
+    print(f"   dt = {cfg.dt*1e3:.1f} ms, mobility = {mobility:.4e}")
+    
+    # Check gradient at a few time steps
+    check_steps = [0, cfg.K // 2, cfg.K - 1] if cfg.K > 2 else list(range(cfg.K))
+    
+    for t in check_steps:
+        print(f"\n   Step t={t}:")
+        
+        for param in ['v']:  # Skip phi since it's ~0 for symmetric setup
+            print(f"      Parameter: {param}")
+            print(f"      {'eps':>10} | {'adjoint':>14} | {'FD':>14} | {'rel_err':>12}")
+            print("      " + "-" * 60)
+            
+            best_rel_err = float('inf')
+            best_eps = None
+            
+            for eps_fd in eps_values:
+                grad_adj, grad_fd, rel_err = gradcheck_trajectory_scalar(
+                    controls=controls,
+                    x0=x0, y0=y0,
+                    compute_force_fn=compute_force_fn,
+                    compute_dU_du_fn=compute_dU_du_fn,
+                    dt=cfg.dt,
+                    mobility=mobility,
+                    x_bounds=(0, cfg.Lx),
+                    y_bounds=(0, cfg.Ly),
+                    beta_terminal=cfg.beta_terminal,
+                    t_check=t,
+                    param=param,
+                    eps_fd=eps_fd,
+                )
+                
+                print(f"      {eps_fd:10.0e} | {grad_adj:+14.6e} | {grad_fd:+14.6e} | {rel_err:12.4e}")
+                
+                if rel_err < best_rel_err:
+                    best_rel_err = rel_err
+                    best_eps = eps_fd
+                
+                results.append({
+                    't': t, 'param': param, 'eps': eps_fd,
+                    'grad_adjoint': grad_adj, 'grad_fd': grad_fd, 'rel_error': rel_err,
+                })
+            
+            # Relaxed threshold for trajectory gradients (dynamics adds complexity)
+            passed = best_rel_err < 0.05  # 5% threshold
+            print(f"      Best rel_err: {best_rel_err:.4e} @ eps={best_eps:.0e} {'✓ PASS' if passed else '✗ FAIL'}")
+    
+    # Summary
+    print("\n" + "=" * 80)
+    print("GRADIENT CHECK SUMMARY")
+    print("=" * 80)
+    
+    max_rel_err = max(r['rel_error'] for r in results)
+    all_passed = max_rel_err < 0.05  # 5% threshold
+    
+    print(f"\n   Maximum relative error: {max_rel_err:.4e}")
+    print(f"   {'✓ ALL TESTS PASSED' if all_passed else '✗ SOME TESTS FAILED (>5% error)'}")
+    
+    return {'results': results, 'max_rel_err': max_rel_err, 'all_passed': all_passed}
+
+
 def main():
     parser = argparse.ArgumentParser(description="K-step lookahead trajectory optimizer")
     parser.add_argument('--fast', action='store_true', help="Fast mode (coarse grid, fewer iters)")
     parser.add_argument('--K', type=int, default=10, help="Horizon length (default: 10)")
     parser.add_argument('--n_iters', type=int, default=10, help="Optimization iterations (default: 10)")
     parser.add_argument('--beta_terminal', type=float, default=0.0, help="Terminal weight (default: 0)")
+    parser.add_argument('--use_discrete_adjoint', dest='use_discrete_adjoint', action='store_true',
+                        default=True, help="Use discrete-time adjoint backprop (default)")
+    parser.add_argument('--no_discrete_adjoint', dest='use_discrete_adjoint', action='store_false',
+                        help="Use legacy FD state-sensitivity method")
+    parser.add_argument('--gradcheck_trajectory', action='store_true',
+                        help="Run gradient check comparing adjoint vs FD")
     args = parser.parse_args()
     
     cfg = KStepConfig()
     cfg.K = args.K
     cfg.n_iters = args.n_iters
     cfg.beta_terminal = args.beta_terminal
+    cfg.use_discrete_adjoint = args.use_discrete_adjoint
     
     if args.fast:
         cfg.Nx = 32
         cfg.Ny = 32
-        cfg.K = 5
         cfg.n_iters = 5
         cfg.alphas = (0.0, 0.1, 1.0)
-    
-    print("=" * 80)
-    print("K-STEP LOOKAHEAD TRAJECTORY OPTIMIZER")
-    print("=" * 80)
-    print(f"\nConfiguration:")
-    print(f"   Grid: {cfg.Nx}×{cfg.Ny}")
-    print(f"   Horizon K: {cfg.K} steps")
-    print(f"   Time step dt: {cfg.dt*1e3:.1f} ms")
-    print(f"   Optimization iterations: {cfg.n_iters}")
-    print(f"   Terminal weight β: {cfg.beta_terminal}")
-    print(f"   Particle: a={cfg.particle_a*1e6:.0f}µm")
+        # Don't override K - user may want to test longer horizons
     
     # Build operator
-    print("\n1. Building Helmholtz operator...")
     op = build_helmholtz_2d_forced_25d_operator(
         Lx=cfg.Lx, Ly=cfg.Ly, Nx=cfg.Nx, Ny=cfg.Ny,
         f=cfg.f, c0=cfg.c0, rho0=cfg.rho0,
@@ -569,6 +779,37 @@ def main():
     y0 = cfg.Ly * cfg.y0_frac
     v_init = 0.05
     phi_init = 0.0
+    
+    # === GRADIENT CHECK MODE ===
+    if args.gradcheck_trajectory:
+        gradcheck_results = run_gradcheck_trajectory(cfg, op, particle, x0, y0, v_init, phi_init)
+        
+        # Save results
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        results_dir = project_root / "results" / "adjoint_steer_kstep" / f"gradcheck_{timestamp}"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        
+        with open(results_dir / "gradcheck_results.json", 'w') as f:
+            json.dump(gradcheck_results, f, indent=2, default=float)
+        
+        print(f"\n   Results saved to: {results_dir}")
+        return 0 if gradcheck_results['all_passed'] else 1
+    
+    # === NORMAL OPTIMIZATION MODE ===
+    print("=" * 80)
+    print("K-STEP LOOKAHEAD TRAJECTORY OPTIMIZER")
+    print("=" * 80)
+    print(f"\nConfiguration:")
+    print(f"   Grid: {cfg.Nx}×{cfg.Ny}")
+    print(f"   Horizon K: {cfg.K} steps")
+    print(f"   Time step dt: {cfg.dt*1e3:.1f} ms")
+    print(f"   Optimization iterations: {cfg.n_iters}")
+    print(f"   Terminal weight β: {cfg.beta_terminal}")
+    print(f"   Particle: a={cfg.particle_a*1e6:.0f}µm")
+    print(f"   Gradient method: {'Discrete-time adjoint' if cfg.use_discrete_adjoint else 'Legacy FD'}")
+    
+    print(f"\n1. Building Helmholtz operator...")
+    print(f"   (already built)")
     
     print(f"\n2. Initial state:")
     print(f"   Particle: ({x0*1e3:.3f}, {y0*1e3:.3f}) mm")
@@ -686,11 +927,13 @@ def main():
             'Nx': cfg.Nx, 'Ny': cfg.Ny, 'K': cfg.K, 'dt': cfg.dt,
             'n_iters': cfg.n_iters, 'beta_terminal': cfg.beta_terminal,
             'particle_a': cfg.particle_a,
+            'use_discrete_adjoint': cfg.use_discrete_adjoint,
         },
         'initial_state': {'x0': x0, 'y0': y0, 'v_init': v_init, 'phi_init': phi_init},
         'results': {
             method: {
                 'J_total': data['J_total'],
+                'J_total_abs': abs(data['J_total']),  # absolute value for clarity
                 'final_position': list(data['positions'][-1]),
             }
             for method, data in results.items()
