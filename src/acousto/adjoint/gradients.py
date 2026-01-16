@@ -349,5 +349,169 @@ def adjoint_gradient_vectorized(
     grads = np.array([2.0 * np.real(np.dot(lam, db_du)) for db_du in db_du_list])
     
     return grads
+
+
+def compute_dJdp_gorkov_potential(
+    ix: int,
+    iy: int,
+    Nx: int,
+    Ny: int,
+    dx: float,
+    dy: float,
+    p: np.ndarray,
+    omega: float,
+    rho0: float,
+    c0: float,
+    particle_a: float,
+    particle_rho_p: float,
+    particle_c_p: float,
+) -> np.ndarray:
+    """
+    Compute ∂J/∂p where J = U(x_p, y_p), the Gor'kov potential at grid point (ix, iy).
     
-    return grads
+    The Gor'kov potential is:
+        U = V * (f1 * E_pot - 1.5 * f2 * E_kin)
+    
+    where:
+        E_pot = 0.25 * κ0 * |p|²
+        E_kin = 0.25 * ρ0 * |v|² = 0.25 * |∇p|² / (ω² ρ0)
+    
+    The derivative ∂U/∂p involves:
+        1. ∂E_pot/∂p = 0.25 * κ0 * conj(p)  at the particle point
+        2. ∂E_kin/∂p involves the gradient stencil (neighbors contribute)
+    
+    For np.gradient with edge_order=2, the stencil at interior points is central difference:
+        ∂p/∂x ≈ (p[i+1] - p[i-1]) / (2*dx)
+    
+    So |∇p|² = |∂p/∂x|² + |∂p/∂y|², and we need to differentiate this w.r.t. each p[j,i].
+    
+    Parameters
+    ----------
+    ix, iy : int
+        Grid indices of the particle position.
+    Nx, Ny : int  
+        Grid dimensions.
+    dx, dy : float
+        Grid spacing.
+    p : np.ndarray, shape (Ny, Nx)
+        Complex pressure field.
+    omega : float
+        Angular frequency.
+    rho0 : float
+        Fluid density.
+    c0 : float
+        Fluid sound speed.
+    particle_a, particle_rho_p, particle_c_p : float
+        Particle radius, density, and sound speed.
+        
+    Returns
+    -------
+    dJ_dp : np.ndarray, shape (Nx * Ny,)
+        Gradient ∂U/∂p as a flattened vector.
+    """
+    # Material constants
+    kappa0 = 1.0 / (rho0 * c0**2)
+    kappap = 1.0 / (particle_rho_p * particle_c_p**2)
+    f1 = 1.0 - (kappap / kappa0)
+    f2 = 2.0 * (particle_rho_p - rho0) / (2.0 * particle_rho_p + rho0)
+    V = (4.0 / 3.0) * np.pi * (particle_a ** 3)
+    
+    # Prefactors
+    # E_pot = 0.25 * kappa0 * |p|²  =>  ∂E_pot/∂p = 0.25 * kappa0 * conj(p)
+    # E_kin = 0.25 * rho0 * |v|² where v = ∇p / (i*ω*ρ0)
+    #       = 0.25 * rho0 * |∇p|² / (ω² * ρ0²)
+    #       = 0.25 * |∇p|² / (ω² * ρ0)
+    # So ∂E_kin/∂p requires differentiating |∇p|² w.r.t. p
+    
+    coef_pot = V * f1 * 0.25 * kappa0
+    coef_kin = V * (-1.5) * f2 * 0.25 / (omega**2 * rho0)
+    
+    # Initialize gradient vector
+    dJ_dp = np.zeros(Nx * Ny, dtype=np.complex128)
+    
+    def idx(j: int, i: int) -> int:
+        return j * Nx + i
+    
+    # --- Contribution from E_pot term ---
+    # ∂(|p|²)/∂p at (iy, ix) = conj(p[iy, ix])
+    dJ_dp[idx(iy, ix)] += coef_pot * np.conj(p[iy, ix])
+    
+    # --- Contribution from E_kin term ---
+    # |∇p|² = |∂p/∂x|² + |∂p/∂y|²
+    #
+    # Using central differences at interior points:
+    #   ∂p/∂x at (iy, ix) ≈ (p[iy, ix+1] - p[iy, ix-1]) / (2*dx)
+    #   ∂p/∂y at (iy, ix) ≈ (p[iy+1, ix] - p[iy-1, ix]) / (2*dy)
+    #
+    # Let gx = ∂p/∂x, gy = ∂p/∂y at the particle point
+    # |∇p|² = gx * conj(gx) + gy * conj(gy)
+    #
+    # The Wirtinger derivative ∂(|g|²)/∂p_k = conj(g) * (∂g/∂p_k)
+    # where ∂gx/∂p_k depends on the stencil
+    
+    # Compute gradients at particle point using central differences
+    # (matching np.gradient behavior at interior points)
+    if 1 <= ix <= Nx - 2:
+        gx = (p[iy, ix + 1] - p[iy, ix - 1]) / (2.0 * dx)
+        dgx_dp_ip1 = 1.0 / (2.0 * dx)   # ∂gx/∂p[iy, ix+1]
+        dgx_dp_im1 = -1.0 / (2.0 * dx)  # ∂gx/∂p[iy, ix-1]
+    elif ix == 0:
+        # Forward difference at left boundary
+        gx = (p[iy, ix + 1] - p[iy, ix]) / dx
+        dgx_dp_ip1 = 1.0 / dx
+        dgx_dp_i = -1.0 / dx
+        dgx_dp_im1 = 0.0
+    else:  # ix == Nx - 1
+        # Backward difference at right boundary
+        gx = (p[iy, ix] - p[iy, ix - 1]) / dx
+        dgx_dp_i = 1.0 / dx
+        dgx_dp_im1 = -1.0 / dx
+        dgx_dp_ip1 = 0.0
+    
+    if 1 <= iy <= Ny - 2:
+        gy = (p[iy + 1, ix] - p[iy - 1, ix]) / (2.0 * dy)
+        dgy_dp_jp1 = 1.0 / (2.0 * dy)   # ∂gy/∂p[iy+1, ix]
+        dgy_dp_jm1 = -1.0 / (2.0 * dy)  # ∂gy/∂p[iy-1, ix]
+    elif iy == 0:
+        # Forward difference at bottom boundary
+        gy = (p[iy + 1, ix] - p[iy, ix]) / dy
+        dgy_dp_jp1 = 1.0 / dy
+        dgy_dp_j = -1.0 / dy
+        dgy_dp_jm1 = 0.0
+    else:  # iy == Ny - 1
+        # Backward difference at top boundary
+        gy = (p[iy, ix] - p[iy - 1, ix]) / dy
+        dgy_dp_j = 1.0 / dy
+        dgy_dp_jm1 = -1.0 / dy
+        dgy_dp_jp1 = 0.0
+    
+    # ∂(|gx|²)/∂p_k = conj(gx) * ∂gx/∂p_k
+    # ∂(|gy|²)/∂p_k = conj(gy) * ∂gy/∂p_k
+    gx_conj = np.conj(gx)
+    gy_conj = np.conj(gy)
+    
+    # Add contributions from x-gradient stencil
+    if 1 <= ix <= Nx - 2:
+        # Interior: central difference
+        dJ_dp[idx(iy, ix + 1)] += coef_kin * gx_conj * dgx_dp_ip1
+        dJ_dp[idx(iy, ix - 1)] += coef_kin * gx_conj * dgx_dp_im1
+    elif ix == 0:
+        dJ_dp[idx(iy, ix + 1)] += coef_kin * gx_conj * dgx_dp_ip1
+        dJ_dp[idx(iy, ix)] += coef_kin * gx_conj * dgx_dp_i
+    else:  # ix == Nx - 1
+        dJ_dp[idx(iy, ix)] += coef_kin * gx_conj * dgx_dp_i
+        dJ_dp[idx(iy, ix - 1)] += coef_kin * gx_conj * dgx_dp_im1
+    
+    # Add contributions from y-gradient stencil
+    if 1 <= iy <= Ny - 2:
+        # Interior: central difference
+        dJ_dp[idx(iy + 1, ix)] += coef_kin * gy_conj * dgy_dp_jp1
+        dJ_dp[idx(iy - 1, ix)] += coef_kin * gy_conj * dgy_dp_jm1
+    elif iy == 0:
+        dJ_dp[idx(iy + 1, ix)] += coef_kin * gy_conj * dgy_dp_jp1
+        dJ_dp[idx(iy, ix)] += coef_kin * gy_conj * dgy_dp_j
+    else:  # iy == Ny - 1
+        dJ_dp[idx(iy, ix)] += coef_kin * gy_conj * dgy_dp_j
+        dJ_dp[idx(iy - 1, ix)] += coef_kin * gy_conj * dgy_dp_jm1
+    
+    return dJ_dp
