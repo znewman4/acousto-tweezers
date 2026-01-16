@@ -39,6 +39,23 @@ from .evaluator_3pucks import (
     Evaluator3Pucks,
 )
 
+# 4-Puck extension with gating
+from .pucks_4 import (
+    Control4Pucks,
+    ControlBounds4Pucks,
+    ControlRateLimits4Pucks,
+    ControlVector4Pucks,
+    control_to_forcing_band_vb_4pucks,
+    default_4puck_config,
+    default_4puck_spread,
+    default_4puck_with_d_off,
+)
+
+from .evaluator_4pucks import (
+    EvaluatorConfig4Pucks,
+    Evaluator4Pucks,
+)
+
 # Smooth MPC controller
 from .smooth_controller import (
     SmoothMPCConfig,
@@ -82,6 +99,17 @@ __all__ = [
     "default_3puck_spread",
     "EvaluatorConfig3Pucks",
     "Evaluator3Pucks",
+    # 4-Puck extension with gating
+    "Control4Pucks",
+    "ControlBounds4Pucks",
+    "ControlRateLimits4Pucks",
+    "ControlVector4Pucks",
+    "control_to_forcing_band_vb_4pucks",
+    "default_4puck_config",
+    "default_4puck_spread",
+    "default_4puck_with_d_off",
+    "EvaluatorConfig4Pucks",
+    "Evaluator4Pucks",
     # Smooth MPC
     "SmoothMPCConfig",
     "ControlHistory",

@@ -28,6 +28,30 @@ class Helmholtz25DOperator:
     b0: np.ndarray
     # row indices for bottom boundary (j=0, i=0..Nx-1) to allow fast Neumann updates
     bottom_rows: np.ndarray
+    
+    # Sparse system matrix A (csc format) for adjoint computations
+    A_csc: Optional[sp.csc_matrix] = None
+    # Factorized A^T for adjoint solve (lazily computed)
+    _adjoint_solve: Optional[Callable[[np.ndarray], np.ndarray]] = None
+    
+    def get_adjoint_solve(self) -> Callable[[np.ndarray], np.ndarray]:
+        """Return factorized solver for A^T λ = rhs (adjoint solve).
+        
+        Note: We use A^T (transpose) not A^H (conjugate transpose) because 
+        the gradient formula for real objectives is:
+            dJ/du = 2 Re(λ^T ∂b/∂u) where A^T λ = ∂J/∂p
+        """
+        if self._adjoint_solve is None:
+            if self.A_csc is None:
+                raise ValueError("A_csc not stored; rebuild operator with store_matrix=True")
+            # A^T = transpose (NOT conjugate transpose)
+            A_T = self.A_csc.T.tocsc()
+            object.__setattr__(self, '_adjoint_solve', spla.factorized(A_T))
+        return self._adjoint_solve
+    
+    def adjoint_solve(self, rhs: np.ndarray) -> np.ndarray:
+        """Solve A^T λ = rhs for adjoint gradient computation."""
+        return self.get_adjoint_solve()(rhs)
 
     def solve_for_vb(self, vb_xy: np.ndarray) -> Field2D:
         # vb_xy shape (Ny, Nx), complex
@@ -280,6 +304,7 @@ def build_helmholtz_2d_forced_25d_operator(
         solve=solve,
         b0=b0,
         bottom_rows=np.array([idx(0, i) for i in range(Nx)], dtype=np.int64),
+        A_csc=A_csc,  # store for adjoint computations
     )
         
 

@@ -556,6 +556,9 @@ class BayesSurfStep(GreedySurfStep):
     chosen_action_mu: float = 0.0
     chosen_action_sigma: float = 0.0
     chosen_action_ucb: float = 0.0
+    # Robustness mechanism tracking
+    robustness_mode: str = "none"  # "none", "diversity", "rewarmup"
+    consecutive_same_action: int = 0
 
 
 class BayesGreedySurfController:
@@ -570,7 +573,21 @@ class BayesGreedySurfController:
        c. Evaluate only those K actions with PDE solves
        d. Pick best action by true score among evaluated candidates
     3. Update surrogate models with new observations
+    
+    Robustness mechanisms:
+    - Forced diversity: Cannot pick same action > max_repeat times unless score improves
+    - Stuck-triggered re-warmup: Temporarily revert to greedy when progress stalls
+    - High-authority inclusion: Always include at least one field-shaping action
     """
+    
+    # Define high-authority "field-shaping" actions that should always be considered
+    HIGH_AUTHORITY_ACTIONS = {
+        MacroActionType3Puck.ROTATE_INTERFERENCE_CW,
+        MacroActionType3Puck.ROTATE_INTERFERENCE_CCW,
+        MacroActionType3Puck.MOVE_B_LEFT,
+        MacroActionType3Puck.MOVE_C_DOWN,
+        MacroActionType3Puck.TRANSLATE_TRAP_X_POS,
+    }
     
     def __init__(
         self,
@@ -581,12 +598,16 @@ class BayesGreedySurfController:
         bayes_kappa: float = 1.0,
         bayes_warmup_steps: int = 10,
         n_estimators: int = 20,
+        max_repeat: int = 5,
+        stuck_rewarmup_steps: int = 5,
     ):
         self.ev = evaluator
         self.config = config
         self.bayes_k = bayes_k
         self.bayes_kappa = bayes_kappa
         self.bayes_warmup_steps = bayes_warmup_steps
+        self.max_repeat = max_repeat
+        self.stuck_rewarmup_steps = stuck_rewarmup_steps
         
         # Default action set (same as greedy)
         if action_set is None:
@@ -611,6 +632,18 @@ class BayesGreedySurfController:
         self.prev_action: MacroActionType3Puck | None = None
         self.prev_action_id: int = 0
         self.step_count: int = 0
+        
+        # Robustness state
+        self.consecutive_same_action: int = 0
+        self.last_best_score: float = -np.inf
+        self.rewarmup_steps_remaining: int = 0
+        self.diversity_trigger_count: int = 0
+        self.rewarmup_trigger_count: int = 0
+        
+        # Identify high-authority actions in the current action set
+        self.high_authority_in_set = [
+            a for a in action_set if a in self.HIGH_AUTHORITY_ACTIONS
+        ]
         
         # Surrogate models
         self.surrogate = BayesSurrogate(
@@ -754,12 +787,22 @@ class BayesGreedySurfController:
             self.prev_action_id,
         )
         
+        # === Robustness: Check for stuck-triggered re-warmup ===
+        in_rewarmup = (self.rewarmup_steps_remaining > 0)
+        if in_rewarmup:
+            self.rewarmup_steps_remaining -= 1
+        
         # Determine which actions to evaluate
         in_warmup = (self.step_count <= self.bayes_warmup_steps)
         
-        if in_warmup:
-            # Warmup: evaluate all actions
+        # Track whether robustness mechanism triggered this step
+        robustness_mode = "none"
+        
+        if in_warmup or in_rewarmup:
+            # Warmup or re-warmup: evaluate all actions
             actions_to_eval = list(self.action_types)
+            if in_rewarmup:
+                robustness_mode = "rewarmup"
         else:
             # Bayes mode: use UCB to select candidates
             ucb_scores = self.surrogate.get_ucb_scores(features, kappa=self.bayes_kappa)
@@ -774,9 +817,18 @@ class BayesGreedySurfController:
             # Build candidate set: always include prev_action + top (K-1) by UCB
             actions_to_eval = []
             
-            # Add previous action first (if we have one)
-            if self.prev_action is not None and self.prev_action in self.action_types:
+            # Add previous action first (if we have one and not locked by diversity)
+            # === Robustness: Forced diversity - don't include prev_action if repeated too many times ===
+            include_prev = (
+                self.prev_action is not None 
+                and self.prev_action in self.action_types
+                and self.consecutive_same_action < self.max_repeat
+            )
+            if include_prev:
                 actions_to_eval.append(self.prev_action)
+            elif self.consecutive_same_action >= self.max_repeat:
+                robustness_mode = "diversity"
+                self.diversity_trigger_count += 1
             
             # Add top UCB actions (excluding those already added)
             for action in sorted_actions:
@@ -784,6 +836,15 @@ class BayesGreedySurfController:
                     actions_to_eval.append(action)
                 if len(actions_to_eval) >= self.bayes_k:
                     break
+            
+            # === Robustness: Ensure at least one high-authority action is in candidate set ===
+            has_high_authority = any(a in self.high_authority_in_set for a in actions_to_eval)
+            if not has_high_authority and self.high_authority_in_set:
+                # Add the top-UCB high-authority action
+                for action in sorted_actions:
+                    if action in self.high_authority_in_set and action not in actions_to_eval:
+                        actions_to_eval.append(action)
+                        break
         
         # Evaluate selected actions with PDE solves
         best_score = -np.inf
@@ -837,7 +898,7 @@ class BayesGreedySurfController:
         self.best_field = best_field
         
         # Compute UCB rank of chosen action (for logging)
-        if not in_warmup:
+        if not in_warmup and not in_rewarmup:
             ucb_list = [(a.name, ucb_scores[a.name][2]) for a in self.action_types]
             ucb_list_sorted = sorted(ucb_list, key=lambda x: x[1], reverse=True)
             chosen_ucb_rank = next(
@@ -849,8 +910,22 @@ class BayesGreedySurfController:
             chosen_ucb_rank = 0
             chosen_mu, chosen_sigma, chosen_ucb = 0.0, 0.0, 0.0
         
-        # Apply best action
+        # === Robustness: Update consecutive action counter ===
         action_switched = (self.prev_action is not None and best_action_type != self.prev_action)
+        if action_switched:
+            self.consecutive_same_action = 1
+        else:
+            self.consecutive_same_action += 1
+        
+        # === Robustness: Stuck detection - trigger re-warmup if score not improving ===
+        score_improved = (best_score > self.last_best_score + 1e-10)
+        if not score_improved and self.consecutive_same_action >= self.max_repeat:
+            # Score is not improving and we're locked on same action -> trigger re-warmup
+            self.rewarmup_steps_remaining = self.stuck_rewarmup_steps
+            self.rewarmup_trigger_count += 1
+        self.last_best_score = best_score
+        
+        # Apply best action
         self.prev_action = best_action_type
         self.prev_action_id = self.action_types.index(best_action_type)
         
@@ -905,12 +980,15 @@ class BayesGreedySurfController:
             solver_time_ms=total_solver_time,
             n_actions_evaluated=len(actions_to_eval),
             # Bayes-specific fields
-            controller_mode="warmup" if in_warmup else "bayes",
+            controller_mode="rewarmup" if in_rewarmup else ("warmup" if in_warmup else "bayes"),
             n_actions_total=len(self.action_types),
             chosen_action_rank_ucb=chosen_ucb_rank,
             chosen_action_mu=chosen_mu,
             chosen_action_sigma=chosen_sigma,
             chosen_action_ucb=chosen_ucb,
+            # Robustness tracking
+            robustness_mode=robustness_mode,
+            consecutive_same_action=self.consecutive_same_action,
         )
         
         return new_ctrl, new_x, new_y, log
@@ -1300,8 +1378,8 @@ def main():
     parser.add_argument("--path", type=str, default="line", choices=["line", "circle"],
                        help="Path type")
     parser.add_argument("--action_subset", type=str, default="none",
-                       choices=["none", "small", "wide"],
-                       help="Action subset: none=full 13, small=8 core, wide=15 with larger steps")
+                       choices=["none", "small", "wide", "pruned", "pruned_progress"],
+                       help="Action subset: none=full 13, small=8, wide=15, pruned=10, pruned_progress=12")
     parser.add_argument("--coarse", action="store_true", help="Use coarse grid")
     parser.add_argument("--render_stride", type=int, default=None,
                        help="Render every N steps (default: 3 if --fast, else 2)")
@@ -1374,6 +1452,12 @@ def main():
     parser.add_argument("--bayes_model", type=str, default="rf",
                        choices=["rf", "gp"],
                        help="Surrogate model type (rf=RandomForest, gp=GaussianProcess)")
+    
+    # Bayesian robustness parameters
+    parser.add_argument("--bayes_max_repeat", type=int, default=5,
+                       help="Max consecutive steps with same action before forcing diversity")
+    parser.add_argument("--bayes_stuck_rewarmup_steps", type=int, default=5,
+                       help="Steps of full evaluation when stuck detected")
     
     args = parser.parse_args()
     
@@ -1473,6 +1557,43 @@ def main():
             MacroActionType3Puck.PHASE_SHIFT_B_POS,
             MacroActionType3Puck.PHASE_SHIFT_B_NEG,
         ]
+    elif args.action_subset == "pruned":
+        # High-authority action set based on control authority diagnostic (10 actions)
+        # Removed: TRANSLATE_TRAP_Y_*, MOVE_B_RIGHT, MOVE_A_LEFT, PHASE_SHIFT_C_*
+        # Kept only actions with max_delta_force_proj > 1e-10 N
+        # This basis is well-conditioned: all actions have comparable authority
+        action_set = [
+            MacroActionType3Puck.HOLD,                     # Stability baseline
+            MacroActionType3Puck.TRANSLATE_TRAP_X_POS,     # 4.93e-10 N (strong x-control)
+            MacroActionType3Puck.TRANSLATE_TRAP_X_NEG,     # 3.54e-10 N (symmetric pair)
+            MacroActionType3Puck.ROTATE_INTERFERENCE_CW,   # 6.28e-10 N (strongest rotation)
+            MacroActionType3Puck.ROTATE_INTERFERENCE_CCW,  # 4.99e-10 N (symmetric pair)
+            MacroActionType3Puck.MOVE_B_LEFT,              # 6.65e-10 N (strongest individual)
+            MacroActionType3Puck.MOVE_C_DOWN,              # 5.81e-10 N (y-authority via C)
+            MacroActionType3Puck.MOVE_C_UP,                # 3.12e-10 N (symmetric C pair)
+            MacroActionType3Puck.PHASE_SHIFT_B_POS,        # 2.85e-10 N (phase control)
+            MacroActionType3Puck.PHASE_SHIFT_B_NEG,        # 3.14e-10 N (symmetric pair)
+        ]
+    elif args.action_subset == "pruned_progress":
+        # Extended high-authority set for circle trajectory progress (12 actions)
+        # Adds TRANSLATE_TRAP_Y_* and NARROW for better tangential control
+        # Based on 4-puck diagnostic: TOGGLE_B_OFF and MOVE_B_LEFT are highest authority
+        # but toggling is too disruptive for continuous tracking.
+        # This set balances tracking accuracy with tangential progress capability.
+        action_set = [
+            MacroActionType3Puck.HOLD,                     # Stability baseline
+            MacroActionType3Puck.TRANSLATE_TRAP_X_POS,     # Strong x-control
+            MacroActionType3Puck.TRANSLATE_TRAP_X_NEG,     # Symmetric pair
+            MacroActionType3Puck.TRANSLATE_TRAP_Y_POS,     # Y-control for tangential progress
+            MacroActionType3Puck.TRANSLATE_TRAP_Y_NEG,     # Symmetric pair
+            MacroActionType3Puck.ROTATE_INTERFERENCE_CW,   # Strongest rotation
+            MacroActionType3Puck.ROTATE_INTERFERENCE_CCW,  # Symmetric pair
+            MacroActionType3Puck.MOVE_B_LEFT,              # Highest authority individual move
+            MacroActionType3Puck.NARROW,                   # ~4.2e-10 N (helps with trap shaping)
+            MacroActionType3Puck.MOVE_C_DOWN,              # Y-authority via C position
+            MacroActionType3Puck.PHASE_SHIFT_B_POS,        # Phase control
+            MacroActionType3Puck.PHASE_SHIFT_B_NEG,        # Symmetric pair
+        ]
     # else action_set = None -> uses default 13-action set
     
     # Instantiate controller based on selection
@@ -1482,6 +1603,8 @@ def main():
             bayes_k=args.bayes_k,
             bayes_kappa=args.bayes_kappa,
             bayes_warmup_steps=args.bayes_warmup_steps,
+            max_repeat=args.bayes_max_repeat,
+            stuck_rewarmup_steps=args.bayes_stuck_rewarmup_steps,
         )
         controller_mode = "bayes"
     else:
@@ -1499,6 +1622,8 @@ def main():
         print(f"  Bayes K: {args.bayes_k}")
         print(f"  Bayes kappa: {args.bayes_kappa}")
         print(f"  Bayes warmup: {args.bayes_warmup_steps} steps")
+        print(f"  Bayes max_repeat: {args.bayes_max_repeat}")
+        print(f"  Bayes stuck_rewarmup: {args.bayes_stuck_rewarmup_steps} steps")
     for a in controller.action_types:
         print(f"    - {a.name}")
     
