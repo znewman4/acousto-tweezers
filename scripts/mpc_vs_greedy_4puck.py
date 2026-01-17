@@ -863,6 +863,7 @@ def create_gorkov_gif(
     out_path: Path,
     logs: List[StepLog],
     U_fields: List[np.ndarray],
+    controls: List[Control4Pucks],
     ev: Evaluator4Pucks,
     cfg: Config,
     method: str,
@@ -875,6 +876,7 @@ def create_gorkov_gif(
         out_path: Output path for GIF
         logs: Step logs
         U_fields: Gor'kov potential fields for each step
+        controls: Control states for each step (for transducer visualization)
         ev: Evaluator
         cfg: Config
         method: Method name for title
@@ -960,7 +962,22 @@ def create_gorkov_gif(
                 color = (1-alpha_val) * np.array([0.5, 0.5, 0.5]) + alpha_val * np.array([0, 1, 1])
                 ax.plot(tx[i:i+2], ty[i:i+2], linewidth=2, color=color, alpha=0.9)
         
-        # Current position
+        # Transducers (pucks) with gate visualization
+        ctrl = controls[t]
+        transducer_info = [
+            ('A', 'blue', ctrl.xA, ctrl.yA, ctrl.gateA),
+            ('B', 'green', ctrl.xB, ctrl.yB, ctrl.gateB),
+            ('C', 'orange', ctrl.xC, ctrl.yC, ctrl.gateC),
+            ('D', 'purple', ctrl.xD, ctrl.yD, ctrl.gateD),
+        ]
+        for name, puck_color, px, py, gate in transducer_info:
+            marker = 'o' if gate else 'x'
+            alpha_val = 1.0 if gate else 0.3
+            ax.scatter(px * 1e3, py * 1e3, s=120, c=puck_color, marker=marker,
+                       edgecolors='white' if gate else 'gray', linewidths=1.5,
+                       alpha=alpha_val, zorder=90)
+        
+        # Current position (particle)
         ax.scatter(log.particle_x * 1e3, log.particle_y * 1e3, s=250, marker='o',
                    color='red', edgecolors='white', linewidth=2, zorder=100)
         
@@ -981,8 +998,17 @@ def create_gorkov_gif(
         ax.set_aspect('equal')
         ax.grid(True, alpha=0.2)
         
+        # Add legend for transducers
+        legend_elements = [
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=8, label='A'),
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=8, label='B'),
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=8, label='C'),
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='purple', markersize=8, label='D'),
+        ]
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=8)
+        
         title = f"{method}: Step {t}/{n_total-1}\n"
-        title += f"|F|={log.Fp_mag:.2e}N, err={log.tracking_error*1e6:.1f}µm, WP={log.target_idx}"
+        title += f"|F|={log.Fp_mag:.2e}N, err={log.tracking_error*1e6:.1f}µm, WP={log.target_idx}, Gates={log.gates_active}"
         ax.set_title(title)
         
         fig.tight_layout()
@@ -1194,8 +1220,8 @@ def main():
         save_summary_json(out_dir / "greedy" / "summary.json", greedy_summary, cfg)
         
         print("   Creating Greedy GIF...")
-        create_gorkov_gif(out_dir / "greedy" / "gorkov.gif", greedy_logs, greedy_U, ev, cfg, "GREEDY",
-                          max_frames=100, frame_duration=0.1)
+        create_gorkov_gif(out_dir / "greedy" / "gorkov.gif", greedy_logs, greedy_U, greedy_ctrls,
+                          ev, cfg, "GREEDY", max_frames=100, frame_duration=0.1)
     
     # Run MPC
     if not args.greedy_only:
@@ -1212,8 +1238,8 @@ def main():
         
         print("   Creating MPC GIF...")
         # MPC uses 150 frames with slower duration so particle appears to move at similar speed to Greedy
-        create_gorkov_gif(out_dir / "mpc" / "gorkov.gif", mpc_logs, mpc_U, ev, cfg, "MPC",
-                          max_frames=150, frame_duration=0.15)
+        create_gorkov_gif(out_dir / "mpc" / "gorkov.gif", mpc_logs, mpc_U, mpc_ctrls,
+                          ev, cfg, "MPC", max_frames=150, frame_duration=0.15)
     
     # Comparison
     if greedy_logs and mpc_logs:
