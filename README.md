@@ -82,7 +82,14 @@ Each script creates a timestamped folder in `results/` containing:
 - Circle-tracking objective: radial error + tangent progress + trap stability
 - Outperforms greedy on trajectory optimisation
 
-**3. Bayesian Acceleration Layer** (in `demo_surf_greedy.py`)
+**3. Adjoint MPC Controller** (`scripts/adjoint_circle_track_mpc.py`, `scripts/adjoint_path_track_mpc_compare.py`)
+- Receding-horizon model predictive control with gradient-based optimisation
+- Two-level adjoint: PDE-level (∂U/∂u) + trajectory-level (backprop through dynamics)
+- Supports arbitrary path tracking, not just circles
+- Control smoothness penalties for physically realisable signals
+- Comparison scripts: `mpc_vs_greedy_4puck.py`, `path_tracking_comparison.py`
+
+**4. Bayesian Acceleration Layer** (in `demo_surf_greedy.py`)
 - Surrogate model predicts action quality
 - UCB acquisition selects subset for PDE evaluation
 - Reduces compute while maintaining accuracy
@@ -109,8 +116,16 @@ The adjoint module (`src/acousto/adjoint/`) provides exact gradients for control
 
 Key scripts:
 ```bash
+# MPC Controllers (recommended)
+python scripts/adjoint_circle_track_mpc.py            # MPC circle tracking
+python scripts/adjoint_path_track_mpc_compare.py      # MPC path tracking
+python scripts/mpc_vs_greedy_4puck.py                 # MPC vs greedy comparison
+
+# K-step optimisation (simpler, no receding horizon)
 python scripts/adjoint_steer_kstep.py --fast          # K-step U minimisation
 python scripts/adjoint_circle_track_kstep.py --fast   # Circle tracking
+
+# Verification
 python scripts/adjoint_gradcheck.py                   # Gradient verification
 ```
 
@@ -118,14 +133,20 @@ python scripts/adjoint_gradcheck.py                   # Gradient verification
 
 ## Next Steps
 
+### Completed ✅
+- **Adjoint MPC:** Receding-horizon optimisation with exact gradients — working
+- **Path tracking:** Arbitrary parametric paths, not just circles — working
+- **MPC vs Greedy comparisons:** Benchmarking scripts with quantitative metrics
+
 ### Immediate Goals
-- Reliable, visually compelling circle-tracking demos
-- Parameter tuning for consistent good runs
-- Documentation of working configurations
+- **Multi-particle adjoint MPC:** Extend to N particles with shared control
+- **Collision avoidance:** Inter-particle proximity constraints
+- **Warm-starting:** Shift and reuse solutions for faster MPC solves
 
 ### Future Direction
-- **Adjoint MPC:** Optimise over rolling horizon with constraints
+- **Learned value functions:** Replace long horizons with short horizon + terminal V(x)
 - **Learned surrogates:** Accelerate PDE solves for real-time control
+- **Second-order methods:** L-BFGS or Gauss-Newton for faster convergence
 - **Experimental validation:** Close the loop with real hardware
 
 ---
