@@ -1,0 +1,39 @@
+{
+  "config": {
+    "T": 300,
+    "K": 3,
+    "n_top_actions": 5,
+    "Nx": 80,
+    "Ny": 80,
+    "alpha_g": 2000.0,
+    "dt": 0.005,
+    "n_waypoints": 400,
+    "circle_R_mm": 0.4,
+    "v_parallel": 1.0,
+    "k_perp": 3.0,
+    "k_radial_waypoint": 2.0
+  },
+  "summary": {
+    "method": "greedy",
+    "mode": "pathtrack",
+    "n_steps": 300,
+    "final_waypoint": 22,
+    "n_waypoints": 400,
+    "waypoint_completion": 0.055,
+    "total_distance_mm": 4.744416055932628,
+    "arc_progress_mm": 1.7956677169731219,
+    "circle_fraction": 0.7144734832670271,
+    "mean_cross_track_error_um": 44.99515758322048,
+    "max_cross_track_error_um": 170.30856379265083,
+    "std_cross_track_error_um": 45.47341106885408,
+    "mean_tracking_error_um": 594.1959907472929,
+    "max_tracking_error_um": 912.4285545354245,
+    "mean_force_N": 1.086019162678239e-09,
+    "max_force_N": 2.0411019690377164e-08,
+    "mean_tangent_alignment": 0.18762882213090523,
+    "mean_solver_time_ms": 56.70954942703247,
+    "total_runtime_s": 17.01286482810974,
+    "n_action_switches": 67,
+    "switch_rate": 0.22333333333333333
+  }
+}
