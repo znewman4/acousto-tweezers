@@ -9,7 +9,7 @@ params = SimulationParameters(
     frequency=2e6,           # 2 MHz
     dish_radius=17.5e-3,     # 17.5 mm
     water_depth=2.0e-3,      # 2 mm
-    grid_resolution=200e-6,  # 200 μm (coarse for speed)
+    grid_resolution=1.0e-3,  # 1 mm (very coarse for fast testing)
     temperature=25.0,
 )
 
@@ -30,7 +30,7 @@ print("="*60)
 # Print summary
 import numpy as np
 
-p_max = np.max(np.abs(results.acoustic_field.pressure))
+p_max = np.max(np.abs(results.acoustic_field.p))
 print(f"Max pressure:     {p_max:.2e} Pa ({20*np.log10(p_max/20e-6):.1f} dB SPL)")
 
 if results.gorkov_potential is not None:
@@ -39,9 +39,9 @@ if results.gorkov_potential is not None:
 
 if results.streaming_field is not None:
     v_max = np.sqrt(
-        results.streaming_field.vx**2 +
-        results.streaming_field.vy**2 +
-        results.streaming_field.vz**2
+        results.streaming_field.ux**2 +
+        results.streaming_field.uy**2 +
+        results.streaming_field.uz**2
     ).max()
     print(f"Max streaming:    {v_max*1e6:.2f} μm/s")
 

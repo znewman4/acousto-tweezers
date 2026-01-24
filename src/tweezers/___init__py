@@ -1,3 +1,13 @@
-"""High-level project modules (actuation, control, visualisation)."""
+"""
+Acousto-Tweezers: FEM-based multiphysics acoustic trapping simulator.
 
-__all__: list[str] = []
+Main entry points:
+- tweezers.fem: FEM multiphysics simulation modules
+- tweezers.actuation: Transducer array control
+- tweezers.control: MPC and trajectory planning
+- tweezers.viz: Visualization utilities
+"""
+
+from tweezers import fem
+
+__all__ = ["fem"]

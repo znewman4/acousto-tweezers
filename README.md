@@ -145,43 +145,80 @@ python scripts/adjoint_gradcheck.py                   # Gradient verification
 
 ---
 
-## 3D Multiphysics Simulator (NEW)
+## FEM Multiphysics Simulator (January 2026 - NEW)
 
-A complete multiphysics module for physically realistic 3D acoustic trapping:
+A complete rewrite using **Finite Element Method (FEM)** for research-grade accuracy:
 
 ```python
-from tweezers.physics import MultiphysicsSolver, SimulationParameters
+from tweezers.fem import FEMConfig, PhysicsLevel, FEMMultiphysicsSolver
 
-params = SimulationParameters(
-    frequency=2.0e6,          # 2 MHz
-    dish_radius=17.5e-3,      # 35 mm diameter petri dish
-    water_depth=2.0e-3,       # 2 mm water layer
-    grid_resolution=50e-6,    # 50 μm resolution
-)
+# Configure simulation
+config = FEMConfig.default()
+config.physics_level = PhysicsLevel.PARTICLES  # Full physics ladder
+config.geometry.dish_diameter = 35e-3          # 35mm Petri dish
+config.physics.frequency = 2.0e6               # 2 MHz
 
-solver = MultiphysicsSolver(params)
-results = solver.solve(
-    solve_streaming=True,      # Compute acoustic streaming
-    compute_gorkov=True,       # Compute radiation potential
-    simulate_particles=True,   # Run particle dynamics
-)
+# Run simulation
+solver = FEMMultiphysicsSolver(config)
+result = solver.run_simulation()
+
+# Access results
+print(f"Pressure field: {result.pressure.shape}")
+print(f"Particle positions: {result.particle_positions}")
 ```
 
-**Features:**
-- **Multi-domain acoustics:** Explicit water, air, plate, wall domains
-- **PML boundaries:** Proper open boundary conditions (no fake anechoic BC)
-- **Solid mechanics:** Elastic waves in dish plate/walls with damping
-- **Fluid-solid coupling:** Proper interface conditions
-- **Acoustic streaming:** Eckart + Reynolds stress forcing
-- **Radiation force:** Full 3D Gor'kov potential
-- **Particle dynamics:** Overdamped motion with streaming
+### Physics Ladder
 
-**Run the demo:**
+```
+Level 7: PARTICLES         ← Particle dynamics with Stokes drag
+Level 6: RADIATION_FORCE   ← Gor'kov potential
+Level 5: STREAMING         ← Acoustic streaming (Eckart forcing)  
+Level 4: THERMOVISCOUS     ← Boundary layer corrections
+Level 3: PML               ← Perfectly Matched Layer (< 1% reflection)
+Level 2: SOLID_COUPLING    ← Elastic waves in dish
+Level 1: ACOUSTICS_ONLY    ← Helmholtz equation in water
+```
+
+### Domain Structure
+
+```
+                    ┌─────────────────────────────────┐
+                    │           PML_TOP               │
+     ┌──────────────┼─────────────────────────────────┼──────────────┐
+     │   PML_LEFT   │             AIR                 │  PML_RIGHT   │
+     │              ├─────────────────────────────────┤              │
+     │              │           WATER                 │              │ 
+     │              │ ┌─────────────────────────────┐ │              │
+     │              │ │          PLATE              │ │              │
+     │              ├─┴─────────────────────────────┴─┤              │
+     │              │             BATH                │              │
+     └──────────────┼─────────────────────────────────┼──────────────┘
+                    │          PML_BOTTOM             │
+                    └─────────────────────────────────┘
+```
+
+### Key Improvements over FD
+
+| Feature | Old (FD) | New (FEM) |
+|---------|----------|-----------|
+| Accuracy | O(h²) | O(h⁴) with hex8 |
+| PML boundaries | ❌ | ✅ < 1% reflection |
+| Interface conditions | Staircase | Proper weak form |
+| Multi-domain | Approximated | Tagged domains |
+| Thermoviscous | ❌ | ✅ Boundary layers |
+| Streaming | ❌ | ✅ Eckart + Reynolds |
+
+### Run the Demo
+
 ```bash
-python scripts/demo_helmholtz3d_multiphysics.py --quick
+# Entry point script
+python scripts/run_fem_multiphysics.py --physics-level 7 --frequency 2e6
+
+# Validation tests
+python scripts/validation/test_fem_modules.py
 ```
 
-See [docs/MULTIPHYSICS_README.md](docs/MULTIPHYSICS_README.md) for full documentation.
+See [docs/INDEX.md](docs/INDEX.md) for full documentation.
 
 ---
 
@@ -202,52 +239,47 @@ acousto-tweezers/
 ├── .gitignore
 │
 ├── scripts/                      # Runnable demos and experiments
+│   ├── run_fem_multiphysics.py      # ★ FEM entry point (NEW)
+│   ├── validation/                  # Module validation tests
+│   │   └── test_fem_modules.py
 │   ├── 4puck_demo_surf_greedy.py    # Main 4-puck circle demo
-│   ├── path_follow_controlled.py     # Path following demo
-│   ├── demo_helmholtz3d_multiphysics.py # 3D multiphysics demo (NEW)
 │   ├── adjoint_circle_track_kstep.py # Adjoint circle tracking
-│   ├── adjoint_steer_kstep.py        # K-step adjoint optimiser
-│   ├── adjoint_gradcheck.py          # Gradient verification
-│   ├── demo_surf_greedy.py           # Original surf controller
 │   └── ...                           # Various diagnostics/experiments
 │
 ├── src/
-│   ├── acousto/                  # Core physics library
+│   ├── acousto/                  # Core physics library (legacy)
 │   │   ├── solvers/                 # Helmholtz PDE solvers
-│   │   │   ├── fd_helmholtz_1d.py
-│   │   │   ├── fd_helmholtz_2d_forced_25d.py
-│   │   │   └── helmholtz_3d_simple.py
 │   │   ├── force/                   # Gor'kov potential & radiation force
-│   │   │   ├── gorkov_1d.py
-│   │   │   ├── gorkov_2d.py
-│   │   │   └── gorkov_3d.py
 │   │   ├── adjoint/                 # Adjoint gradient computation
-│   │   │   ├── gradients.py
-│   │   │   └── trajectory.py
 │   │   ├── analysis/                # Trap finding, stiffness
-│   │   │   └── traps_2d.py
 │   │   └── dynamics/                # Particle motion
 │   │
-│   └── tweezers/                 # Control & visualisation
-│       ├── control/                 # Controllers
+│   └── tweezers/                 # Control & FEM multiphysics
+│       ├── fem/                     # ★ FEM modules (NEW)
+│       │   ├── config.py               # Single authoritative config
+│       │   ├── domains.py              # Domain/interface types
+│       │   ├── materials.py            # MaterialDatabase
+│       │   ├── geometry.py             # Hex8 mesh generation
+│       │   ├── acoustics.py            # Helmholtz weak form
+│       │   ├── solids.py               # Elastic solid mechanics
+│       │   ├── pml.py                  # Perfectly Matched Layer
+│       │   ├── thermoviscous.py        # Boundary layer corrections
+│       │   ├── streaming.py            # Acoustic streaming
+│       │   ├── particles.py            # Gor'kov + particle dynamics
+│       │   ├── solver.py               # FEMMultiphysicsSolver
+│       │   └── diagnostics.py          # Analysis tools
+│       ├── control/                 # Controllers (MPC, greedy)
 │       ├── actuation/               # Transducer models
-│       ├── physics/                 # 3D multiphysics (NEW)
-│       │   ├── acoustics/              # Multi-domain Helmholtz + PML
-│       │   ├── solid/                  # Elastic solid mechanics
-│       │   ├── streaming/              # Acoustic streaming
-│       │   ├── particle/               # Radiation force + dynamics
-│       │   ├── solver.py               # MultiphysicsSolver
-│       │   └── visualization.py        # Plotting & animation
 │       ├── viz/                     # 2D/3D rendering
-│       │   ├── render_2d.py
-│       │   └── render_3d.py
-│       └── diagnostics/             # Analysis tools
+│       ├── diagnostics/             # Analysis tools
+│       └── redundant/               # Old FD modules (deprecated)
+│
+├── docs/                         # Documentation
+│   ├── INDEX.md                     # Documentation index
+│   └── ...
 │
 └── results/                      # Output folder (mostly gitignored)
-    ├── 4puck_demo_surf_greedy/      # Committed demo results
-    │   └── run_20260116_165630/
-    └── path_follow_controlled/
-        └── path_follow_controlled.gif
+    └── ...
 ```
 
 ---

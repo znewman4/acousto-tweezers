@@ -319,7 +319,7 @@ class StokesSolver:
         
         # Use iterative solver for large systems
         if N > 50000:
-            sol, info = spla.gmres(A_csc, b, tol=1e-8, maxiter=1000)
+            sol, info = spla.gmres(A_csc, b, rtol=1e-8, maxiter=1000)
             if info != 0:
                 print(f"Warning: GMRES did not converge (info={info})")
         else:

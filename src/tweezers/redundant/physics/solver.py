@@ -115,8 +115,8 @@ class MultiphysicsResults:
     def save(self, path: Path) -> None:
         """Save results to NPZ file."""
         data = {
-            'pressure_real': self.acoustic_field.pressure.real,
-            'pressure_imag': self.acoustic_field.pressure.imag,
+            'pressure_real': self.acoustic_field.p.real,
+            'pressure_imag': self.acoustic_field.p.imag,
             'grid_x': self.geometry.grid_x,
             'grid_y': self.geometry.grid_y,
             'grid_z': self.geometry.grid_z,
@@ -175,6 +175,7 @@ class MultiphysicsSolver:
         self.geometry: Optional[MultiDomainGeometry] = None
         self.materials: Dict[str, Any] = {}
         self._grid: Optional[Grid3D] = None
+        self.acoustic_solver: Optional[MultiDomainAcousticSolver] = None
         
     def _log(self, msg: str) -> None:
         """Print progress message if verbose."""
@@ -252,6 +253,7 @@ class MultiphysicsSolver:
             materials=domain_materials,
             pml_params=pml_params,
         )
+        self.acoustic_solver = solver  # Store for later use
         
         # Frequency
         omega = 2.0 * np.pi * self.params.frequency
@@ -273,7 +275,7 @@ class MultiphysicsSolver:
         
         t_elapsed = time.time() - t_start
         self._log(f"  Acoustics solved in {t_elapsed:.2f} s")
-        self._log(f"  Max |p| = {np.max(np.abs(field.pressure)):.2e} Pa")
+        self._log(f"  Max |p| = {np.max(np.abs(field.p)):.2e} Pa")
         
         return field
     
@@ -290,16 +292,21 @@ class MultiphysicsSolver:
         omega = 2.0 * np.pi * self.params.frequency
         
         streaming_solver = StreamingSolver(
-            geometry=self.geometry,
+            x=acoustic_field.x,
+            y=acoustic_field.y,
+            z=acoustic_field.z,
             fluid=water,
+        )
+        
+        streaming = streaming_solver.compute_streaming(
+            p=acoustic_field.p,
+            rho=acoustic_field.rho,
             omega=omega,
         )
         
-        streaming = streaming_solver.compute_streaming(acoustic_field)
-        
         t_elapsed = time.time() - t_start
         self._log(f"  Streaming solved in {t_elapsed:.2f} s")
-        v_max = np.sqrt(streaming.vx**2 + streaming.vy**2 + streaming.vz**2).max()
+        v_max = np.sqrt(streaming.ux**2 + streaming.uy**2 + streaming.uz**2).max()
         self._log(f"  Max |u_stream| = {v_max:.2e} m/s")
         
         return streaming
@@ -322,7 +329,7 @@ class MultiphysicsSolver:
         
         gorkov = GorkovPotential3D(
             grid=self._grid,
-            pressure=acoustic_field.pressure,
+            pressure=acoustic_field.p,
             fluid=water,
             omega=omega,
         )
@@ -352,7 +359,7 @@ class MultiphysicsSolver:
         
         streaming_vel = None
         if streaming is not None:
-            streaming_vel = (streaming.vx, streaming.vy, streaming.vz)
+            streaming_vel = (streaming.ux, streaming.uy, streaming.uz)
         
         dynamics = ParticleDynamics3D(
             grid=self._grid,
@@ -462,13 +469,7 @@ class MultiphysicsSolver:
             computation_times['dynamics'] = time.time() - t0
         
         # Energy budget analysis
-        energy_budget = acoustic_field.energy_budget(
-            self.geometry.grid_x,
-            self.geometry.grid_y,
-            self.geometry.grid_z,
-            self.materials['water'].rho,
-            self.materials['water'].c,
-        )
+        energy_budget = self.acoustic_solver.energy_budget(acoustic_field)
         
         total_time = sum(computation_times.values())
         self._log("=" * 60)
