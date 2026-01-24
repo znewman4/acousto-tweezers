@@ -45,8 +45,7 @@ result = solver.solve()
 
 print(f"\n[RESULTS]")
 print(f"  Result type: {type(result).__name__}")
-print(f"  Status: {result.success}")
-print(f"  Message: {result.message}")
+print(f"  Timestamp: {result.timestamp}")
 
 # Print result attributes
 if hasattr(result, '__dict__'):
@@ -64,7 +63,7 @@ if hasattr(result, '__dict__'):
             print(f"    - {key}: {type(value).__name__}")
 
 # Save config to results
-output_dir = Path(result.output_dir) if result.output_dir else Path("results/fem_demo")
+output_dir = Path("results/fem_demo")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 config_dict = {

@@ -344,15 +344,15 @@ class FEMMultiphysicsSolver:
         if self._solid_solver is None:
             self._solid_solver = FEMSolidSolver(
                 mesh=self.mesh,
-                solid=self.solid,
-                frequency=self.config.physics.frequency,
+                materials=self.mat_db,
+                config=self.config,
             )
         
-        # Fluid-solid coupling: traction from pressure
+        # Fluid-solid coupling: solve with acoustic field
         if acoustic_field is not None:
-            self._solid_solver.set_pressure_load(acoustic_field.p)
-        
-        return self._solid_solver.solve()
+            return self._solid_solver.solve_coupled(acoustic_field)
+        else:
+            return DisplacementField(u=np.zeros(self.mesh.num_nodes, dtype=np.complex128))
     
     def _compute_pml_metrics(self, acoustic_field: AcousticField) -> PMLMetrics:
         """Compute PML performance metrics."""
@@ -364,8 +364,7 @@ class FEMMultiphysicsSolver:
             self._pml_handler = PMLHandler(
                 mesh=self.mesh,
                 params=pml_params,
-                frequency=self.config.physics.frequency,
-                fluid=self.fluid,
+                omega=self.config.physics.omega,
             )
         
         return self._pml_handler.compute_metrics(acoustic_field.p)
@@ -390,7 +389,8 @@ class FEMMultiphysicsSolver:
         if self._streaming_solver is None:
             self._streaming_solver = StreamingSolver(
                 mesh=self.mesh,
-                fluid=self.fluid,
+                materials=self.mat_db,
+                config=self.config,
             )
         
         return self._streaming_solver.solve(acoustic_field)
@@ -483,7 +483,12 @@ class FEMMultiphysicsSolver:
         # PML metrics
         if result.pml_metrics is not None:
             diagnostics['pml_reflection'] = result.pml_metrics.reflection_coefficient
-            diagnostics['pml_meets_target'] = result.pml_metrics.meets_target()
+            if hasattr(result.pml_metrics, 'meets_target'):
+                # Check if it's a property or method
+                if callable(result.pml_metrics.meets_target):
+                    diagnostics['pml_meets_target'] = result.pml_metrics.meets_target()
+                else:
+                    diagnostics['pml_meets_target'] = result.pml_metrics.meets_target
         
         # Trap quality
         if result.gorkov is not None:

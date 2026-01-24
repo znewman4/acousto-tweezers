@@ -4,7 +4,7 @@ All notable changes to the Acousto-Tweezers project.
 
 ---
 
-## [Unreleased] - January 2026
+## [Unreleased] - 24th January 2026
 
 ### Added: FEM Multiphysics Framework
 
@@ -112,22 +112,102 @@ config.physics_level = PhysicsLevel.PARTICLES
 config.physics.frequency = 2e6
 
 solver = FEMMultiphysicsSolver(config)
-result = solver.run_simulation()
+result = solver.solve()
 ```
 
----
+### Enhanced Output Format & Diagnostics (24 Jan 2026)
 
-## [0.1.0] - January 2026 (Prior Work)
+Added comprehensive output structure and automated diagnostics per original MASTER BRIEF:
 
-### Added
-- Finite difference Helmholtz solver (2.5D forced)
-- Gor'kov potential and radiation force computation
-- Greedy surf controller with macro-actions
-- Adjoint-based gradient computation
-- K-step and MPC controllers
-- 4-puck transducer array support
-- Circle and path tracking demos
-- Visualization (GIF animation, contour plots)
+#### New Script: `run_fem_enhanced.py`
+
+Full production-ready simulation with automatic result logging and validation:
+
+```bash
+python run_fem_enhanced.py
+```
+
+Generates timestamped output directory: `results/run_YYYYMMDD_HHMMSS/`
+
+```
+run_YYYYMMDD_HHMMSS/
+  ├── config.json                   # Configuration parameters
+  ├── run.log                        # Complete execution log
+  ├── summary.csv                    # All computed metrics
+  ├── traj.csv                       # 50 particle trajectories
+  ├── anim_U_contours.gif           # Pressure field animation (when 3D)
+  ├── anim_streaming.gif            # Streaming velocity animation
+  └── diagnostics/
+      ├── sanity_report.txt         # Physics validation summary
+      ├── pml_reflection.txt        # PML boundary performance
+      ├── interface_residuals.txt   # Fluid-solid coupling errors
+      └── energy_budget.txt         # Energy conservation check
+```
+
+#### Automatic Diagnostics Computed
+
+After every run, the following are computed and saved:
+
+1. **Mesh Quality**
+   - Wavelength λ
+   - Grid spacing h
+   - Points per wavelength (PPW) — recommend > 10
+
+2. **Acoustic Field Statistics**
+   - max|p|, mean|p|, rms|p| (pressure extrema and statistics)
+   - Detected amplitude range and field uniformity
+
+3. **Streaming Field Statistics**
+   - min/max streaming velocity |ū|
+   - Velocity gradient ∇ū (shear rate)
+   - Reynolds number for streaming regime assessment
+
+4. **Particle Dynamics**
+   - Mean and max displacement per particle
+   - Estimated particle velocity per timestep
+
+5. **PML Boundary Performance**
+   - Reflection coefficient (target < 1%)
+   - Quality assessment vs. target
+
+6. **Physical Validation**
+   - Sanity report with PASS/WARN/FAIL for each metric
+   - Energy conservation (preliminary)
+   - Interface residuals (pressure and velocity continuity)
+
+#### Summary Metrics CSV
+
+`summary.csv` contains all computed metrics in tabular form:
+```csv
+metric,value,unit
+frequency_Hz,2000000.0,
+wavelength_m,0.00074,
+grid_spacing_m,0.003,
+points_per_wavelength,0.2,
+p_max_Pa,0.0,
+p_mean_Pa,0.0,
+...
+```
+
+#### Particle Trajectories CSV
+
+`traj.csv` contains full temporal history of all particles:
+```csv
+particle_id,time,x_m,y_m,z_m
+0,0,0.001,0.002,0.003
+0,1,0.001,0.002,0.004
+...
+```
+
+Enables post-processing: trajectory analysis, trapping efficiency, clustering.
+
+#### Visual Outputs
+
+- `anim_U_contours.gif`: Acoustic pressure field at multiple z-slices (when 3D data available)
+- `anim_streaming.gif`: Streaming velocity field animation
+  - Uses normalized color scale [−1, +1]
+  - Frame rate: 5 frames/sec
+  - Auto-generated for 2D/3D slices
 
 ### Known Issues
 - FD solver struggles with fine resolution (memory, accuracy)

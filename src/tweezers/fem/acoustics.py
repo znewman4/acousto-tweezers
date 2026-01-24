@@ -283,6 +283,18 @@ class FEMAcousticSolver:
             self.c[zero_mask] = water.c
             self.K_bulk[zero_mask] = water.K_complex
     
+    def set_sources(self, sources: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Set acoustic sources (e.g., transducers).
+        
+        Parameters
+        ----------
+        sources : dict, optional
+            Source specification. Currently a placeholder for future expansion.
+            Could contain transducer positions, amplitudes, etc.
+        """
+        self.sources = sources or {}
+    
     def assemble_system(self) -> None:
         """
         Assemble global stiffness and mass matrices.
