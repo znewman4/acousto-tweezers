@@ -1,11 +1,117 @@
 import numpy as np
 from tweezers.grid.grid3d import Grid3D
 from tweezers.control.fd_helmholtz_3d import Helmholtz3DOperator
+from tweezers.physics.particle_props import contrast_factors
 
-
-import numpy as np
 
 class ExtendedField3D:
+    def trilinear_interp(self, arr3d, x, y, z):
+        """Trilinear interpolation of arr3d at (x, y, z) using grid. Clamps to domain."""
+        grid = self.grid
+        X, Y, Z = grid.x, grid.y, grid.z
+        # Clamp
+        x = np.clip(x, X[0], X[-1])
+        y = np.clip(y, Y[0], Y[-1])
+        z = np.clip(z, Z[0], Z[-1])
+        # Find indices
+        ix = np.searchsorted(X, x) - 1
+        iy = np.searchsorted(Y, y) - 1
+        iz = np.searchsorted(Z, z) - 1
+        ix = np.clip(ix, 0, len(X)-2)
+        iy = np.clip(iy, 0, len(Y)-2)
+        iz = np.clip(iz, 0, len(Z)-2)
+        # Fractions
+        xd = (x - X[ix]) / (X[ix+1] - X[ix])
+        yd = (y - Y[iy]) / (Y[iy+1] - Y[iy])
+        zd = (z - Z[iz]) / (Z[iz+1] - Z[iz])
+        # Corners
+        c000 = arr3d[ix  ,iy  ,iz  ]
+        c100 = arr3d[ix+1,iy  ,iz  ]
+        c010 = arr3d[ix  ,iy+1,iz  ]
+        c110 = arr3d[ix+1,iy+1,iz  ]
+        c001 = arr3d[ix  ,iy  ,iz+1]
+        c101 = arr3d[ix+1,iy  ,iz+1]
+        c011 = arr3d[ix  ,iy+1,iz+1]
+        c111 = arr3d[ix+1,iy+1,iz+1]
+        c00 = c000 * (1-xd) + c100 * xd
+        c01 = c001 * (1-xd) + c101 * xd
+        c10 = c010 * (1-xd) + c110 * xd
+        c11 = c011 * (1-xd) + c111 * xd
+        c0 = c00 * (1-yd) + c10 * yd
+        c1 = c01 * (1-yd) + c11 * yd
+        c = c0 * (1-zd) + c1 * zd
+        return c
+    def simulate_particle(self, pos0, n_steps=500, dt=1e-3, mu=None, fluid=None, particle=None, T_C=25.0, brownian=False, clamp=True, seed=None, verbose=True, U_field=None):
+        """
+        Simulate overdamped particle in Gor'kov force field (SI units).
+        Args:
+            pos0: Initial position (x, y, z) as array-like.
+            n_steps: Number of steps.
+            dt: Time step [s].
+            mu: Mobility [m/(N·s)]. If None, computed from stokes_mobility(fluid.eta, particle.a_m).
+            fluid: FluidProps (required if mu is None or for Brownian motion).
+            particle: ParticleProps (required if mu is None or for Brownian motion).
+            T_C: Temperature in Celsius (for Brownian, default 25C).
+            brownian: If True, add Brownian diffusion (D = kB*T/(6*pi*eta*a)).
+            clamp: If True, clamp to domain.
+            seed: RNG seed.
+            verbose: If True, print diagnostics for first 10 steps.
+            U_field: Optional, 3D array for U (for U(t) check). If None, uses self.U.
+        Returns:
+            traj: (n_steps, 3) array of positions (meters, SI units).
+        """
+        rng = np.random.default_rng(seed)
+        X, Y, Z = self.grid.x, self.grid.y, self.grid.z
+        dx = self.grid.dx
+        pos = np.array(pos0, dtype=float)
+        traj = np.zeros((n_steps, 3), dtype=float)
+        if mu is None:
+            if fluid is None or particle is None:
+                raise ValueError("Must provide fluid and particle for SI-consistent mobility.")
+            from tweezers.physics.particle_props import stokes_mobility
+            mu = stokes_mobility(fluid.eta, particle.a_m)
+        if brownian:
+            if fluid is None or particle is None:
+                raise ValueError("Must provide fluid and particle for Brownian motion.")
+            kB = 1.380649e-23  # J/K
+            T = 273.15 + T_C
+            D = kB * T / (6 * np.pi * fluid.eta * particle.a_m)
+        else:
+            D = 0.0
+        U_hist = []
+        for n in range(n_steps):
+            traj[n] = pos
+            Fx = float(self.trilinear_interp(self.Fx, *pos))
+            Fy = float(self.trilinear_interp(self.Fy, *pos))
+            Fz = float(self.trilinear_interp(self.Fz, *pos))
+            F = np.array([Fx, Fy, Fz])
+            Fmag = np.linalg.norm(F)
+            dpos_det = mu * F * dt
+            dpos_stoch = np.sqrt(2*D*dt) * rng.normal(size=3) if D > 0 else 0.0
+            dpos = dpos_det + dpos_stoch
+            pos = pos + dpos
+            if clamp:
+                pos[0] = np.clip(pos[0], X[0], X[-1])
+                pos[1] = np.clip(pos[1], Y[0], Y[-1])
+                pos[2] = np.clip(pos[2], Z[0], Z[-1])
+            # Diagnostics for first 10 steps
+            if verbose and n < 10:
+                print(f"[PARTICLE STEP {n}] |F| = {Fmag:.3e} N, |dx| = {np.linalg.norm(dpos_det):.3e} m, |dx|/dx = {np.linalg.norm(dpos_det)/dx:.3e}")
+                if D > 0:
+                    print(f"  Brownian: |dx_stoch| = {np.linalg.norm(dpos_stoch):.3e} m")
+            # U(t) sanity check
+            Uarr = U_field if U_field is not None else getattr(self, 'U', None)
+            if Uarr is not None:
+                U_here = float(self.trilinear_interp(Uarr, *pos))
+                U_hist.append(U_here)
+        # After sim: U(t) monotonicity check (if D=0)
+        if verbose and D == 0 and len(U_hist) > 1:
+            U_hist = np.array(U_hist)
+            dU = U_hist[1:] - U_hist[:-1]
+            n_increase = np.sum(dU > 1e-12 * np.max(np.abs(U_hist)))
+            if n_increase > 0:
+                print(f"[WARN] U(t) increased on {n_increase} steps (likely interpolation noise, but check for force sign errors if large)")
+        return traj
     """
     Stores 3D pressure field and metadata for Helmholtz3DSolver.
     """
@@ -192,16 +298,34 @@ class ExtendedField3D:
         v2 = np.abs(v_x)**2 + np.abs(v_y)**2 + np.abs(v_z)**2
         return v2, v_x, v_y, v_z
 
-    def compute_gorkov_potential(self, a, f1, f2):
-        """Compute Gor'kov potential U[ix,iy,iz] for given particle radius a and contrast factors f1, f2."""
+    def compute_gorkov_potential(self, fluid, particle, verbose=False):
+        """
+        Compute Gor'kov potential U[ix,iy,iz] for given FluidProps and ParticleProps (SI units).
+        Args:
+            fluid: FluidProps
+            particle: ParticleProps
+            verbose: If True, print SI diagnostics
+        Returns:
+            U: Gor'kov potential (Joules)
+        """
         p = self.p
-        rho0 = self.medium_props.rho0
-        c0 = self.medium_props.c0
+        rho0 = fluid.rho0
+        c0 = fluid.c0
+        a = particle.a_m
+        f1, f2 = contrast_factors(fluid, particle)
         v2, _, _, _ = self.compute_velocity_magnitude2()
         U = (4 * np.pi * a**3 / 3) * (
             (f1 / (2 * rho0 * c0**2)) * np.abs(p)**2 - (3 * f2 / 4) * rho0 * v2
         )
         self.U = U
+        if verbose:
+            p_rms = np.sqrt(np.mean(np.abs(p)**2))
+            print("[GORKOV SI DIAG] p_rms_est: {:.3e} Pa".format(p_rms))
+            print("[GORKOV SI DIAG] U min: {:.3e} J, max: {:.3e} J".format(np.min(U), np.max(U)))
+            F = self.compute_radiation_force()
+            Fmag = np.sqrt(np.abs(F[0])**2 + np.abs(F[1])**2 + np.abs(F[2])**2)
+            print("[GORKOV SI DIAG] |F| max: {:.3e} N, median: {:.3e} N".format(np.max(Fmag), np.median(Fmag)))
+            print("[GORKOV SI DIAG] p0_pa: {:.3e} Pa, a: {:.3e} m, eta: {:.3e} Pa·s".format(p_rms, a, fluid.eta))
         return U
 
     def compute_radiation_force(self):
@@ -251,3 +375,73 @@ class Helmholtz3DSolver:
         """
         p = self.op.solve(p_bot)
         return ExtendedField3D(p, self.grid, self.k, self.omega, self.medium_props)
+
+    def trilinear_interp(self, arr3d, x, y, z):
+        """Trilinear interpolation of arr3d at (x, y, z) using grid. Clamps to domain."""
+        grid = self.grid
+        X, Y, Z = grid.x, grid.y, grid.z
+        # Clamp
+        x = np.clip(x, X[0], X[-1])
+        y = np.clip(y, Y[0], Y[-1])
+        z = np.clip(z, Z[0], Z[-1])
+        # Find indices
+        ix = np.searchsorted(X, x) - 1
+        iy = np.searchsorted(Y, y) - 1
+        iz = np.searchsorted(Z, z) - 1
+        ix = np.clip(ix, 0, len(X)-2)
+        iy = np.clip(iy, 0, len(Y)-2)
+        iz = np.clip(iz, 0, len(Z)-2)
+        # Fractions
+        xd = (x - X[ix]) / (X[ix+1] - X[ix])
+        yd = (y - Y[iy]) / (Y[iy+1] - Y[iy])
+        zd = (z - Z[iz]) / (Z[iz+1] - Z[iz])
+        # Corners
+        c000 = arr3d[ix  ,iy  ,iz  ]
+        c100 = arr3d[ix+1,iy  ,iz  ]
+        c010 = arr3d[ix  ,iy+1,iz  ]
+        c110 = arr3d[ix+1,iy+1,iz  ]
+        c001 = arr3d[ix  ,iy  ,iz+1]
+        c101 = arr3d[ix+1,iy  ,iz+1]
+        c011 = arr3d[ix  ,iy+1,iz+1]
+        c111 = arr3d[ix+1,iy+1,iz+1]
+        c00 = c000 * (1-xd) + c100 * xd
+        c01 = c001 * (1-xd) + c101 * xd
+        c10 = c010 * (1-xd) + c110 * xd
+        c11 = c011 * (1-xd) + c111 * xd
+        c0 = c00 * (1-yd) + c10 * yd
+        c1 = c01 * (1-yd) + c11 * yd
+        c = c0 * (1-zd) + c1 * zd
+        return c
+
+    def simulate_particle(self, pos0, n_steps=500, dt=1e-5, mu=1.0, noise_strength=0.0, clamp=True, seed=None):
+        """
+        Simulate overdamped particle in Gor'kov force field.
+        Args:
+            pos0: Initial position (x, y, z) as array-like.
+            n_steps: Number of steps.
+            dt: Time step.
+            mu: Mobility (default 1.0).
+            noise_strength: Standard deviation of noise (Brownian, default 0).
+            clamp: If True, clamp to domain.
+            seed: RNG seed.
+        Returns:
+            traj: (n_steps, 3) array of positions.
+        """
+        rng = np.random.default_rng(seed)
+        X, Y, Z = self.grid.x, self.grid.y, self.grid.z
+        pos = np.array(pos0, dtype=float)
+        traj = np.zeros((n_steps, 3), dtype=float)
+        for n in range(n_steps):
+            traj[n] = pos
+            Fx = float(self.trilinear_interp(self.Fx, *pos))
+            Fy = float(self.trilinear_interp(self.Fy, *pos))
+            Fz = float(self.trilinear_interp(self.Fz, *pos))
+            dpos = mu * np.array([Fx, Fy, Fz]) * dt
+            if noise_strength > 0:
+                dpos += noise_strength * np.sqrt(dt) * rng.normal(size=3)
+            pos = pos + dpos
+            if clamp:
+                pos[0] = np.clip(pos[0], X[0], X[-1])
+                pos[1] = np.clip(pos[1], Y[0], Y[-1])
+                pos[2] = np.clip(pos[2], Z[0], Z[-1])
+        return traj

@@ -1,3 +1,19 @@
+Metadata-Version: 2.4
+Name: acousto-tweezers
+Version: 0.0.1
+Summary: COMSOL-independent modelling engine for acoustic tweezers
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Requires-Dist: pyyaml
+Requires-Dist: imageio
+Requires-Dist: tqdm
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+
 # Acoustic Tweezers: Modelling + Control (Robot-Moved Transducers)
 
 A COMSOL-independent modelling and control engine for robotic acoustic tweezers. Transducers are treated as control inputs that can be moved by robots to reshape the acoustic field in real time.
