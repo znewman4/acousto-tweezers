@@ -1,42 +1,53 @@
 # Redundant Modules (Deprecated)
 
-This directory contains modules that have been superseded by the new FEM-based
-implementation in `src/tweezers/fem/`.
+This directory contains modules that have been superseded by the new FEniCSx-based
+implementation in `src/tweezers/fenicsx/`.
 
-## Migration Summary
+## Migration Summary (January 2026)
 
-The following modules were replaced:
+### Phase 1: Grid → FEM Transition
+The following modules in `grid/` and `physics/` were first replaced with a homebrew
+FEM approach in `fem/`.
 
-| Old Location | New FEM Module | Notes |
-|-------------|----------------|-------|
-| `physics/acoustics/solver.py` | `fem/acoustics.py` | FD → FEM weak form |
-| `physics/acoustics/pml.py` | `fem/pml.py` | PML with complex stretching |
-| `physics/acoustics/materials.py` | `fem/materials.py` | MaterialDatabase class |
-| `physics/acoustics/geometry.py` | `fem/geometry.py` | create_petri_dish_mesh() |
-| `physics/acoustics/thermoviscous.py` | `fem/thermoviscous.py` | Same physics, cleaner API |
-| `physics/solver.py` | `fem/solver.py` | FEMMultiphysicsSolver |
-| `physics/streaming/` | `fem/streaming.py` | StreamingSolver class |
-| `physics/particle/` | `fem/particles.py` | GorkovPotential, ParticleDynamics |
-| `grid/grid3d.py` | `fem/geometry.py` | Hex8 mesh instead of FD grid |
+### Phase 2: FEM → FEniCSx Transition (Current)
+The homebrew FEM code in `fem_old/` has been replaced with a proper FEniCSx
+(DOLFINx + PETSc) implementation in `fenicsx/`.
 
-## Reason for Deprecation
+| Old Location | New FEniCSx Module | Notes |
+|-------------|-------------------|-------|
+| `fem_old/acoustics.py` | `fenicsx/acoustics.py` | Helmholtz solver |
+| `fem_old/pml.py` | `fenicsx/pml.py` | Complex coordinate stretching |
+| `fem_old/materials.py` | `fenicsx/materials.py` | MaterialDatabase class |
+| `fem_old/geometry.py` | `fenicsx/geometry.py` | Gmsh mesh generation |
+| `fem_old/solids.py` | `fenicsx/solids.py` | Linear elasticity |
+| `fem_old/coupling.py` | `fenicsx/coupling.py` | Fluid-solid coupling |
+| `fem_old/thermoviscous.py` | `fenicsx/thermoviscous.py` | Boundary layers |
+| `fem_old/streaming.py` | `fenicsx/streaming.py` | Acoustic streaming |
+| `fem_old/particles.py` | `fenicsx/particles.py` | Gorkov potential, dynamics |
+| `fem_old/solver.py` | `fenicsx/solver.py` | FEMMultiphysicsSolver |
 
-The original implementation used Finite Differences (FD) which:
-- Had poor boundary handling at material interfaces
-- Required excessive resolution for accuracy
-- Could not properly implement PML boundaries
-- Suffered from staircase artifacts at curved boundaries
+## Why FEniCSx?
 
-The new FEM implementation uses:
-- Weak form Helmholtz equation with Galerkin FEM
-- Hexahedral (hex8) elements with 2×2×2 Gauss quadrature
-- Complex coordinate stretching for PML
-- Proper domain tagging for multi-material systems
-- Thermoviscous boundary layer corrections
+The homebrew FEM approach was replaced because:
+- **No code generation**: Hand-written assembly is error-prone and slow
+- **No optimized kernels**: FFCx generates optimized C code
+- **Limited elements**: FEniCSx supports arbitrary polynomial degrees
+- **No complex support**: Need complex-valued Helmholtz for absorbing BCs
+- **Maintenance burden**: FEniCSx is actively maintained by experts
+
+The new FEniCSx implementation provides:
+- **UFL weak forms**: Physics defined in symbolic Python
+- **FFCx code generation**: Auto-optimized kernels
+- **PETSc solvers**: Industrial-strength linear algebra
+- **Gmsh integration**: Proper geometry with physical groups
+- **DOLFINx 0.10.0**: Latest stable FEniCSx release
 
 ## Files Preserved
 
-The old modules are kept for reference but should NOT be used.
-All new code should import from `tweezers.fem` instead.
+- `grid/` - Original finite difference grid (deprecated)
+- `physics/` - Original FD-based physics modules (deprecated)
+- `fem_old/` - Intermediate homebrew FEM (deprecated)
+
+All new code should import from `tweezers.fenicsx` instead.
 
 ## Date: January 2026

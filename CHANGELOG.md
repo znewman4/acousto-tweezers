@@ -4,14 +4,94 @@ All notable changes to the Acousto-Tweezers project.
 
 ---
 
-## [Unreleased] - 24th January 2026
+## [2.0.0] - 25th January 2026
 
-### Added: FEM Multiphysics Framework
+### 🚀 Major Refactor: FEniCSx Integration
 
-Complete rewrite of the physics simulation using Finite Element Method (FEM) for
-research-grade accuracy. This replaces the finite difference (FD) approach.
+Complete rewrite of the physics simulation using **FEniCSx (DOLFINx + PETSc)** for
+research-grade accuracy. This replaces the previous homebrew FEM approach.
 
-#### New Package: `src/tweezers/fem/`
+#### New Package: `src/tweezers/fenicsx/`
+
+| Module | Description |
+|--------|-------------|
+| `config.py` | `FEMConfig` dataclass with physics ladder configuration |
+| `domains.py` | `Domain` and `Interface` enums for multi-domain tagging |
+| `materials.py` | `MaterialDatabase` with temperature-dependent properties |
+| `geometry.py` | Gmsh mesh generation via `create_petri_dish_geometry()` |
+| `acoustics.py` | Helmholtz solver with UFL weak forms |
+| `solids.py` | Linear elasticity with UFL weak forms |
+| `coupling.py` | Monolithic fluid-solid coupling solver |
+| `pml.py` | PML with complex coordinate stretching |
+| `thermoviscous.py` | Viscous/thermal boundary layer corrections |
+| `streaming.py` | Acoustic streaming (Stokes solver) |
+| `particles.py` | Gorkov potential and `ParticleDynamics` |
+| `solver.py` | `FEMMultiphysicsSolver` orchestrating all physics |
+| `diagnostics.py` | Mesh quality, energy balance, convergence checks |
+| `solver_utils.py` | PETSc linear system utilities |
+
+#### Physics Ladder (7 Levels)
+
+```
+Level 7: PARTICLES         ← Particle dynamics with Stokes drag
+Level 6: STREAMING         ← Acoustic streaming velocity field
+Level 5: THERMOVISCOUS     ← Boundary layer loss corrections
+Level 4: FLUID_SOLID       ← Elastic waves in dish structure
+Level 3: FLUID_AIR_BATH    ← Multi-fluid domains
+Level 2: ACOUSTICS_PML     ← Helmholtz with PML boundaries
+Level 1: ACOUSTICS_ONLY    ← Helmholtz equation in water domain
+```
+
+#### Key Features
+
+- **FEniCSx 0.10.0**: Latest stable DOLFINx release
+- **UFL weak forms**: Physics defined in symbolic Python
+- **FFCx code generation**: Auto-optimized assembly kernels
+- **PETSc KSP solvers**: Industrial-strength linear algebra
+- **Gmsh integration**: Proper geometry with physical groups
+- **Complex support**: Time-harmonic acoustics with absorbing BCs
+
+### Demos
+
+- `scripts/demo_2d_acoustics.py`: Quick 2D validation demo
+- `scripts/generate_acoustic_animation.py`: Generates animated GIF
+- `scripts/validation/test_2d_helmholtz.py`: 2D Helmholtz validation
+
+### Outputs Generated
+
+- `results/demo_2d_acoustics/acoustic_wave.gif`: Animated pressure field
+- `results/demo_2d_acoustics/standing_wave.png`: Static visualization
+
+### Deprecated
+
+The following modules are moved to `src/tweezers/redundant/`:
+
+- `tweezers.fem` → `redundant/fem_old/` (homebrew FEM)
+- `tweezers.physics` → `redundant/physics/` (finite differences)
+- `tweezers.grid` → `redundant/grid/` (FD grid)
+
+### Migration Guide
+
+**Before (deprecated):**
+```python
+from tweezers.fem import FEMConfig, FEMMultiphysicsSolver
+```
+
+**After (FEniCSx):**
+```python
+from tweezers.fenicsx import FEMConfig, FEMMultiphysicsSolver
+```
+
+---
+
+## [1.0.0] - 24th January 2026
+
+### Added: Homebrew FEM Framework (Now Deprecated)
+
+The initial FEM implementation using custom assembly. This has been superseded
+by the FEniCSx implementation in v2.0.0.
+
+#### Package: `src/tweezers/fem/` (Now at `redundant/fem_old/`)
 
 | Module | Description |
 |--------|-------------|
@@ -28,75 +108,26 @@ research-grade accuracy. This replaces the finite difference (FD) approach.
 | `solver.py` | `FEMMultiphysicsSolver` orchestrating all physics |
 | `diagnostics.py` | Mesh quality, energy balance, PML reflection checks |
 
-#### Physics Ladder
+This was superseded by FEniCSx due to:
+- No optimized code generation (slow assembly)
+- Limited element types (only hex8)
+- No complex number support
+- Maintenance burden
 
-```
-Level 7: PARTICLES         ← Particle dynamics with Stokes drag
-Level 6: RADIATION_FORCE   ← Gor'kov potential from acoustic field
-Level 5: STREAMING         ← Acoustic streaming velocity field
-Level 4: THERMOVISCOUS     ← Boundary layer loss corrections
-Level 3: PML               ← Perfectly Matched Layer boundaries
-Level 2: SOLID_COUPLING    ← Elastic waves in dish structure
-Level 1: ACOUSTICS_ONLY    ← Helmholtz equation in water domain
-```
+---
 
-Each level includes all physics from levels below it.
+## [0.x] - Prior to January 2026
 
-#### Domain Schematic
+### Legacy Implementation
 
-```
-                        ┌─────────────────────────────────┐
-                        │           PML_TOP               │
-     ┌──────────────────┼─────────────────────────────────┼──────────────────┐
-     │                  │             AIR                 │                  │
-     │    PML_LEFT      ├────────┬───────────────┬────────┤    PML_RIGHT     │
-     │                  │  WALL  │     WATER     │  WALL  │                  │
-     │                  │        │   (target)    │        │                  │
-     │                  │        └───────────────┘        │                  │
-     │                  │              PLATE              │                  │
-     │                  ├─────────────────────────────────┤                  │
-     │                  │              BATH               │                  │
-     │                  │          (transducers)          │                  │
-     └──────────────────┼─────────────────────────────────┼──────────────────┘
-                        │          PML_BOTTOM             │
-                        └─────────────────────────────────┘
-```
+Original finite difference implementation for acoustic simulations.
+Now archived in `src/tweezers/redundant/physics/` and `redundant/grid/`.
 
-#### Key Features
-
-- **Weak form FEM**: Galerkin discretization with hex8 elements
-- **2×2×2 Gauss quadrature**: Accurate volume integration  
-- **PML boundaries**: < 1% reflection target with complex stretching
-- **Material interfaces**: Proper fluid-solid coupling conditions
-- **Temperature dependence**: Material properties vary with temperature
-- **Diagnostics**: Mesh quality, energy conservation, convergence checks
-
-### New Scripts
-
-- `scripts/run_fem_multiphysics.py`: CLI entry point for FEM simulations
-- `scripts/validation/test_fem_modules.py`: Module validation micro-tests
-
-### Deprecated
-
-The following modules are moved to `src/tweezers/redundant/`:
-
-- `tweezers.physics.acoustics` → Use `tweezers.fem.acoustics`
-- `tweezers.physics.solver` → Use `tweezers.fem.solver`  
-- `tweezers.physics.streaming` → Use `tweezers.fem.streaming`
-- `tweezers.physics.particle` → Use `tweezers.fem.particles`
-- `tweezers.grid` → Use `tweezers.fem.geometry`
-
-These modules used finite differences and had several limitations:
+Limitations that led to FEM rewrite:
 - Poor accuracy at material interfaces (staircase artifacts)
-- No proper PML implementation
+- No proper PML implementation  
 - No thermoviscous effects
 - Required very fine grids for convergence
-
-### Migration Guide
-
-**Before (deprecated):**
-```python
-from tweezers.physics import MultiphysicsSolver, SimulationParameters
 
 params = SimulationParameters(frequency=2e6, grid_resolution=50e-6)
 solver = MultiphysicsSolver(params)

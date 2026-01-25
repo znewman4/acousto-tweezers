@@ -1,13 +1,28 @@
 """
-Acousto-Tweezers: FEM-based multiphysics acoustic trapping simulator.
+Acousto-Tweezers: FEniCSx-based multiphysics acoustic trapping simulator.
 
-Main entry points:
-- tweezers.fem: FEM multiphysics simulation modules
-- tweezers.actuation: Transducer array control
-- tweezers.control: MPC and trajectory planning
+================================================================================
+PRIMARY PACKAGE: tweezers.fenicsx
+================================================================================
+
+All production simulations use FEniCSx (dolfinx + PETSc).
+The blessed entry point is:
+
+    python scripts/run_fem_multiphysics.py --level ACOUSTICS_ONLY
+
+Package Structure:
+- tweezers.core: Common utilities (io, logging)
+- tweezers.fenicsx: FEniCSx FEM physics modules (PRIMARY)
+- tweezers.control: MPC and trajectory planning (legacy)
 - tweezers.viz: Visualization utilities
+
+DEPRECATED:
+- tweezers.redundant: Old FD/homebrew FEM code (preserved for reference)
+
+Author: Acousto-Tweezers Project
+Date: January 2026
 """
 
-from tweezers import fem
+from tweezers import fenicsx, core
 
-__all__ = ["fem"]
+__all__ = ["fenicsx", "core"]
