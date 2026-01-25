@@ -271,7 +271,15 @@ class CoupledSolver:
         # =====================================================
         # FLUID DOMAIN CONTRIBUTION
         # =====================================================
-        # Weak form: ∫ (1/ρ)∇q·∇p - (ω²/K)q p dV = 0
+        #
+        # Helmholtz equation (sesquilinear form for complex):
+        # LaTeX:
+        # $$
+        # a_f(p, q) = \int_{\Omega_f} \frac{1}{\rho} \nabla p \cdot \nabla \bar{q} \, dV 
+        #           - \int_{\Omega_f} \frac{\omega^2}{K} p \bar{q} \, dV
+        # $$
+        #
+        # Note: inner(p, q) in DOLFINx gives p·q̄ with conjugation on second arg
         
         # Integrate over fluid domains
         fluid_domains = [Domain.WATER.value, Domain.AIR.value, Domain.BATH.value,
@@ -279,16 +287,22 @@ class CoupledSolver:
                         Domain.PML_TOP.value, Domain.PML_BOTTOM.value]
         
         a_fluid = sum([
-            inner(self.inv_rho_f * grad(q), grad(p)) * self.dx(tag)
-            - (omega**2 / self.K) * inner(q, p) * self.dx(tag)
+            inner(self.inv_rho_f * grad(p), grad(q)) * self.dx(tag)
+            - (omega**2 / self.K) * inner(p, q) * self.dx(tag)
             for tag in fluid_domains
             if np.any(self.cell_tags.values == tag)
-        ], inner(Constant(self.mesh, 0.0), q) * dx)  # Start with zero
+        ], inner(Constant(self.mesh, PETSc.ScalarType(0.0)), q) * dx)  # Start with zero
         
         # =====================================================
         # SOLID DOMAIN CONTRIBUTION  
         # =====================================================
-        # Weak form: ∫ σ(u):ε(v) - ω²ρ u·v dV = 0
+        #
+        # Elastodynamics (sesquilinear form):
+        # LaTeX:
+        # $$
+        # a_s(u, v) = \int_{\Omega_s} \sigma(u) : \varepsilon(\bar{v}) \, dV 
+        #           - \omega^2 \int_{\Omega_s} \rho u \cdot \bar{v} \, dV
+        # $$
         
         solid_domains = [Domain.PLATE.value, Domain.WALL.value, Domain.LENS.value]
         
@@ -302,9 +316,24 @@ class CoupledSolver:
         # =====================================================
         # FLUID-SOLID COUPLING
         # =====================================================
-        # On Γfs:
-        #   From fluid: ∫_Γfs q (ρω²)(u·n) dS   (velocity continuity)
-        #   From solid: ∫_Γfs p (v·n) dS        (traction balance)
+        #
+        # Interface conditions on Γfs:
+        # LaTeX:
+        # $$
+        # \sigma(u) \cdot n = -p n \quad \text{(traction balance)}
+        # $$
+        # $$  
+        # v_f \cdot n = v_s \cdot n \quad \text{(velocity continuity)}
+        # $$
+        #
+        # where v_s = iω u and v_f = -1/(iωρ) ∇p
+        #
+        # This leads to:
+        # $$\frac{\partial p}{\partial n} = -\rho \omega^2 u \cdot n$$
+        #
+        # Weak form contributions:
+        # - Fluid: ∫_Γfs (ρω²)(u·n) q̄ dS   (velocity continuity)
+        # - Solid: ∫_Γfs p (v̄·n) dS        (traction balance)
         
         coupling_interfaces = [
             Interface.WATER_PLATE.value,
@@ -316,13 +345,13 @@ class CoupledSolver:
         rho_interface = self.materials.water.density
         
         a_coupling = sum([
-            # Fluid gets contribution from solid motion
-            rho_interface * omega**2 * q * dot(u, n) * self.ds(tag)
-            # Solid gets pressure loading
+            # Fluid gets contribution from solid motion (velocity continuity)
+            rho_interface * omega**2 * dot(u, n) * q * self.ds(tag)
+            # Solid gets pressure loading (traction balance)
             + p * dot(v, n) * self.ds(tag)
             for tag in coupling_interfaces
             if np.any(self.facet_tags.values == tag)
-        ], inner(Constant(self.mesh, 0.0), q) * dx)
+        ], inner(Constant(self.mesh, PETSc.ScalarType(0.0)), q) * dx)
         
         # Total bilinear form
         a = a_fluid + a_solid + a_coupling
@@ -360,11 +389,13 @@ class CoupledSolver:
             bcs.append(dirichletbc(u_bc_func, dofs_u, self.W.sub(1)))
         
         # Absorbing BC on outer PML boundary
+        # Sommerfeld radiation condition: ∂p/∂n + ik p = 0
+        # Weak form: adds ik ∫_Γ p q̄ ds
         outer_facets = self.facet_tags.find(Interface.PML_OUTER.gmsh_tag)
         if len(outer_facets) > 0:
             k_water = omega / self.materials.water.sound_speed
-            # Add radiation condition to bilinear form
-            a = a + 1j * k_water * inner(q, p) * self.ds(Interface.PML_OUTER.gmsh_tag)
+            # Add radiation condition to bilinear form (proper complex ordering)
+            a = a + 1j * k_water * inner(p, q) * self.ds(Interface.PML_OUTER.gmsh_tag)
         
         # =====================================================
         # SOLVE

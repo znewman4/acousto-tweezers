@@ -14,11 +14,9 @@ Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: ruff; extra == "dev"
 
-# Acoustic Tweezers: Modelling + Control (Robot-Moved Transducers)
+# Acousto-Tweezers: FEniCSx Multiphysics Simulator
 
-A COMSOL-independent modelling and control engine for robotic acoustic tweezers. Transducers are treated as control inputs that can be moved by robots to reshape the acoustic field in real time.
-
-**Core loop:** actuation parameters → acoustic field (Helmholtz PDE) → Gor'kov potential → radiation force → overdamped particle motion → visualisation
+A research-grade FEM-based multiphysics simulator for acoustic tweezers using **FEniCSx (dolfinx + PETSc)**.
 
 ---
 
@@ -29,91 +27,126 @@ A COMSOL-independent modelling and control engine for robotic acoustic tweezers.
 ```bash
 git clone <repo-url>
 cd acousto-tweezers
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Create conda environment with FEniCSx
+conda create -n fenicsx python=3.11
+conda activate fenicsx
+conda install -c conda-forge fenics-dolfinx petsc4py gmsh
+
+# Install package
 pip install -e .
 ```
 
-**Requirements:** Python 3.10+, works on Linux/macOS/Windows.
-
-### View Pre-Computed Demo Results
-
-The best demo results are committed to the repo:
+### Run a Simulation
 
 ```bash
-# 4-puck surface greedy controller tracking a circle (18MB GIF)
-results/4puck_demo_surf_greedy/run_20260116_165630/4puck_demo_surf_greedy.gif
+# The ONLY blessed entry point:
+python scripts/run_fem_multiphysics.py --level ACOUSTICS_ONLY --quick
 
-# Path-following with controlled transducers (8MB GIF)
-results/path_follow_controlled/path_follow_controlled.gif
+# Full 3D simulation (requires more memory):
+python scripts/run_fem_multiphysics.py --level ACOUSTICS_PML --ppw 10
 ```
 
-Open these in any image viewer or browser to see the particle being steered around a circular path while the Gor'kov potential contours evolve.
+### Output Structure
 
-### Run the Demos Yourself
+All runs are saved to `results/fem_multiphysics/run_YYYYMMDD_HHMMSS/`:
 
-```bash
-# Activate environment
-source .venv/bin/activate
-
-# 4-puck demo (greedy surf controller, ~2-3 min)
-python scripts/4puck_demo_surf_greedy.py
-
-# Path-following demo
-python scripts/path_follow_controlled.py
-
-# Adjoint-based circle tracking (new!)
-python scripts/adjoint_circle_track_kstep.py --fast
 ```
-
-Each script creates a timestamped folder in `results/` containing:
-- Animated GIF of the run
-- Summary plot (PNG)
-- Step-by-step CSV log
-- JSON summary with metrics
+run_20260125_123456/
+├── config.json              # Configuration used
+├── summary.csv              # Key metrics
+├── diagnostics/
+│   ├── sanity_report.txt    # Physics sanity checks
+│   ├── mesh_report.txt      # Mesh quality metrics
+│   ├── solver_report.txt    # Solver performance
+│   ├── acoustics_report.txt # Field statistics
+│   └── pml_report.txt       # PML validation
+├── figures/
+│   ├── p_slice.png          # Pressure field slice
+│   └── anim_U_contours.gif  # 3D animated pressure
+├── mesh/
+├── fields/
+└── logs/
+    └── run.log
+```
 
 ---
 
-## What's Working (End-to-End)
+## Physics Ladder
 
-### Physics Engine
-- **2.5D forced Helmholtz solver** using finite differences on a rectangular domain
-- Moving transducers represented as spatially-localised velocity boundary sources
-- **Gor'kov potential and radiation force** computed from each solved pressure field
-- **Bilinear interpolation** for smooth force evaluation at arbitrary particle positions
-- **Overdamped particle dynamics** with domain clamping
+The simulator implements a 7-level physics ladder. Each level includes all physics from lower levels:
 
-### Controllers
+| Level | Name | Description |
+|-------|------|-------------|
+| 1 | `ACOUSTICS_ONLY` | Helmholtz equation in water |
+| 2 | `ACOUSTICS_PML` | + PML boundary conditions |
+| 3 | `FLUID_AIR_BATH` | + Air and bath domains |
+| 4 | `FLUID_SOLID` | + Elastic plate/wall coupling |
+| 5 | `THERMOVISCOUS` | + Boundary layer corrections |
+| 6 | `STREAMING` | + Acoustic streaming |
+| 7 | `PARTICLES` | + Radiation force & dynamics |
 
-**1. Greedy Surf Controller** (`scripts/4puck_demo_surf_greedy.py`, `scripts/demo_surf_greedy.py`)
-- Enumerates discrete macro-actions (transducer position changes)
-- Evaluates each via full PDE solve
-- Scores by force alignment with desired direction
-- Selects best action per timestep
-- Proves particles can be steered by "surfing" a changing force field
+---
 
-**2. Adjoint-Based K-Step Controller** (`scripts/adjoint_circle_track_kstep.py`)
-- Optimises control sequence over K-step horizon
-- Uses discrete-time adjoint backpropagation for exact gradients
-- Circle-tracking objective: radial error + tangent progress + trap stability
-- Outperforms greedy on trajectory optimisation
+## Architecture
 
-**3. Adjoint MPC Controller** (`scripts/adjoint_circle_track_mpc.py`, `scripts/adjoint_path_track_mpc_compare.py`)
-- Receding-horizon model predictive control with gradient-based optimisation
-- Two-level adjoint: PDE-level (∂U/∂u) + trajectory-level (backprop through dynamics)
-- Supports arbitrary path tracking, not just circles
-- Control smoothness penalties for physically realisable signals
-- Comparison scripts: `mpc_vs_greedy_4puck.py`, `path_tracking_comparison.py`
+```
+src/tweezers/
+├── core/                 # Common utilities
+│   ├── io.py            # Run directory management
+│   └── logging.py       # Logging setup
+├── fenicsx/             # PRIMARY FEM backend
+│   ├── config.py        # FEMConfig dataclass
+│   ├── domains.py       # Domain/Interface enums
+│   ├── materials.py     # Material database
+│   ├── geometry.py      # Gmsh mesh generation
+│   ├── acoustics.py     # Helmholtz solver
+│   ├── solids.py        # Elasticity solver
+│   ├── coupling.py      # Fluid-solid coupling
+│   ├── pml.py           # PML implementation
+│   ├── streaming.py     # Acoustic streaming
+│   ├── particles.py     # Gor'kov & dynamics
+│   ├── solver.py        # Multiphysics orchestrator
+│   └── diagnostics.py   # Expanded diagnostics
+└── redundant/           # Deprecated code (archived)
+```
 
-**4. Bayesian Acceleration Layer** (in `demo_surf_greedy.py`)
-- Surrogate model predicts action quality
-- UCB acquisition selects subset for PDE evaluation
-- Reduces compute while maintaining accuracy
+---
 
-### Circle Tracking Features
-- Tangent + radial correction for stable circular motion
-- Adaptive target advancement based on angular progress
-- Works with both greedy and adjoint controllers
+## Validation Tests
+
+Run validation micro-tests:
+
+```bash
+# PML reflection test (<1% target)
+python scripts/validation/test_pml_reflection.py
+
+# Interface continuity test
+python scripts/validation/test_interface_continuity.py
+
+# 2D Helmholtz validation
+python scripts/validation/test_2d_helmholtz.py
+```
+
+---
+
+## Legacy Control Module
+
+The control module (`tweezers.control`) is preserved for MPC/trajectory planning but uses the legacy FD solver. See `scripts/redundant/` for old control scripts.
+
+---
+
+## References
+
+- FEniCSx: https://fenicsproject.org/
+- DOLFINx: https://github.com/FEniCS/dolfinx
+- Gmsh: https://gmsh.info/
+
+---
+
+## License
+
+MIT License
 
 ### Visualisation
 - GIF output with particle trail, target marker, force vectors

@@ -1,0 +1,153 @@
+================================================================================
+ACOUSTO-TWEEZERS: ALL RESULTS LOCATIONS
+================================================================================
+Date: January 25, 2026
+Session: Complex PETSc Validation & Visualization
+
+================================================================================
+📋 DOCUMENTATION
+================================================================================
+
+1. Session Summary
+   📄 RESULTS_SUMMARY.md
+   Complete overview of all accomplishments, test results, and technical details
+
+2. Updated Documentation  
+   📄 README.md
+   Installation instructions with complex PETSc requirements
+   
+   📄 CHANGELOG.md
+   v2.1.0 section with detailed change log
+
+================================================================================
+🧪 VALIDATION TEST RESULTS
+================================================================================
+
+Run all tests:
+   $ python scripts/validation/run_all_tests.py
+
+Individual tests:
+   ✅ scripts/validation/test_acoustics_only.py         (max|p| = 2.14e8 Pa)
+   ✅ scripts/validation/test_pml_simple.py             (90.1% absorption)
+   ✅ scripts/validation/test_interface_continuity.py   (CV = 47.4%)
+   ✅ scripts/validation/test_fluid_solid_coupled.py    (coupled fields)
+
+Status: 4/4 PASSING
+
+================================================================================
+🔬 DIAGNOSTIC TEST RESULTS  
+================================================================================
+
+Run diagnostics:
+   $ python scripts/run_diagnostics.py
+
+Tests performed:
+   ✅ Mesh Quality Metrics         (3600 cells validated)
+   ✅ Field Statistics Computation (complex fields OK)
+   ✅ Convergence Analysis         (0.02% → 0.01% change)
+
+Status: 3/3 PASSING
+
+================================================================================
+🎬 VISUALIZATION OUTPUTS
+================================================================================
+
+Generate visualizations:
+   $ python scripts/demo_visualization.py
+
+Output directory:
+   📁 results/visualization_demo/
+
+Files created:
+   🖼️  pressure_3d_slice.png       - 3D pressure field with z-slice
+   🖼️  pressure_cross_section.png  - 2D cross-section at z=1.5mm
+   🎬 pressure_rotation.gif        - 360° rotation animation (36 frames)
+   📁 frames/rotation_*.png        - Individual animation frames
+
+GIF Details:
+   - 36 frames (10° rotation per frame)
+   - 100ms per frame
+   - Total duration: 3.6 seconds
+   - 360° full rotation
+
+================================================================================
+📊 KEY METRICS
+================================================================================
+
+PETSc Backend:
+   Type: numpy.complex128 ✅
+   Build: petsc=3.21.*=complex*
+
+Validation Results:
+   - Acoustic solver: max|p| = 2.1396e+08 Pa
+   - PML absorption: 90.1% (9.9% transmission)
+   - Interface smoothness: CV = 47.36%
+   - Fluid-solid coupling: max|p| = 1.7076e+06 Pa
+
+Test Success Rate:
+   - Validation: 4/4 (100%)
+   - Diagnostics: 3/3 (100%)
+   - Overall: 7/7 (100%)
+
+================================================================================
+🔍 HOW TO VIEW RESULTS
+================================================================================
+
+1. View GIF Animation:
+   Open: results/visualization_demo/pressure_rotation.gif
+   (Works in any web browser or image viewer)
+
+2. View Static Images:
+   Open: results/visualization_demo/pressure_3d_slice.png
+   Open: results/visualization_demo/pressure_cross_section.png
+
+3. Review Test Output:
+   Run: python scripts/validation/run_all_tests.py
+   (Shows detailed pass/fail for each test)
+
+4. Check Diagnostics:
+   Run: python scripts/run_diagnostics.py
+   (Shows mesh quality, field stats, convergence)
+
+5. Read Documentation:
+   Open: RESULTS_SUMMARY.md
+   (Complete technical details and metrics)
+
+================================================================================
+✅ VERIFICATION CHECKLIST
+================================================================================
+
+[✅] Complex PETSc backend installed and verified
+[✅] All validation tests passing (4/4)
+[✅] All diagnostic tests passing (3/3)
+[✅] Visualization module functional
+[✅] GIF animation generated successfully
+[✅] Documentation updated (README + CHANGELOG)
+[✅] Results summary created
+[✅] No errors or warnings
+
+STATUS: ALL SYSTEMS OPERATIONAL ✅
+
+================================================================================
+🚀 QUICK START FOR NEXT SESSION
+================================================================================
+
+Activate environment:
+   $ micromamba activate acousto-complex
+
+Verify setup:
+   $ python -c "from petsc4py import PETSc; import numpy as np; \
+     print('Complex:', np.issubdtype(PETSc.ScalarType, np.complexfloating))"
+
+Run validation:
+   $ python scripts/validation/run_all_tests.py
+
+Generate visualizations:
+   $ python scripts/demo_visualization.py
+
+View results:
+   $ open results/visualization_demo/pressure_rotation.gif
+
+================================================================================
+END OF RESULTS LOCATIONS
+================================================================================

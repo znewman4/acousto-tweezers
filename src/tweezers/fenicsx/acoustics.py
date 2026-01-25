@@ -193,15 +193,21 @@ class AcousticSolver:
         
     def _setup_materials(self):
         """Set up material property functions."""
+        from petsc4py import PETSc
+        
         # Create DG0 function space for piecewise constant properties
         DG0 = fem.functionspace(self.mesh, ("DG", 0))
         
+        # IMPORTANT: For complex PETSc, material properties should also be complex
+        # to avoid mixed float64/complex128 issues in form compilation
+        dtype = PETSc.ScalarType
+        
         # Density field
-        self.rho = Function(DG0, dtype=np.float64)
+        self.rho = Function(DG0, dtype=dtype)
         # Bulk modulus field (K = ρc²)
-        self.K = Function(DG0, dtype=np.float64)
+        self.K = Function(DG0, dtype=dtype)
         # Inverse density for weak form
-        self.inv_rho = Function(DG0, dtype=np.float64)
+        self.inv_rho = Function(DG0, dtype=dtype)
         
         # Get cell-to-tag mapping
         cells = self.cell_tags.indices
@@ -264,17 +270,29 @@ class AcousticSolver:
         p = TrialFunction(self.V)
         v = TestFunction(self.V)
         
-        # Weak form of Helmholtz equation:
-        # ∫_Ω (1/ρ) ∇v·∇p dV - ∫_Ω (ω²/K) v p dV = 0
+        # Weak form of Helmholtz equation (complex sesquilinear form):
         #
-        # This is the standard form from Ihlenburg (1998)
+        # LaTeX:
+        # $$
+        # a(p, v) = \int_\Omega \frac{1}{\rho} \nabla p \cdot \nabla \bar{v} \, dV 
+        #           - \int_\Omega \frac{\omega^2}{K} p \bar{v} \, dV
+        # $$
+        #
+        # where K = ρc² is the bulk modulus.
+        #
+        # IMPORTANT: For DOLFINx complex mode, ufl.inner(a, b) computes a·b̄
+        # So we write inner(p, v) which gives p·v̄ with conjugation on test.
+        # Similarly inner(grad(p), grad(v)) gives ∇p · ∇v̄.
+        #
+        # Reference: Ihlenburg (1998), Finite Element Analysis of Acoustic Scattering
         
         omega = self.omega
         
-        # Bilinear form
+        # Bilinear form (sesquilinear in complex)
+        # a(p, v) = ∫(1/ρ)∇p·∇v̄ - (ω²/K)p·v̄ dV
         a = (
-            inner(self.inv_rho * grad(v), grad(p)) * dx
-            - (omega**2 / self.K) * inner(v, p) * dx
+            inner(self.inv_rho * grad(p), grad(v)) * dx
+            - (omega**2 / self.K) * inner(p, v) * dx
         )
         
         # Right-hand side (source terms)
@@ -282,10 +300,10 @@ class AcousticSolver:
             # Create source function
             f = Function(self.V)
             f.interpolate(source_function)
-            L = inner(v, f) * dx
+            L = inner(f, v) * dx
         else:
             # Zero RHS - actuation comes through BCs
-            L = inner(v, Constant(self.mesh, PETSc.ScalarType(0.0))) * dx
+            L = inner(Constant(self.mesh, PETSc.ScalarType(0.0)), v) * dx
         
         # Boundary conditions
         bcs = []
@@ -317,20 +335,24 @@ class AcousticSolver:
                             g.interpolate(value)
                         else:
                             g = Constant(self.mesh, PETSc.ScalarType(value))
-                        # Note: this modifies L (RHS)
-                        L = L + inner(v, g) * self.ds(tag)
+                        # Note: this modifies L (RHS) - proper ordering for complex
+                        L = L + inner(g, v) * self.ds(tag)
         
         # Add PML or absorbing boundary condition on outer boundaries
-        # Simple first-order absorbing BC: ∂p/∂n + ik p = 0
-        # In weak form: adds ik ∫_Γ v p ds
+        # First-order absorbing BC (Sommerfeld radiation condition):
+        #
+        # LaTeX:
+        # $$\frac{\partial p}{\partial n} + ik p = 0 \quad \text{on } \Gamma$$
+        #
+        # In weak form: adds ik ∫_Γ p v̄ ds to bilinear form
         if self.config.physics_level.value >= PhysicsLevel.ACOUSTICS_PML:
             # Get wavenumber for water
             c_water = self.materials.water.sound_speed
             k = omega / c_water
             
-            # Apply ABC on outer boundary
+            # Apply ABC on outer boundary (proper ordering for complex)
             outer_tag = Interface.PML_OUTER.gmsh_tag
-            a = a + 1j * k * inner(v, p) * self.ds(outer_tag)
+            a = a + 1j * k * inner(p, v) * self.ds(outer_tag)
         
         # Assemble and solve
         p_solution = solve_linear_system(

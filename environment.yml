@@ -1,0 +1,75 @@
+# Conda/Mamba environment for Acousto-Tweezers with COMPLEX PETSc
+#
+# CRITICAL: This installs PETSc with complex scalar type, which is
+# REQUIRED for frequency-domain Helmholtz and coupled acoustics.
+#
+# Create environment:
+#   mamba env create -f environment.yml
+#   # or: micromamba env create -f environment.yml
+#   # or: conda env create -f environment.yml
+#
+# Activate:
+#   mamba activate acousto-complex
+#   # or: conda activate acousto-complex
+#
+# Verify complex backend:
+#   python scripts/validation/test_complex_backend.py
+#
+# Author: Acousto-Tweezers Project
+# Date: January 2026
+
+name: acousto-complex
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Core Python
+  - python=3.11
+  
+  # MPI (required before PETSc)
+  - mpi4py
+  - openmpi
+  
+  # PETSc with COMPLEX scalars (this is the critical part!)
+  # The "complex" build variant has PETSc.ScalarType == complex
+  - petsc=3.21.*=complex*
+  - petsc4py=3.21.*
+  
+  # FEniCSx components (must match PETSc version compatibility)
+  - fenics-dolfinx=0.9.*
+  - fenics-basix=0.9.*
+  - fenics-ufl=2024.2.*
+  - fenics-ffcx=0.9.*
+  
+  # Mesh generation
+  - gmsh
+  - python-gmsh
+  
+  # Visualization
+  - pyvista
+  - vtk
+  - matplotlib
+  - imageio
+  - imageio-ffmpeg
+  
+  # Scientific computing
+  - numpy
+  - scipy
+  - pandas
+  - h5py
+  
+  # Utilities
+  - tqdm
+  - pyyaml
+  - meshio
+  
+  # Development
+  - pytest
+  - ipython
+  
+  # Install the package in editable mode via pip
+  - pip
+  - pip:
+    - -e .

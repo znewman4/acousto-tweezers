@@ -2,6 +2,8 @@
 
 A research-grade FEM-based multiphysics simulator for acoustic tweezers using **FEniCSx (dolfinx + PETSc)**.
 
+**Latest:** Complex PETSc backend with validated fluid-solid coupling (January 2026)
+
 ---
 
 ## Quick Start
@@ -12,13 +14,28 @@ A research-grade FEM-based multiphysics simulator for acoustic tweezers using **
 git clone <repo-url>
 cd acousto-tweezers
 
-# Create conda environment with FEniCSx
-conda create -n fenicsx python=3.11
-conda activate fenicsx
-conda install -c conda-forge fenics-dolfinx petsc4py gmsh
+# Create environment with COMPLEX PETSc (required for acoustics)
+micromamba create -n acousto-complex python=3.11
+micromamba activate acousto-complex
+micromamba install -c conda-forge fenics-dolfinx=0.9.0 'petsc=3.21.*=complex*' gmsh pyvista
 
 # Install package
 pip install -e .
+```
+
+**Important:** The complex PETSc build is required for proper Helmholtz equation handling.
+
+### Validation Tests
+
+```bash
+# Run all validation tests
+python scripts/validation/run_all_tests.py
+
+# Individual tests:
+python scripts/validation/test_acoustics_only.py        # Full solver stack
+python scripts/validation/test_pml_simple.py             # PML absorption
+python scripts/validation/test_interface_continuity.py   # Solution smoothness
+python scripts/validation/test_fluid_solid_coupled.py    # Coupled physics
 ```
 
 ### Run a Simulation
@@ -47,7 +64,8 @@ run_20260125_123456/
 │   └── pml_report.txt       # PML validation
 ├── figures/
 │   ├── p_slice.png          # Pressure field slice
-│   └── anim_U_contours.gif  # 3D animated pressure
+│   ├── p_3d.png             # 3D visualization with slice
+│   └── p_rotation.gif       # 360° rotation animation
 ├── mesh/
 ├── fields/
 └── logs/

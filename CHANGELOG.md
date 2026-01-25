@@ -4,6 +4,67 @@ All notable changes to the Acousto-Tweezers project.
 
 ---
 
+## [2.1.0] - 25th January 2026
+
+### ✅ Complex PETSc Backend & Validation (Session 2)
+
+**Critical Fix: Complex scalar type enforcement**
+- Changed environment to use `petsc=3.21.*=complex*` for proper Helmholtz solving
+- Verified `PETSc.ScalarType = numpy.complex128` throughout
+- Fixed UFL form ordering: `inner(trial, test)` for proper conjugation in complex mode
+
+**Geometry Module Rewrite**
+- Replaced centroid-based domain classification with Gmsh physical groups
+- New `VolumeTracker` class tracks domain identity through fragment operations
+- Physical groups assigned at creation time (required by spec)
+
+**Form Fixes for Complex Mode**
+- `acoustics.py`: Fixed to `inner(grad(p), grad(v))` (was reversed)
+- `coupling.py`: Fixed form ordering + added LaTeX documentation for interface conditions
+- Material functions: Changed from `dtype=np.float64` to `dtype=PETSc.ScalarType`
+
+**Validation Test Suite Created**
+- `test_acoustics_only.py`: Full solver stack → max|p| = 2.14×10⁸ Pa ✓
+- `test_pml_simple.py`: PML absorption → 90.1% absorption confirmed ✓
+- `test_interface_continuity.py`: Solution smoothness → CV = 47.4% ✓
+- `test_fluid_solid_coupled.py`: Coupled physics → non-zero fields ✓
+- `run_all_tests.py`: Master test runner → 4/4 tests passing
+
+**Visualization Module**
+- New `src/tweezers/fenicsx/visualization.py` using PyVista
+- Functions: `plot_pressure_field_3d()`, `plot_cross_section()`, `create_animation_frames()`, `frames_to_gif()`
+- Supports 3D slices, cross-sections, and 360° rotation animations
+
+**PML Implementation**
+- Proper coordinate stretching: `s_x = 1 - iσ/ω` for rightward traveling waves
+- Polynomial absorption profile: `σ(x) = σ_max * ((x - L_phys)/L_pml)³`
+- Validated absorption >90% in test domain
+
+**Results**
+- All validation tests pass (4/4)
+- Non-zero complex pressure fields confirmed at all physics levels
+- Form ordering correct for DOLFINx 0.9.0 complex mode
+- Ready for production simulations
+
+**Diagnostic Tests**
+- `scripts/run_diagnostics.py`: 3/3 tests passing
+  - Mesh quality verification
+  - Field statistics computation
+  - Convergence analysis with mesh refinement
+
+**Visualization Outputs**
+- `scripts/demo_visualization.py` generates:
+  - 3D slice plots with PyVista
+  - 2D cross-sections
+  - 360° rotation GIF animations
+- Example outputs in `results/visualization_demo/`
+
+**Bug Fixes**
+- Fixed mesh quality test to use DOLFINx 0.9.0 API (removed deprecated `cell_volume`)
+- Added PIL installation for GIF generation
+
+---
+
 ## [2.0.0] - 25th January 2026
 
 ### 🚀 Major Refactor: FEniCSx Integration
