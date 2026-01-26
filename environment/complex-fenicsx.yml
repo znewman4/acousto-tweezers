@@ -1,0 +1,55 @@
+# Complex PETSc + FEniCSx Environment
+# For time-harmonic acoustics with PML (requires complex scalars)
+#
+# Usage:
+#   micromamba create -f environment/complex-fenicsx.yml
+#   micromamba activate acousto-complex
+#
+# Verification:
+#   python -c "from petsc4py import PETSc; import numpy as np; print(f'Complex: {np.issubdtype(PETSc.ScalarType, np.complexfloating)}')"
+#
+# Expected output: Complex: True
+
+name: acousto-complex
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Core Python
+  - python=3.11
+  
+  # FEniCSx stack with COMPLEX PETSc (critical!)
+  # The =*complex* selector ensures complex scalar build
+  - fenics-dolfinx=0.9.*
+  - petsc=3.21.*=*complex*
+  - petsc4py=3.21.*=*complex*
+  - slepc=3.21.*=*complex*
+  - slepc4py=3.21.*=*complex*
+  
+  # MPI (required by DOLFINx)
+  - mpi4py
+  - openmpi
+  
+  # Meshing
+  - gmsh
+  - python-gmsh
+  
+  # Visualization
+  - pyvista
+  - vtk
+  - matplotlib
+  - pillow
+  
+  # Scientific computing
+  - numpy
+  - scipy
+  - h5py
+  
+  # Development
+  - pip
+  - pytest
+  
+  # pip dependencies
+  - pip:
+    - meshio

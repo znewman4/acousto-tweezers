@@ -6,17 +6,27 @@ Clean, documented visualization utilities for acousto-tweezers results.
 Features:
 - 3D pressure field rendering with slices
 - Cross-section plots
-- GIF animation generation
+- GIF animation generation with STABLE COLOR SCALING
+- Frame stamps (max|p|, slice z, PPW, timestamp)
 - Publication-quality figure export
+
+CRITICAL: All animations use FIXED color scaling computed upfront
+to prevent per-frame autoscale flicker.
 """
 
 import numpy as np
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
+from datetime import datetime
 
 import pyvista as pv
 from dolfinx import fem, mesh
 from mpi4py import MPI
+
+# Configure PyVista for headless/offscreen rendering
+pv.start_xvfb()  # Start virtual framebuffer for headless
+pv.global_theme.background = 'white'
+pv.global_theme.font.color = 'black'
 
 
 def extract_pyvista_mesh(domain: mesh.Mesh) -> pv.UnstructuredGrid:
@@ -299,9 +309,14 @@ def create_animation_frames(
     pressure: fem.Function,
     output_dir: Path,
     n_frames: int = 36,
-    prefix: str = "frame"
+    prefix: str = "frame",
+    clim: Optional[Tuple[float, float]] = None,
+    metadata: Optional[Dict[str, Any]] = None
 ) -> List[Path]:
-    """Create animation frames rotating around the solution.
+    """Create animation frames rotating around the solution with FIXED color scale.
+    
+    IMPORTANT: Color scale is computed ONCE and applied to ALL frames to prevent
+    the "flickering" artifact from per-frame autoscaling.
     
     Parameters
     ----------
@@ -315,6 +330,10 @@ def create_animation_frames(
         Number of frames for full rotation
     prefix : str
         Filename prefix for frames
+    clim : tuple, optional
+        Fixed color limits (min, max). If None, computed from data.
+    metadata : dict, optional
+        Metadata to stamp on frames (max_p, ppw, timestamp, etc.)
         
     Returns
     -------
@@ -330,26 +349,54 @@ def create_animation_frames(
     p_mag = np.abs(p_array).real if np.iscomplexobj(p_array) else np.abs(p_array)
     grid.point_data["pressure_mag"] = p_mag
     
-    clim = [0, np.max(p_mag)]
+    # CRITICAL: Compute global color limits ONCE
+    if clim is None:
+        p_max = np.max(p_mag)
+        # Use 0 to max for magnitude data
+        clim = [0, p_max if p_max > 0 else 1.0]
+    
+    print(f"  Fixed color scale: [{clim[0]:.2e}, {clim[1]:.2e}] Pa")
+    
+    # Prepare metadata stamp
+    if metadata is None:
+        metadata = {}
+    max_p = metadata.get('max_p', np.max(p_mag))
+    ppw = metadata.get('ppw', 'N/A')
+    timestamp = metadata.get('timestamp', datetime.now().strftime("%Y%m%d_%H%M%S"))
+    run_id = metadata.get('run_id', 'unknown')
     
     frame_paths = []
     
     for i in range(n_frames):
         angle = i * 360 / n_frames
         
-        pl = pv.Plotter(off_screen=True)
+        pl = pv.Plotter(off_screen=True, window_size=[1024, 768])
         pl.set_background("white")
         
+        # Add mesh with FIXED color limits
         pl.add_mesh(
             grid,
             scalars="pressure_mag",
-            clim=clim,
+            clim=clim,  # FIXED - no flicker!
             cmap="viridis",
             opacity=0.8,
-            scalar_bar_args={"title": "|p| [Pa]"}
+            scalar_bar_args={
+                "title": "|p| [Pa]",
+                "vertical": True,
+                "position_x": 0.85,
+            }
         )
         
         pl.add_mesh(grid.outline(), color="black", line_width=2)
+        
+        # Add text stamp with metadata
+        stamp_text = f"max|p|={max_p:.2e} Pa | PPW={ppw} | θ={angle:.0f}°\n{run_id}"
+        pl.add_text(
+            stamp_text,
+            position='lower_left',
+            font_size=10,
+            color='black'
+        )
         
         # Rotate camera
         pl.camera.azimuth = angle

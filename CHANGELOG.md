@@ -4,64 +4,62 @@ All notable changes to the Acousto-Tweezers project.
 
 ---
 
+## [2.2.0] - 26th January 2026
+
+### 🔧 Environment & Validation Overhaul
+
+**Root Cause Identified: Complex PETSc Required**
+The January 25 validation tests reported "PASS" but were running with `PETSc.ScalarType = float64` (REAL), not `complex128` as required. This means the Helmholtz solver was incorrectly treating fields as real, producing physically meaningless results.
+
+**Environment Fix**
+- Created `environment/complex-fenicsx.yml` with explicit `petsc=3.21.*=*complex*`
+- Created `environment/setup_env_complex.sh` automated setup script
+- Created `scripts/validation/test_env_complex_petsc.py` as mandatory runtime gate
+
+**New Validation Suite**
+- `test_env_complex_petsc.py`: Runtime gate - fails fast if PETSc is real
+- `test_acoustics_smoke.py`: Level 1 smoke test that verifies nonzero complex fields
+- `test_pml_smoke.py`: PML validation with complexity proof (Im(s) ≠ 0)
+- Updated `run_all_tests.py` to run env gate first and fail fast
+
+**Visualization Fixes**
+- Fixed color scaling: clim computed ONCE and applied to ALL frames (no flicker)
+- Added frame stamps: max|p|, PPW, timestamp, run_id
+- Added headless rendering support with `pv.start_xvfb()`
+
+**Diagnostics Fixes**
+- Fixed DOF count reporting: Added `_get_pressure_dofs()` and `_get_displacement_dofs()` helpers
+- Now correctly extracts DOF count from function space instead of returning 0
+
+**Honesty Checkpoint**
+- README updated with ⚠️ STATUS section and complex PETSc verification
+- CHANGELOG updated to reflect actual validated state
+- No claims of "PASS" without evidence from complex PETSc environment
+
+**Status: BLOCKED**
+Tests cannot pass until environment is switched to `acousto-complex` with proper complex PETSc.
+
+---
+
 ## [2.1.0] - 25th January 2026
 
-### ✅ Complex PETSc Backend & Validation (Session 2)
+### ⚠️ Complex PETSc Backend (VALIDATION INCOMPLETE)
 
-**Critical Fix: Complex scalar type enforcement**
-- Changed environment to use `petsc=3.21.*=complex*` for proper Helmholtz solving
-- Verified `PETSc.ScalarType = numpy.complex128` throughout
-- Fixed UFL form ordering: `inner(trial, test)` for proper conjugation in complex mode
+**NOTE: This session ran with REAL PETSc (float64), so reported "PASS" results are invalid.**
 
-**Geometry Module Rewrite**
-- Replaced centroid-based domain classification with Gmsh physical groups
-- New `VolumeTracker` class tracks domain identity through fragment operations
-- Physical groups assigned at creation time (required by spec)
+**Attempted Fixes (correct code, wrong environment):**
+- Changed environment spec to use `petsc=3.21.*=complex*`
+- Fixed UFL form ordering: `inner(trial, test)` for proper conjugation
+- Geometry module rewrite with Gmsh physical groups
+- Form fixes for complex mode
 
-**Form Fixes for Complex Mode**
-- `acoustics.py`: Fixed to `inner(grad(p), grad(v))` (was reversed)
-- `coupling.py`: Fixed form ordering + added LaTeX documentation for interface conditions
-- Material functions: Changed from `dtype=np.float64` to `dtype=PETSc.ScalarType`
+**Validation Test Suite Created (ran with wrong PETSc):**
+- `test_acoustics_only.py`
+- `test_pml_simple.py`
+- `test_interface_continuity.py`
+- `test_fluid_solid_coupled.py`
 
-**Validation Test Suite Created**
-- `test_acoustics_only.py`: Full solver stack → max|p| = 2.14×10⁸ Pa ✓
-- `test_pml_simple.py`: PML absorption → 90.1% absorption confirmed ✓
-- `test_interface_continuity.py`: Solution smoothness → CV = 47.4% ✓
-- `test_fluid_solid_coupled.py`: Coupled physics → non-zero fields ✓
-- `run_all_tests.py`: Master test runner → 4/4 tests passing
-
-**Visualization Module**
-- New `src/tweezers/fenicsx/visualization.py` using PyVista
-- Functions: `plot_pressure_field_3d()`, `plot_cross_section()`, `create_animation_frames()`, `frames_to_gif()`
-- Supports 3D slices, cross-sections, and 360° rotation animations
-
-**PML Implementation**
-- Proper coordinate stretching: `s_x = 1 - iσ/ω` for rightward traveling waves
-- Polynomial absorption profile: `σ(x) = σ_max * ((x - L_phys)/L_pml)³`
-- Validated absorption >90% in test domain
-
-**Results**
-- All validation tests pass (4/4)
-- Non-zero complex pressure fields confirmed at all physics levels
-- Form ordering correct for DOLFINx 0.9.0 complex mode
-- Ready for production simulations
-
-**Diagnostic Tests**
-- `scripts/run_diagnostics.py`: 3/3 tests passing
-  - Mesh quality verification
-  - Field statistics computation
-  - Convergence analysis with mesh refinement
-
-**Visualization Outputs**
-- `scripts/demo_visualization.py` generates:
-  - 3D slice plots with PyVista
-  - 2D cross-sections
-  - 360° rotation GIF animations
-- Example outputs in `results/visualization_demo/`
-
-**Bug Fixes**
-- Fixed mesh quality test to use DOLFINx 0.9.0 API (removed deprecated `cell_volume`)
-- Added PIL installation for GIF generation
+The code architecture is correct, but results were computed with real scalars.
 
 ---
 

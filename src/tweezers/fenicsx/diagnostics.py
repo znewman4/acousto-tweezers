@@ -728,6 +728,37 @@ class DiagnosticsReport:
         return "\n".join(lines)
 
 
+def _get_pressure_dofs(result: "MultiphysicsResult") -> int:
+    """Extract pressure DOF count from result.
+    
+    Returns the number of DOFs in the pressure function space.
+    Returns 0 if no acoustic field available (with warning).
+    """
+    if result.acoustic_field is None:
+        return 0
+    try:
+        V = result.acoustic_field.p_function.function_space
+        return V.dofmap.index_map.size_global
+    except Exception:
+        # Fallback to array length
+        return len(result.acoustic_field.p)
+
+
+def _get_displacement_dofs(result: "MultiphysicsResult") -> int:
+    """Extract displacement DOF count from result.
+    
+    Returns the number of DOFs in the displacement function space.
+    Returns 0 if no displacement field available.
+    """
+    if result.displacement_field is None:
+        return 0
+    try:
+        V = result.displacement_field.u_function.function_space
+        return V.dofmap.index_map.size_global
+    except Exception:
+        return 0
+
+
 def compute_diagnostics(result: "MultiphysicsResult",
                         config: FEMConfig,
                         materials: MaterialDatabase) -> DiagnosticsReport:
@@ -771,6 +802,8 @@ def compute_diagnostics(result: "MultiphysicsResult",
         points_per_wavelength=wavelength / h_max,
         num_elements=mesh_info.num_cells,
         num_nodes=mesh_info.num_nodes,
+        num_dofs_pressure=_get_pressure_dofs(result),
+        num_dofs_displacement=_get_displacement_dofs(result),
         domain_stats=getattr(mesh_info, 'domain_counts', {}),
         interface_counts=getattr(mesh_info, 'interface_counts', {}),
     )

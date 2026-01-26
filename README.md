@@ -2,7 +2,22 @@
 
 A research-grade FEM-based multiphysics simulator for acoustic tweezers using **FEniCSx (dolfinx + PETSc)**.
 
-**Latest:** Complex PETSc backend with validated fluid-solid coupling (January 2026)
+---
+
+## ⚠️ CURRENT STATUS (January 2026)
+
+**ROOT BLOCKER: Complex PETSc Required**
+
+This codebase requires **PETSc built with complex scalar support** for proper Helmholtz equation handling. Without it, all time-harmonic acoustics will produce incorrect (real-only) results.
+
+```bash
+# Check your environment:
+python -c "from petsc4py import PETSc; import numpy; print(f'ScalarType: {PETSc.ScalarType}')"
+# MUST print: ScalarType: <class 'numpy.complex128'>
+# NOT:        ScalarType: <class 'numpy.float64'>
+```
+
+**If you see `float64`, your environment is broken.** See [Installation](#installation) below.
 
 ---
 
@@ -11,31 +26,32 @@ A research-grade FEM-based multiphysics simulator for acoustic tweezers using **
 ### Installation
 
 ```bash
-git clone <repo-url>
-cd acousto-tweezers
+# Method 1: Using provided environment file
+micromamba create -f environment/complex-fenicsx.yml
+micromamba activate acousto-complex
 
-# Create environment with COMPLEX PETSc (required for acoustics)
+# Method 2: Manual (ensure *complex* variant!)
 micromamba create -n acousto-complex python=3.11
 micromamba activate acousto-complex
-micromamba install -c conda-forge fenics-dolfinx=0.9.0 'petsc=3.21.*=complex*' gmsh pyvista
+micromamba install -c conda-forge fenics-dolfinx=0.9.* 'petsc=3.21.*=*complex*' 'petsc4py=3.21.*=*complex*' gmsh pyvista
+
+# Verify complex PETSc
+python scripts/validation/test_env_complex_petsc.py
 
 # Install package
 pip install -e .
 ```
 
-**Important:** The complex PETSc build is required for proper Helmholtz equation handling.
-
 ### Validation Tests
 
 ```bash
-# Run all validation tests
+# Run all validation tests (includes environment gate)
 python scripts/validation/run_all_tests.py
 
-# Individual tests:
-python scripts/validation/test_acoustics_only.py        # Full solver stack
-python scripts/validation/test_pml_simple.py             # PML absorption
-python scripts/validation/test_interface_continuity.py   # Solution smoothness
-python scripts/validation/test_fluid_solid_coupled.py    # Coupled physics
+# Individual validation:
+python scripts/validation/test_env_complex_petsc.py   # Environment gate (MUST PASS)
+python scripts/validation/test_acoustics_smoke.py     # Level 1 acoustics smoke test
+python scripts/validation/test_pml_smoke.py           # PML complexity proof
 ```
 
 ### Run a Simulation
@@ -44,7 +60,7 @@ python scripts/validation/test_fluid_solid_coupled.py    # Coupled physics
 # The ONLY blessed entry point:
 python scripts/run_fem_multiphysics.py --level ACOUSTICS_ONLY --quick
 
-# Full 3D simulation (requires more memory):
+# Full 3D simulation:
 python scripts/run_fem_multiphysics.py --level ACOUSTICS_PML --ppw 10
 ```
 
