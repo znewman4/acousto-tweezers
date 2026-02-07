@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "acousto-tweezers"
-version = "0.0.1"
-description = "COMSOL-independent modelling engine for acoustic tweezers"
+name = "acoustweezers"
+version = "0.1.0"
+description = "Acoustic tweezers simulation with FEniCSx - unified package"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

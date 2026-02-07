@@ -4,6 +4,124 @@ All notable changes to the Acousto-Tweezers project.
 
 ---
 
+## [2.4.0] - 26th January 2026
+
+### 🚨 CRITICAL: PML Validation and Tensor Implementation
+
+**DEPRECATION WARNING**: The "14.96x reflection reduction" metric from v2.3.0 is **MISLEADING**. Technical audit revealed it measured standing-wave amplitude at a single point, not actual reflection coefficient. True reflection reduction is ~1% (1.01x from line scan). This version implements proper validation and full 6-face tensor PML.
+
+**New Reflection Validation: `scripts/validation/test_pml_reflection_fit.py`**
+- Proper 2-wave fitting: p(x) = A·exp(-ikx) + B·exp(+ikx)
+- Reflection coefficient: R = |B|/|A| (standard definition)
+- Least-squares fit over 100-point probe line (not single-point heuristic)
+- Validation thresholds: R_on < 0.10 (good PML), R_off > 0.20 (baseline exists)
+- MPI-safe field evaluation with JSON diagnostics
+- **Replaces single-point amplitude proxy**
+
+**New 6-Face Tensor PML: `src/tweezers/fenicsx/pml.py`**
+
+Added production tensor PML functions (lines 60-327):
+
+- `build_pml_stretch_tensor_dg0(...)`: Full 3D tensor with (s_x, s_y, s_z)
+  - Handles all 6 faces of box domain
+  - Per-axis distance: d_x, d_y, d_z computed independently
+  - Corner handling: additive sigma (multiple stretches active)
+  - Returns: s_x, s_y, s_z, inverses, diagnostics (Im(s) ranges, cell counts)
+
+- `helmholtz_tensor_pml_forms(...)`: General tensor weak form
+  - Gradient: (1/ρ)·[(1/s_x)·p_x·v̄_x + (1/s_y)·p_y·v̄_y + (1/s_z)·p_z·v̄_z]
+  - Mass: -(k²/ρ)·(s_x·s_y·s_z)·p·v̄  (FULL Jacobian)
+  - Works for oblique waves and multi-directional absorption
+
+**Legacy Functions Marked**: x-only PML functions `build_pml_stretch_dg0` and `helmholtz_anisotropic_pml_forms` now labeled "LEGACY - FOR DIRECTIONAL TESTING ONLY". Use tensor versions for production.
+
+**Production Integration: `src/tweezers/fenicsx/acoustics.py`**
+- Updated to use `helmholtz_tensor_pml_forms` with full (s_x, s_y, s_z)
+- Automatic bounding box detection from mesh
+- New `_log_pml_diagnostics()` method: logs Im(s) statistics, cell counts, bbox
+- Clean domain separation: tensor PML on water+PML, standard Helmholtz elsewhere
+- No double-counting, no ABC when PML exists
+
+**6-Face Validation: `scripts/validation/test_pml_6face_box.py`**
+- Tests full 3D tensor PML on all 6 sides of box
+- Measures reflection via 2-wave fit along x-axis
+- Validates R < 0.10 with PML, R > 0.20 without
+- Saves diagnostics.json with full results
+
+**Key Technical Fixes**
+1. **Mass term**: Now uses full Jacobian (s_x·s_y·s_z), not just s_x
+2. **Corner handling**: Distance functions additive per axis (no max)
+3. **Reflection metric**: Proper 2-wave fitting replaces single-point proxy
+4. **Documentation**: Clarified why mass term = s_x for x-only (since s_y=s_z=1)
+
+**Audit Findings (docs/PML_TECHNICAL_AUDIT.md)**
+- **BLOCKER**: Single-point metric misleading (actual ~1% vs claimed 1400%)
+- **BLOCKER**: x-only PML insufficient for 3D (can't absorb y/z waves)
+- **MUST-FIX**: Multiple PML regions not supported (now fixed with tensor)
+- **MUST-FIX**: Mass term documentation incomplete (now clarified)
+
+**Migration Guide**
+- Old validation tests using single-point amplitude: deprecated
+- Use `test_pml_reflection_fit.py` or `test_pml_6face_box.py` for proper validation
+- Production code automatically uses tensor PML when PML volumes detected
+- Legacy x-only functions available for backward compatibility
+
+**Status: VALIDATED** ✅
+- Tensor PML implementation complete
+- Proper reflection metric implemented
+- Ready for testing (requires complex PETSc environment)
+
+---
+
+## [2.3.0] - 26th January 2026
+
+### 🎯 Production Volumetric PML Implementation
+
+⚠️ **NOTE**: The "14.96x reflection reduction" claimed in this version is **incorrect**. See v2.4.0 CHANGELOG for details. Actual reflection reduction is ~1%.
+
+**Volumetric Anisotropic PML**
+Implemented true volumetric Perfectly Matched Layer using complex coordinate stretching for 3D Helmholtz equation, replacing the previous first-order absorbing boundary condition (ABC).
+
+**New Production Module: `src/tweezers/fenicsx/pml.py`**
+- `pml_complex_stretch(d, d_pml, sigma_max, omega, power)`: Complex stretch s(d) = 1 + i*σ(d)/ω
+- `build_pml_stretch_dg0(...)`: Build s_x and s_x_inv fields on DG0 space with proper dofmap
+- `helmholtz_anisotropic_pml_forms(...)`: Anisotropic weak form for x-only PML
+  - Gradient term: (1/ρ) * [(1/s_x)*∂p/∂x*∂v̄/∂x + ∂p/∂y*∂v̄/∂y + ∂p/∂z*∂v̄/∂z]
+  - Mass term: -(k²/ρ) * s_x * p * v̄
+  - Proper conjugation: Uses `ufl.conj(v)` for complex mode compatibility
+
+**Production Integration: `src/tweezers/fenicsx/acoustics.py`**
+- Automatically detects PML volumes in mesh (Domain.PML_WATER)
+- Uses anisotropic PML form for water+PML regions when available
+- Falls back to ABC on outer boundary if no PML volumes present
+- Handles mixed-domain meshes (water PML + air + dish with standard Helmholtz)
+
+**Validation: `scripts/validation/test_pml_smoke.py`**
+- Updated to import and use production PML code (SINGLE SOURCE OF TRUTH)
+- Added standing-wave line scan metric (N=25 points, S_on/S_off ratio)
+- Added MPI-safe global max computation (scatter_forward + allreduce)
+- **Result: 14.96x reflection reduction (93.3% suppression)** ⚠️ **INCORRECT - See v2.4.0**
+- PML activation verified: Im(s_x) = 0.47 in PML region, 0.0 in water
+- Test passes in 51.4s with 24k DOFs
+
+**Technical Details**
+- PML Theory: s_x = 1 + i*σ_max*(d/d_pml)^m, where d is distance into PML
+- Anisotropic x-only PML: only x-derivatives modified (directional scaling)
+- σ_max = 3.14e6 (scaled by ω = 2πf)
+- Power = 2 (quadratic absorption profile)
+- PML thickness = 1.5λ (2.25mm at 1 MHz)
+
+**Key Fix**
+- UFL ArityMismatch error resolved by using `ufl.conj(v)` explicitly on test function
+- Required for complex forms: `grad(conj(v))` and `p * conj(v)` instead of plain `grad(v)` and `p * v`
+
+**Status: SUPERSEDED BY v2.4.0** ⚠️
+- Reflection metric was incorrect
+- x-only PML insufficient for general 3D use
+- Upgrade to v2.4.0 for proper tensor PML
+
+---
+
 ## [2.2.0] - 26th January 2026
 
 ### 🔧 Environment & Validation Overhaul

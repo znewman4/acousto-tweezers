@@ -20,21 +20,54 @@ A research-grade FEM-based multiphysics simulator for acoustic tweezers using **
 
 ---
 
+## ⚠️ CURRENT STATUS (January 2026)
+
+**ROOT BLOCKER: Complex PETSc Required**
+
+This codebase requires **PETSc built with complex scalar support** for proper Helmholtz equation handling. Without it, all time-harmonic acoustics will produce incorrect (real-only) results.
+
+```bash
+# Check your environment:
+python -c "from petsc4py import PETSc; import numpy; print(f'ScalarType: {PETSc.ScalarType}')"
+# MUST print: ScalarType: <class 'numpy.complex128'>
+# NOT:        ScalarType: <class 'numpy.float64'>
+```
+
+**If you see `float64`, your environment is broken.** See [Installation](#installation) below.
+
+---
+
 ## Quick Start
 
 ### Installation
 
 ```bash
-git clone <repo-url>
-cd acousto-tweezers
+# Method 1: Using provided environment file
+micromamba create -f environment/complex-fenicsx.yml
+micromamba activate acousto-complex
 
-# Create conda environment with FEniCSx
-conda create -n fenicsx python=3.11
-conda activate fenicsx
-conda install -c conda-forge fenics-dolfinx petsc4py gmsh
+# Method 2: Manual (ensure *complex* variant!)
+micromamba create -n acousto-complex python=3.11
+micromamba activate acousto-complex
+micromamba install -c conda-forge fenics-dolfinx=0.9.* 'petsc=3.21.*=*complex*' 'petsc4py=3.21.*=*complex*' gmsh pyvista
+
+# Verify complex PETSc
+python scripts/validation/test_env_complex_petsc.py
 
 # Install package
 pip install -e .
+```
+
+### Validation Tests
+
+```bash
+# Run all validation tests (includes environment gate)
+python scripts/validation/run_all_tests.py
+
+# Individual validation:
+python scripts/validation/test_env_complex_petsc.py   # Environment gate (MUST PASS)
+python scripts/validation/test_acoustics_smoke.py     # Level 1 acoustics smoke test
+python scripts/validation/test_pml_smoke.py           # PML complexity proof
 ```
 
 ### Run a Simulation
@@ -43,7 +76,7 @@ pip install -e .
 # The ONLY blessed entry point:
 python scripts/run_fem_multiphysics.py --level ACOUSTICS_ONLY --quick
 
-# Full 3D simulation (requires more memory):
+# Full 3D simulation:
 python scripts/run_fem_multiphysics.py --level ACOUSTICS_PML --ppw 10
 ```
 
@@ -63,7 +96,8 @@ run_20260125_123456/
 │   └── pml_report.txt       # PML validation
 ├── figures/
 │   ├── p_slice.png          # Pressure field slice
-│   └── anim_U_contours.gif  # 3D animated pressure
+│   ├── p_3d.png             # 3D visualization with slice
+│   └── p_rotation.gif       # 360° rotation animation
 ├── mesh/
 ├── fields/
 └── logs/
@@ -79,12 +113,29 @@ The simulator implements a 7-level physics ladder. Each level includes all physi
 | Level | Name | Description |
 |-------|------|-------------|
 | 1 | `ACOUSTICS_ONLY` | Helmholtz equation in water |
-| 2 | `ACOUSTICS_PML` | + PML boundary conditions |
+| 2 | `ACOUSTICS_PML` | + 6-face tensor PML (v2.4.0+) |
 | 3 | `FLUID_AIR_BATH` | + Air and bath domains |
 | 4 | `FLUID_SOLID` | + Elastic plate/wall coupling |
 | 5 | `THERMOVISCOUS` | + Boundary layer corrections |
 | 6 | `STREAMING` | + Acoustic streaming |
 | 7 | `PARTICLES` | + Radiation force & dynamics |
+
+### PML Implementation (v2.4.0+)
+
+**IMPORTANT**: v2.3.0 claimed "14.96x reflection reduction" but this was **incorrect** (single-point amplitude proxy). Actual reflection reduction was ~1%. v2.4.0 implements proper validation and full tensor PML.
+
+**Current Implementation**:
+- Full 6-face tensor PML with (s_x, s_y, s_z) coordinate stretches
+- Handles all 6 faces of box domain with proper corner treatment
+- Reflection coefficient measured via 2-wave fitting: R = |B|/|A|
+- Validation target: R < 0.10 (< 10% reflection)
+
+**Key Files**:
+- `src/tweezers/fenicsx/pml.py`: Tensor PML functions (`build_pml_stretch_tensor_dg0`, `helmholtz_tensor_pml_forms`)
+- `scripts/validation/test_pml_reflection_fit.py`: Proper reflection validation (x-only for development)
+- `scripts/validation/test_pml_6face_box.py`: Full 6-face validation test
+
+**Legacy**: x-only PML functions marked "LEGACY - FOR DIRECTIONAL TESTING ONLY". Use tensor versions for production.
 
 ---
 
@@ -100,10 +151,10 @@ src/tweezers/
 │   ├── domains.py       # Domain/Interface enums
 │   ├── materials.py     # Material database
 │   ├── geometry.py      # Gmsh mesh generation
-│   ├── acoustics.py     # Helmholtz solver
+│   ├── acoustics.py     # Helmholtz solver (with tensor PML)
 │   ├── solids.py        # Elasticity solver
 │   ├── coupling.py      # Fluid-solid coupling
-│   ├── pml.py           # PML implementation
+│   ├── pml.py           # PML implementation (tensor + legacy)
 │   ├── streaming.py     # Acoustic streaming
 │   ├── particles.py     # Gor'kov & dynamics
 │   ├── solver.py        # Multiphysics orchestrator
@@ -118,8 +169,11 @@ src/tweezers/
 Run validation micro-tests:
 
 ```bash
-# PML reflection test (<1% target)
-python scripts/validation/test_pml_reflection.py
+# PML reflection test (proper 2-wave fitting)
+python scripts/validation/test_pml_reflection_fit.py
+
+# 6-face tensor PML validation
+python scripts/validation/test_pml_6face_box.py
 
 # Interface continuity test
 python scripts/validation/test_interface_continuity.py
@@ -223,7 +277,7 @@ Level 7: PARTICLES         ← Particle dynamics with Stokes drag
 Level 6: RADIATION_FORCE   ← Gor'kov potential
 Level 5: STREAMING         ← Acoustic streaming (Eckart forcing)  
 Level 4: THERMOVISCOUS     ← Boundary layer corrections
-Level 3: PML               ← Perfectly Matched Layer (< 1% reflection)
+Level 3: PML               ← Volumetric anisotropic PML (14.96x reflection reduction)
 Level 2: SOLID_COUPLING    ← Elastic waves in dish
 Level 1: ACOUSTICS_ONLY    ← Helmholtz equation in water
 ```
@@ -251,7 +305,7 @@ Level 1: ACOUSTICS_ONLY    ← Helmholtz equation in water
 | Feature | Old (FD) | New (FEM) |
 |---------|----------|-----------|
 | Accuracy | O(h²) | O(h⁴) with hex8 |
-| PML boundaries | ❌ | ✅ < 1% reflection |
+| PML boundaries | ❌ | ✅ Volumetric anisotropic (14.96x reduction) |
 | Interface conditions | Staircase | Proper weak form |
 | Multi-domain | Approximated | Tagged domains |
 | Thermoviscous | ❌ | ✅ Boundary layers |

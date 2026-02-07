@@ -65,6 +65,15 @@ import ufl
 from ufl import inner, grad, dx, ds, Measure, TestFunction, TrialFunction
 from mpi4py import MPI
 
+# Import production PML implementation (SINGLE SOURCE OF TRUTH)
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+from tweezers.fenicsx.pml import (
+    pml_complex_stretch,
+    build_pml_stretch_dg0,
+    helmholtz_anisotropic_pml_forms
+)
+
 print(f"✓ dolfinx version: {dolfinx.__version__}")
 
 # ============================================================
@@ -77,10 +86,10 @@ WAVELENGTH = C_WATER / FREQ  # 1.5 mm
 OMEGA = 2 * np.pi * FREQ
 
 # Geometry
-DOMAIN_SIZE = 5 * WAVELENGTH  # Physical domain
-PML_THICKNESS = 2 * WAVELENGTH  # PML layer thickness
-MESH_SIZE = WAVELENGTH / 6  # 6 PPW (coarser for faster solving)
-POINTS_PER_WAVELENGTH = 6
+DOMAIN_SIZE = 3 * WAVELENGTH  # Smaller physical domain for faster smoke test
+PML_THICKNESS = 1.5 * WAVELENGTH  # PML layer thickness
+MESH_SIZE = WAVELENGTH / 5  # 5 PPW (coarse but adequate for smoke test)
+POINTS_PER_WAVELENGTH = 5
 
 # PML parameters
 # For effective absorption, need sigma/omega ~ O(0.1-1)
@@ -111,28 +120,15 @@ output_dir.mkdir(parents=True, exist_ok=True)
 print(f"\n✓ Output directory: {output_dir}")
 
 # ============================================================
-# PML Scaling Function
+# PML Scaling Function (using production code)
 # ============================================================
 print("\n" + "=" * 70)
 print("STEP 1: Verify PML Scaling is Complex")
 print("=" * 70)
 
-def pml_sigma(d, d_pml, sigma_max, power):
-    """PML absorption profile σ(d)."""
-    return sigma_max * (d / d_pml) ** power
-
-def pml_scaling(d, d_pml, sigma_max, omega, power):
-    """
-    Complex PML coordinate scaling: s(d) = 1 + i*σ(d)/ω
-    
-    This is the KEY complex part of PML that requires complex scalars.
-    """
-    sigma = pml_sigma(d, d_pml, sigma_max, power)
-    return 1.0 + 1j * sigma / omega
-
-# Test at midpoint of PML
+# Test at midpoint of PML using production function
 d_test = PML_THICKNESS / 2
-s_test = pml_scaling(d_test, PML_THICKNESS, SIGMA_MAX, OMEGA, PML_POWER)
+s_test = pml_complex_stretch(d_test, PML_THICKNESS, SIGMA_MAX, OMEGA, PML_POWER)
 print(f"  PML scaling at d={d_test*1e3:.2f}mm:")
 print(f"    s = {s_test}")
 print(f"    Re(s) = {np.real(s_test):.6f}")
@@ -141,7 +137,7 @@ print(f"    Im(s) = {np.imag(s_test):.6f}")
 if np.imag(s_test) == 0:
     print("FATAL: PML scaling has no imaginary component!")
     sys.exit(1)
-print(f"✓ PML scaling is complex-valued")
+print(f"✓ PML scaling is complex-valued (using production PML code)")
 
 # ============================================================
 # Create Mesh with Physical + PML Domains (BOOLEAN FRAGMENT!)
@@ -297,11 +293,38 @@ if len(water_cells) == 0:
     sys.exit(1)
 
 # ============================================================
-# Helper Function: Solve with/without PML
+# Solve with PML ON and OFF
 # ============================================================
-def solve_helmholtz(pml_active=True):
+print("\n" + "=" * 70)
+print("STEP 4: Solve Helmholtz (PML ON and OFF)")
+print("=" * 70)
+
+V = fem.functionspace(mesh, ("Lagrange", 2))
+print(f"✓ DOFs: {V.dofmap.index_map.size_global}")
+
+# Trial and test functions
+p = TrialFunction(V)
+v = TestFunction(V)
+
+# Material properties
+rho = RHO_WATER
+c = C_WATER
+k = OMEGA / c
+K = rho * c**2
+
+# Measures
+dx_water = Measure("dx", domain=mesh, subdomain_data=cell_tags)(TAG_WATER)
+dx_pml = Measure("dx", domain=mesh, subdomain_data=cell_tags)(TAG_PML)
+ds_act = Measure("ds", domain=mesh, subdomain_data=facet_tags)
+
+# ============================================================
+# Helper Function: Solve with/without PML (using production code)
+# ============================================================
+def solve_helmholtz_pml(pml_active=True):
     """
-    Solve Helmholtz equation with or without PML.
+    Solve Helmholtz equation with or without PML using PRODUCTION PML CODE.
+    
+    This ensures the smoke test validates the actual production operator.
     
     Parameters
     ----------
@@ -316,62 +339,32 @@ def solve_helmholtz(pml_active=True):
         Whether solver converged
     ksp_iterations : int
         Number of KSP iterations
+    im_s_water : float
+        Max Im(s_x) in water
+    im_s_pml : float
+        Max Im(s_x) in PML
     """
-    # Create PML scaling field using proper DG0 dofmap
-    DG0 = fem.functionspace(mesh, ("DG", 0))
-    s_x = fem.Function(DG0)
-    s_x_inv = fem.Function(DG0)
+    # Build PML stretch fields using production code
+    if pml_active:
+        s_x, s_x_inv, im_s_water, im_s_pml = build_pml_stretch_dg0(
+            mesh, cell_tags, TAG_PML, L, d_pml, OMEGA, SIGMA_MAX, PML_POWER, TAG_WATER
+        )
+    else:
+        # No PML: s_x = 1 everywhere
+        DG0 = fem.functionspace(mesh, ("DG", 0))
+        s_x = fem.Function(DG0)
+        s_x_inv = fem.Function(DG0)
+        s_x.x.array[:] = 1.0 + 0j
+        s_x_inv.x.array[:] = 1.0 + 0j
+        im_s_water = 0.0
+        im_s_pml = 0.0
     
-    # Get cell midpoints and proper dof mapping
-    num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
-    coords = mesh.geometry.x
-    cell_to_vertex = mesh.topology.connectivity(mesh.topology.dim, 0)
-    dofmap = DG0.dofmap
-    
-    # Assign s_x values using proper dofmap
-    for cell in range(num_cells):
-        # Get dof for this cell (DG0 has 1 dof per cell)
-        dofs = dofmap.cell_dofs(cell)
-        dof_idx = dofs[0]  # DG0 has exactly 1 dof per cell
-        
-        # Get cell tag
-        cell_tags_idx = np.where(cell_tags.indices == cell)[0]
-        if len(cell_tags_idx) == 0:
-            cell_tag = TAG_WATER  # Default
-        else:
-            cell_tag = cell_tags.values[cell_tags_idx[0]]
-        
-        if pml_active and cell_tag == TAG_PML:
-            # Get cell centroid x-coordinate
-            vertices = cell_to_vertex.links(cell)
-            cell_coords = coords[vertices]
-            x_center = np.mean(cell_coords[:, 0])
-            
-            # Distance into PML from interface at x=L
-            d = x_center - L
-            d = max(0, min(d, d_pml))  # Clamp
-            
-            s = pml_scaling(d, d_pml, SIGMA_MAX, OMEGA, PML_POWER)
-        else:
-            s = 1.0 + 0j
-        
-        s_x.x.array[dof_idx] = s
-        s_x_inv.x.array[dof_idx] = 1.0 / s
-    
-    # Check PML scaling is correct
-    s_water_vals = s_x.x.array[dofmap.cell_dofs(water_cells[0])[0]] if len(water_cells) > 0 else 1.0
-    s_pml_vals = s_x.x.array[[dofmap.cell_dofs(c)[0] for c in pml_cells[:min(10, len(pml_cells))]]]
-    
-    im_s_water = np.max(np.abs(np.imag(s_water_vals)))
-    im_s_pml = np.max(np.abs(np.imag(s_pml_vals)))
-    
-    # Bilinear form with PML coordinate stretching
-    # In PML: ∂/∂x → (1/s_x) ∂/∂x
-    a_form = (
-        s_x_inv / rho * inner(grad(p), grad(v)) * dx_water
-        - (OMEGA**2 * s_x / K) * inner(p, v) * dx_water
-        + s_x_inv / rho * inner(grad(p), grad(v)) * dx_pml
-        - (OMEGA**2 * s_x / K) * inner(p, v) * dx_pml
+    # Build anisotropic PML forms using production code (SINGLE SOURCE OF TRUTH)
+    a_form, _ = helmholtz_anisotropic_pml_forms(
+        p, v, mesh, k, rho, OMEGA,
+        s_x, s_x_inv,
+        dx_water, dx_pml,
+        source_form=None
     )
     
     # RHS: Actuation
@@ -421,41 +414,16 @@ def solve_helmholtz(pml_active=True):
     
     return p_h, converged, iterations, im_s_water, im_s_pml
 
-# ============================================================
-# Solve with PML ON and OFF
-# ============================================================
-print("\n" + "=" * 70)
-print("STEP 4: Solve Helmholtz (PML ON and OFF)")
-print("=" * 70)
-
-V = fem.functionspace(mesh, ("Lagrange", 2))
-print(f"✓ DOFs: {V.dofmap.index_map.size_global}")
-
-# Trial and test functions
-p = TrialFunction(V)
-v = TestFunction(V)
-
-# Material properties
-rho = RHO_WATER
-c = C_WATER
-k = OMEGA / c
-K = rho * c**2
-
-# Measures
-dx_water = Measure("dx", domain=mesh, subdomain_data=cell_tags)(TAG_WATER)
-dx_pml = Measure("dx", domain=mesh, subdomain_data=cell_tags)(TAG_PML)
-ds_act = Measure("ds", domain=mesh, subdomain_data=facet_tags)
-
 # Solve with PML ON
 print("\n  [PML ON]")
-p_h_pml_on, converged_on, iters_on, im_s_water, im_s_pml = solve_helmholtz(pml_active=True)
+p_h_pml_on, converged_on, iters_on, im_s_water, im_s_pml = solve_helmholtz_pml(pml_active=True)
 print(f"    Converged: {converged_on} ({iters_on} iterations)")
 print(f"    Im(s) in WATER: max = {im_s_water:.6e} (should be ~0)")
 print(f"    Im(s) in PML: max = {im_s_pml:.6e} (should be >0)")
 
 # Solve with PML OFF
 print("\n  [PML OFF]")
-p_h_pml_off, converged_off, iters_off, _, _ = solve_helmholtz(pml_active=False)
+p_h_pml_off, converged_off, iters_off, _, _ = solve_helmholtz_pml(pml_active=False)
 print(f"    Converged: {converged_off} ({iters_off} iterations)")
 
 # Check PML scaling is correct
@@ -593,6 +561,57 @@ else:
     reflection_test_pass = False
 
 # ============================================================
+# Standing-Wave Line Scan (harder to cheat)
+# ============================================================
+print("\n" + "=" * 70)
+print("STEP 6b: Standing-Wave Line Scan")
+print("=" * 70)
+
+# Sample pressure along a line in WATER parallel to x near interface
+#Standing waves (from reflections) show large max/min ratio
+N_scan = 25
+x_scan = np.linspace(L - 1.5*WAVELENGTH, L - 0.1*WAVELENGTH, N_scan)
+y_scan = L / 2
+z_scan = L / 2
+
+scan_points_on = []
+scan_points_off = []
+
+print(f"  Scanning {N_scan} points along x=[{x_scan[0]*1e3:.2f}, {x_scan[-1]*1e3:.2f}]mm")
+print(f"  at y=z={y_scan*1e3:.2f}mm\\n")
+
+for x_val in x_scan:
+    try:
+        p_on_val = p_h_pml_on.eval(np.array([x_val, y_scan, z_scan]), 0)
+        p_off_val = p_h_pml_off.eval(np.array([x_val, y_scan, z_scan]), 0)
+        scan_points_on.append(np.abs(p_on_val[0]))
+        scan_points_off.append(np.abs(p_off_val[0]))
+    except Exception as e:
+        print(f"  Warning: Could not evaluate at x={x_val*1e3:.2f}mm: {e}")
+        scan_points_on.append(0)
+        scan_points_off.append(0)
+
+scan_points_on = np.array(scan_points_on)
+scan_points_off = np.array(scan_points_off)
+
+# Compute standing-wave ratio: max/min (avoid division by zero)
+eps = 1e-30
+S_on = np.max(scan_points_on) / (np.min(scan_points_on) + eps) if len(scan_points_on) > 0 else 1.0
+S_off = np.max(scan_points_off) / (np.min(scan_points_off) + eps) if len(scan_points_off) > 0 else 1.0
+
+standing_wave_metric = S_off / S_on if S_on > 1.0 else 1.0
+
+print(f"  Standing-wave ratio (max|p|/min|p| on scan line):")
+print(f"    PML ON:  S = {S_on:.2f}")
+print(f"    PML OFF: S = {S_off:.2f}")
+print(f"    Metric (S_off/S_on): {standing_wave_metric:.2f}")
+
+if standing_wave_metric > 1.5:
+    print(f"  ✓ Standing-wave pattern significantly reduced with PML")
+else:
+    print(f"  ⚠ Standing-wave reduction modest")
+
+# ============================================================
 # Save Diagnostics & Report
 # ============================================================
 print("\n" + "=" * 70)
@@ -601,10 +620,15 @@ print("=" * 70)
 
 os.makedirs(output_dir, exist_ok=True)
 
+# MPI-safe global max|p| (scatter forward + reduction)
+p_h_pml_on.x.scatter_forward()
+local_max_on = np.max(np.abs(p_h_pml_on.x.array))
+max_p_global_on = mesh.comm.allreduce(local_max_on, op=MPI.MAX)
+
 # Detailed JSON diagnostics
 diagnostics = {
     "timestamp": datetime.now().isoformat(),
-    "test": "pml_smoke_truth_validated",
+    "test": "pml_smoke_truth_validated_anisotropic",
     "parameters": {
         "freq_hz": FREQ,
         "wavelength_m": WAVELENGTH,
@@ -629,6 +653,13 @@ diagnostics = {
     "pml_activation": {
         "im_s_water_median": float(im_s_water),
         "im_s_pml_median": float(im_s_pml),
+    },
+    "max_pressure_global_pa": float(max_p_global_on),
+    "standing_wave_scan": {
+        "S_pml_on": float(S_on),
+        "S_pml_off": float(S_off),
+        "standing_wave_metric": float(standing_wave_metric),
+        "n_points": int(N_scan),
     },
     "probes": {
         "probe_water_near_pa": float(mag_water_near_on),

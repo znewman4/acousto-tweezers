@@ -1,3 +1,19 @@
+Metadata-Version: 2.4
+Name: acoustweezers
+Version: 0.1.0
+Summary: Acoustic tweezers simulation with FEniCSx - unified package
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Requires-Dist: pyyaml
+Requires-Dist: imageio
+Requires-Dist: tqdm
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+
 # Acousto-Tweezers: FEniCSx Multiphysics Simulator
 
 A research-grade FEM-based multiphysics simulator for acoustic tweezers using **FEniCSx (dolfinx + PETSc)**.

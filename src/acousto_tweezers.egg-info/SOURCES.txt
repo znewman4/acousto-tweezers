@@ -66,12 +66,14 @@ src/tweezers/fenicsx/solver.py
 src/tweezers/fenicsx/solver_utils.py
 src/tweezers/fenicsx/streaming.py
 src/tweezers/fenicsx/thermoviscous.py
+src/tweezers/fenicsx/visualization.py
 src/tweezers/redundant/fem_old/__init__.py
 src/tweezers/redundant/fem_old/acoustics.py
 src/tweezers/redundant/fem_old/config.py
 src/tweezers/redundant/fem_old/diagnostics.py
 src/tweezers/redundant/fem_old/domains.py
 src/tweezers/redundant/fem_old/geometry.py
+src/tweezers/redundant/fem_old/geometry_centroid.py
 src/tweezers/redundant/fem_old/materials.py
 src/tweezers/redundant/fem_old/particles.py
 src/tweezers/redundant/fem_old/pml.py
