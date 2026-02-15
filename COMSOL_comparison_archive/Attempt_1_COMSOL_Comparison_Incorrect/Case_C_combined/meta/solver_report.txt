@@ -1,0 +1,17 @@
+Solver Report — combined
+Generated: 2026-02-13T19:47:02.808099
+
+Mode:            combined
+DOFs:            28577
+Mesh cells:      19200
+Element order:   P2 (Lagrange 2)
+Solver:          GMRES + ILU(0)
+rtol:            1e-8
+max iterations:  3000
+
+max(|p|):        88.1039 Pa
+  location:      (3.500, 0.000, 0.000) mm
+
+Frequency:       500 kHz
+k:               2116.976182 rad/m
+Wavelength:      2.968 mm

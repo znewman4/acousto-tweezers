@@ -1,0 +1,21 @@
+Solver Report — standing
+Generated: 2026-02-15T14:00:28.908611
+
+Mode:            standing
+DOFs:            76313
+Mesh cells:      52272
+Element order:   P2 (Lagrange 2)
+Solver:          MUMPS direct (LU)
+
+disc_robin:      False
+
+max(|p|):        81.6797 Pa
+min(|p|):        0.000003 Pa
+max(Re(p)):      0.4504 Pa
+  max loc:       (1.667, 1.667, 0.000) mm
+
+Frequency:       500 kHz
+k:               2116.976182 rad/m
+Wavelength:      2.968 mm
+
+

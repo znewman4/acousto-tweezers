@@ -1,0 +1,55 @@
+{
+  "V1_disc_robin_ON": {
+    "vname": "V1_disc_robin_ON",
+    "maxp_3d": 89.58899243606695,
+    "maxp_plane": 66.45106338874992,
+    "abs_p_center": 0.0005897081259142225,
+    "power_disc": 1.562111876728723e-09,
+    "power_top": 2.8242218515848656e-11,
+    "area_ratio": 0.893125382109403,
+    "disc_robin": true,
+    "Z_disc_override": null
+  },
+  "V2_disc_robin_OFF": {
+    "vname": "V2_disc_robin_OFF",
+    "maxp_3d": 81.67972054980942,
+    "maxp_plane": 57.7597281972061,
+    "abs_p_center": 0.007946799496457786,
+    "power_disc": 0.0,
+    "power_top": 3.093755175547362e-11,
+    "area_ratio": 0.893125382109403,
+    "disc_robin": false,
+    "Z_disc_override": null
+  },
+  "V3_disc_robin_LARGE_Z": {
+    "vname": "V3_disc_robin_LARGE_Z",
+    "maxp_3d": 81.67867185254485,
+    "maxp_plane": 57.75789511990337,
+    "abs_p_center": 0.00793544074329135,
+    "power_disc": 1.3641146081479697e-08,
+    "power_top": 3.093702351254148e-11,
+    "area_ratio": 0.893125382109403,
+    "disc_robin": true,
+    "Z_disc_override": 1479548000.0
+  },
+  "area_diagnostics": {
+    "lines": [
+      "Disc area (mesh):     25.2525 mm\u00b2",
+      "Disc area (\u03c0R\u00b2):      28.2743 mm\u00b2",
+      "Area ratio:           0.8931",
+      "Rigid area (mesh):    68.5950 mm\u00b2",
+      "Rigid area (expect):  71.7257 mm\u00b2",
+      "Top area (mesh):      100.0000 mm\u00b2",
+      "Top area (expect):    100.0000 mm\u00b2",
+      "R_disc:               3.00 mm",
+      "Centre:               (5.00, 5.00) mm"
+    ],
+    "ratio": 0.893125382109403
+  },
+  "diagnosis": {
+    "center_ratio_rigid_over_impedance": 13.475818200975082,
+    "maxp_ratio_rigid_over_impedance": 0.911716030382842,
+    "v3_v2_center_ratio": 0.9985706505906563,
+    "H1_confirmed": true
+  }
+}

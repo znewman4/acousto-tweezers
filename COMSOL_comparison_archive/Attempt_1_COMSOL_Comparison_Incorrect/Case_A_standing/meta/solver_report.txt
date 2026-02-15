@@ -1,0 +1,17 @@
+Solver Report — standing
+Generated: 2026-02-13T19:46:30.760555
+
+Mode:            standing
+DOFs:            28577
+Mesh cells:      19200
+Element order:   P2 (Lagrange 2)
+Solver:          GMRES + ILU(0)
+rtol:            1e-8
+max iterations:  3000
+
+max(|p|):        93.1522 Pa
+  location:      (0.000, 3.500, 0.000) mm
+
+Frequency:       500 kHz
+k:               2116.976182 rad/m
+Wavelength:      2.968 mm

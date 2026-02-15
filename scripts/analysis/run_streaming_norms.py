@@ -270,7 +270,7 @@ def main():
         log(f"  SYMMETRY CONVERGENCE (standing x-mirror)")
         log(f"{'='*65}")
         log(f"  Coarse 20×20×8 :  symmetry = {sym_coarse:.4f}")
-        log(f"  Fine   30×30×12:  symmetry = {sym_fine:.4f}")
+        log(f"  Fine   {cfg_fine.mesh_nx}×{cfg_fine.mesh_nx}×{cfg_fine.mesh_nz}:  symmetry = {sym_fine:.4f}")
         if sym_coarse is not None and sym_coarse > 0:
             drop = (sym_coarse - sym_fine) / sym_coarse * 100
             log(f"  Drop           :  {drop:+.1f}%  ({'improved' if drop > 0 else 'worsened'})")

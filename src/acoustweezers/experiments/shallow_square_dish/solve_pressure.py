@@ -220,6 +220,8 @@ def solve_helmholtz(
     mode: str = "combined",
     vortex_center: Optional[np.ndarray] = None,
     verbose: bool = True,
+    disc_robin: bool = True,
+    petsc_options: Optional[dict] = None,
 ) -> PressureSolution:
     """
     Solve complex Helmholtz equation with device-aligned BCs.
@@ -248,6 +250,13 @@ def solve_helmholtz(
         Override vortex center (x, y)
     verbose : bool
         Print progress
+    disc_robin : bool
+        If True (default), add impedance Robin BC on the bottom disc.
+        Set False to make the entire bottom rigid (investigation mode).
+    petsc_options : dict, optional
+        PETSc solver options. Default: GMRES + ILU.
+        For direct solve use e.g. {"ksp_type": "preonly", "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps"}.
         
     Returns
     -------
@@ -325,8 +334,10 @@ def solve_helmholtz(
     # --- BOTTOM DISC: Impedance Robin (Z_water) ---
     # The disc always has impedance Robin whether or not the vortex source
     # is active.  A physical transducer is an impedance-matched boundary.
-    alpha_disc = -1j * omega * rho / Z
-    a += alpha_disc * inner(u, v) * dss(TAG_BOTTOM_DISC)
+    # When disc_robin=False (investigation mode), the disc is treated as rigid.
+    if disc_robin:
+        alpha_disc = -1j * omega * rho / Z
+        a += alpha_disc * inner(u, v) * dss(TAG_BOTTOM_DISC)
     
     # --- BOTTOM RIGID (r > R_disc): no term (natural Neumann = rigid) ---
     # --- SIDE WALLS: no Robin term — rigid or pure Neumann source ---
@@ -334,7 +345,10 @@ def solve_helmholtz(
     if verbose:
         print(f"  BCs:")
         print(f"    Top:         impedance Robin (Z_top/Z_water = {cfg.top_impedance_factor})")
-        print(f"    Bottom disc: impedance Robin (Z = Z_water)")
+        if disc_robin:
+            print(f"    Bottom disc: impedance Robin (Z = Z_water)")
+        else:
+            print(f"    Bottom disc: RIGID (disc_robin=False, investigation mode)")
         print(f"    Bottom rest: rigid (natural Neumann)")
         print(f"    Side walls:  rigid (+ Neumann source when active)")
     
@@ -411,14 +425,16 @@ def solve_helmholtz(
     # =========================================================================
     # SOLVE (using complex linear algebra)
     # =========================================================================
-    problem = LinearProblem(
-        a, L_form, bcs=[],
-        petsc_options={
+    if petsc_options is None:
+        petsc_options = {
             "ksp_type": "gmres",
             "ksp_rtol": 1e-8,
             "ksp_max_it": 3000,
             "pc_type": "ilu",
         }
+    problem = LinearProblem(
+        a, L_form, bcs=[],
+        petsc_options=petsc_options,
     )
     
     p_solution = problem.solve()

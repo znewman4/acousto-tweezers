@@ -1,0 +1,47 @@
+{
+  "cases": {
+    "A standing (rigid)": {
+      "maxp_plane": 57.75972819720722,
+      "p_center": 0.007946799498858122
+    },
+    "B vortex orig (-i\u03c9\u03c1)": {
+      "maxp_plane": 6.4644538606237925,
+      "p_center": 0.20345383158587865
+    },
+    "B vortex flip (+i\u03c9\u03c1)": {
+      "maxp_plane": 6.4644538606237925,
+      "p_center": 0.2034538315858786
+    },
+    "C comb orig V\u2080": {
+      "maxp_plane": 65.13754348937081,
+      "p_center": 0.20382248843301778
+    },
+    "C comb flip V\u2080": {
+      "maxp_plane": 68.31382271706563,
+      "p_center": 0.2030862178836114
+    },
+    "C comb orig V\u2080\u00d72": {
+      "maxp_plane": 63.84126203220175,
+      "p_center": 0.407276059940104
+    },
+    "C comb flip V\u2080\u00d72": {
+      "maxp_plane": 70.17666091698872,
+      "p_center": 0.4065397879750706
+    }
+  },
+  "disc_avg_abs_p": {
+    "standing": 23.014640259291422,
+    "comb_orig": 11.15513810098769,
+    "comb_flip": 10.14392664271749
+  },
+  "rhs_norms_orig": {
+    "standing": 0.021969380478194307,
+    "vortex": 0.011940370579143015,
+    "combined": 0.025004522154261098
+  },
+  "rhs_norms_flip": {
+    "standing": 0.021969380478194307,
+    "vortex": 0.011940370579143015,
+    "combined": 0.025004522154261098
+  }
+}
