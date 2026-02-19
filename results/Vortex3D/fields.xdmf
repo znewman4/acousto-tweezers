@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="3.0" xmlns:xi="https://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="mesh" GridType="Uniform">
+      <Topology TopologyType="Tetrahedron" NumberOfElements="249600" NodesPerElement="4">
+        <DataItem Dimensions="249600 4" NumberType="Int" Format="HDF">fields.h5:/Mesh/mesh/topology</DataItem>
+      </Topology>
+      <Geometry GeometryType="XYZ">
+        <DataItem Dimensions="45387 3" Format="HDF">fields.h5:/Mesh/mesh/geometry</DataItem>
+      </Geometry>
+    </Grid>
+    <Grid Name="Re_p" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Re_p" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="real_Re_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/real_Re_p/0</DataItem>
+        </Attribute>
+        <Attribute Name="imag_Re_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/imag_Re_p/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="Im_p" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Im_p" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="real_Im_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/real_Im_p/0</DataItem>
+        </Attribute>
+        <Attribute Name="imag_Im_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/imag_Im_p/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="abs_p" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="abs_p" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="real_abs_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/real_abs_p/0</DataItem>
+        </Attribute>
+        <Attribute Name="imag_abs_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/imag_abs_p/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="arg_p" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="arg_p" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="real_arg_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/real_arg_p/0</DataItem>
+        </Attribute>
+        <Attribute Name="imag_arg_p" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/imag_arg_p/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="I_z" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="I_z" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="real_I_z" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/real_I_z/0</DataItem>
+        </Attribute>
+        <Attribute Name="imag_I_z" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/imag_I_z/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="abs_I" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="abs_I" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="real_abs_I" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/real_abs_I/0</DataItem>
+        </Attribute>
+        <Attribute Name="imag_abs_I" AttributeType="Scalar" Center="Node">
+          <DataItem Dimensions="45387 1" Format="HDF">fields.h5:/Function/imag_abs_I/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="I_vector" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="I_vector" GridType="Uniform">
+        <xi:include xpointer="xpointer(/Xdmf/Domain/Grid[@GridType='Uniform'][1]/*[self::Topology or self::Geometry])" />
+        <Time Value="0" />
+        <Attribute Name="real_I_vector" AttributeType="Vector" Center="Node">
+          <DataItem Dimensions="45387 3" Format="HDF">fields.h5:/Function/real_I_vector/0</DataItem>
+        </Attribute>
+        <Attribute Name="imag_I_vector" AttributeType="Vector" Center="Node">
+          <DataItem Dimensions="45387 3" Format="HDF">fields.h5:/Function/imag_I_vector/0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>
