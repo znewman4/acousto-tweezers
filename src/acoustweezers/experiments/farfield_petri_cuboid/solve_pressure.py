@@ -284,9 +284,12 @@ def solve_helmholtz(
     L_terms = []
 
     # 1) Bottom disk: vortex drive  ∂p/∂n = −iωρ v_n(x)
+    # Bottom face outward normal is -z.
+    # For upward-propagating wave: v_z > 0 → v_n = v·n̂ = -v_z < 0
+    # ∂p/∂n = iωρ v_n = -iωρ v_z, so g = -iωρ V_disk * pattern.
     V_disk = cfg.disk_velocity_amplitude
     g_disk = _create_disk_source(V, domain, facet_tags, cfg, verbose)
-    # scale by −iωρ V_disk
+    # scale by −iωρ V_disk  (v_n < 0 on bottom face → wave propagates +z)
     g_disk.x.array[:] *= -1j * omega * rho * V_disk
     L_terms.append(inner(g_disk, v) * dss(TAG_BOTTOM_DISK))
 

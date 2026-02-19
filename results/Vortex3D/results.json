@@ -1,48 +1,46 @@
 {
-  "timestamp": "20260219_190250",
+  "timestamp": "20260219_192955",
   "solver": {
     "type": "MUMPS direct",
     "DOFs": 347733,
-    "max_p_Pa": 17.75625359551426,
-    "solve_time_s": 37.20472717285156,
+    "max_p_Pa": 17.756253595514206,
+    "solve_time_s": 33.852210521698,
     "elements_per_wavelength": 5,
     "ksp_converged_reason": 4
   },
   "part2_topological_charge": {
-    "ell": 1.0000000000000002,
-    "total_winding_rad": 6.283185307179587,
+    "ell": 1.0,
+    "total_winding_rad": 6.283185307179586,
     "ring_r_mm": 0.3,
     "z_mm": 2.0,
     "status": "PASS"
   },
   "part3_axial_null": {
-    "max_on_axis_Pa": 0.49411335634488546,
-    "max_off_axis_Pa": 6.985595140659103,
-    "core_ratio": 0.07073317969272766,
+    "max_on_axis_Pa": 0.4941133563455488,
+    "max_off_axis_Pa": 6.9855951406589245,
+    "core_ratio": 0.07073317969282443,
     "ring_r_mm": 0.4,
     "status": "PASS"
   },
   "part4_power_flow": {
-    "mean_Iz_above": -2.2528239391834567e-06,
-    "mean_Iz_below": -1.0040554040981393e-05,
-    "positive_Iz_fraction": 0.0,
+    "mean_Iz_above": 2.252823939183398e-06,
+    "mean_Iz_below": 1.004055404098148e-05,
+    "positive_Iz_fraction": 1.0,
     "n_dofs_above": 1781,
     "n_dofs_below": 548,
-    "status": "FAIL"
+    "status": "PASS"
   },
   "part5_pml_absorption": {
-    "decay_ratio": 0.000990393172043746,
-    "p2_inner": 1.810025470099561,
-    "p2_outer": 0.0017926368668118766,
+    "decay_ratio": 0.0009903931720437464,
+    "p2_inner": 1.8100254700995608,
+    "p2_outer": 0.0017926368668118775,
     "n_inner": 19656,
     "n_outer": 13272,
     "status": "PASS"
   },
-  "warnings": [
-    "PART 4: mean(I_z_above) = -2.252824e-06, positive fraction = 0.0000"
-  ],
+  "warnings": [],
   "summary": {
-    "pass": 3,
-    "fail": 1
+    "pass": 4,
+    "fail": 0
   }
 }
