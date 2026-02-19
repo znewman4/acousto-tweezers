@@ -10,7 +10,7 @@ micro-particle manipulation in shallow liquid-filled cavities.
 
 This codebase models the physics of an acoustic tweezer system operating in
 water at ultrasonic frequencies (typically 500 kHz).  The device geometry is a
-shallow square petri dish (~50 mm lateral, ~5 mm deep) instrumented with:
+shallow square petri dish (~10-30 mm lateral, ~1 mm deep) instrumented with:
 
 - **Side-wall transducer pairs** that generate one- or two-axis standing-wave
   pressure fields, creating a periodic lattice of Gor'kov potential minima
@@ -68,27 +68,31 @@ Euler equation $\nabla p = i\omega\rho\,\mathbf{v}$:
    where $\ell$ is the topological charge and $A(r)$ is a cosine-taper
    apodisation profile.
 
-2. **Robin (impedance).**  On the bottom disc and the top surface:
+2. **Robin (impedance).**  On the top surface and optionally side walls:
    $$\frac{\partial p}{\partial n} = \frac{i\omega\rho}{Z}\,p$$
    This is moved to the bilinear form as $\alpha\langle u, v\rangle_{ds}$ with
    the Robin coefficient $\alpha = -i\omega\rho / Z$.  The top uses
-   $Z_\text{top} = 0.001\,Z_\text{water}$ (modelling the water–air interface);
-   the disc uses $Z_\text{water} = \rho c$.
+   $Z_\text{top} = 0.001\,Z_\text{water}$ (modelling the water–air interface).
+   Side walls and the bottom rigid region can optionally be given finite
+   impedance via `wall_impedance_Zrel` and `bottom_rigid_impedance_Zrel` in
+   `ShallowDishConfig` (both default to `None` → rigid).
 
 3. **Rigid (natural Neumann).**  On inactive side walls and the bottom floor
    outside the disc: $\partial p / \partial n = 0$.  No term is added to either
    the bilinear form or the RHS — this is the natural boundary condition of the
    Helmholtz weak form.
 
-**Mode logic:**
+**Mode logic (default — rigid walls):**
 
 | Mode | Side walls | Bottom disc |
 |------|------------|-------------|
-| `standing` | Active Neumann source | Impedance Robin (no source) |
-| `vortex` | Rigid | Impedance Robin + vortex source |
-| `combined` | Active Neumann source | Impedance Robin + vortex source |
+| `standing` | Active Neumann source | Rigid (∂p/∂n = 0) |
+| `vortex` | Rigid | Pure Neumann vortex source |
+| `combined` | Active Neumann source | Pure Neumann vortex source |
 
-Side walls are **never** impedance-matched absorbers.
+When `wall_impedance_Zrel` is set to a finite value, a Robin impedance term
+is added to all four side walls *in addition* to any Neumann source terms.
+This enables the Phase 2 lossy-cavity study.
 
 ---
 
@@ -109,11 +113,14 @@ The weak form reads:
 $$a(u,v) = \int_\Omega \nabla u \cdot \nabla \bar{v}\,dx
          - k^2 \int_\Omega u\,\bar{v}\,dx
          + \alpha_\text{top}\int_{\Gamma_\text{top}} u\,\bar{v}\,ds
-         + \alpha_\text{disc}\int_{\Gamma_\text{disc}} u\,\bar{v}\,ds$$
+         + \alpha_\text{disc}\int_{\Gamma_\text{disc}} u\,\bar{v}\,ds
+         + \sum_{\text{lossy walls}} \alpha_\text{wall}\int_{\Gamma_j} u\,\bar{v}\,ds$$
 
 $$L(v) = \sum_{\text{active walls}} \int_{\Gamma_i} g_i\,\bar{v}\,ds$$
 
-where $g_i = -i\omega\rho\,v_{n,i}$ is the Neumann data.
+where $g_i = -i\omega\rho\,v_{n,i}$ is the Neumann data and
+$\alpha_\text{wall} = -i\omega\rho / Z_\text{wall}$ (only when
+`wall_impedance_Zrel` is set; omitted for rigid walls).
 
 ### 3.2  Mesh and Facet Tagging
 
@@ -249,11 +256,14 @@ micromamba run -n acousto-complex python scripts/validation/test_1d_impedance.py
 micromamba run -n acousto-complex python scripts/validation/test_energy_balance.py
 micromamba run -n acousto-complex python scripts/validation/test_petri_dish_bcs.py
 
-# Run a deposition experiment (vortex → trap → stability)
-micromamba run -n acousto-complex python scripts/experiments/run_deposition_experiment.py
+# Phase 0 — 10×10 mm baseline with disc diameter sweep (D=2,3,4 mm)
+micromamba run -n acousto-complex python scripts/experiments/phase0_baseline_sweep.py
 
-# Run streaming diagnostics
-micromamba run -n acousto-complex python scripts/experiments/run_complex_streaming_diagnostics.py
+# Phase 1 — Transducer size & dish size architecture sweep
+micromamba run -n acousto-complex python scripts/experiments/phase1_sweep.py
+
+# Phase 2 — Wall impedance sweep (lossy cavity)
+micromamba run -n acousto-complex python scripts/experiments/impedance_sweep.py
 ```
 
 ### 7.3  Configuration
@@ -274,6 +284,27 @@ All simulation parameters are controlled through `ShallowDishConfig`
 | `standing_axis` | `"x"` | Active wall pair(s) |
 | `elements_per_wavelength` | 6 | Mesh resolution |
 | `top_impedance_factor` | 0.001 | Z_top / Z_water |
+| `wall_impedance_Zrel` | `None` | Relative wall impedance Z_wall/(ρc); `None` = rigid |
+| `bottom_rigid_impedance_Zrel` | `None` | Z_rel on bottom rigid region; `None` = rigid |
+
+#### Phase 0 Presets (10×10 mm Baseline)
+
+Three presets lock the 10×10 mm testbed with varying disc diameter:
+
+| Preset | L | D_disc | R_disc | Coverage |
+|--------|---|--------|--------|----------|
+| `L10_D02` | 10 mm | 2 mm | 1.0 mm | 3.1% |
+| `L10_D03` | 10 mm | 3 mm | 1.5 mm | 7.1% |
+| `L10_D04` | 10 mm | 4 mm | 2.0 mm | 12.6% |
+
+All use: H=1 mm, f=500 kHz, 10 elem/λ, both-axis antiphase standing,
+cosine-taper vortex, V_stand=V_vtx=10 μm/s.
+
+Access via:
+```python
+from acoustweezers.experiments.shallow_square_dish.config import PHASE0_PRESETS
+cfg = PHASE0_PRESETS["L10_D03"]()
+```
 
 ---
 
@@ -288,27 +319,45 @@ acousto-tweezers/
 │
 ├── src/acoustweezers/
 │   ├── experiments/
-│   │   └── shallow_square_dish/
-│   │       ├── config.py          ShallowDishConfig dataclass
-│   │       ├── solve_pressure.py  Helmholtz solver + mesh + BCs
-│   │       ├── streaming.py       Stokes streaming solver
-│   │       ├── particles.py       Gor'kov + trajectory integration
-│   │       └── export.py          VTU/XDMF export
+│   │   ├── shallow_square_dish/
+│   │   │   ├── config.py          ShallowDishConfig + Phase 0 presets
+│   │   │   ├── solve_pressure.py  Helmholtz solver + mesh + BCs + wall impedance
+│   │   │   ├── streaming.py       Stokes streaming solver
+│   │   │   ├── particles.py       Gor'kov + trajectory integration
+│   │   │   └── export.py          VTU/XDMF export
+│   │   └── farfield_petri_cuboid/
+│   │       ├── config.py          FarFieldConfig (+ plastic lens fields, fast_mode_config)
+│   │       ├── mesh.py            Mesh with PML cell/facet tags
+│   │       ├── solve_pressure.py  PML-Helmholtz (UFL PML coefficients, KSP reporting)
+│   │       └── post.py            Diagnostics: slicing, plotting, CSV, .npz export
 │   ├── physics/                   Shared physics modules
+│   │   └── acoustics/
+│   │       └── vortex_lens.py     VortexLensConfig + PlasticLensConfig + LENS_PRESETS
 │   ├── numerics/                  FEM assembly utilities
 │   └── legacy/                    Archived older solver stacks
 │
 ├── scripts/
 │   ├── validation/               Regression & verification tests
-│   ├── experiments/              End-to-end simulation pipelines
+│   ├── experiments/
+│   │   ├── phase0_baseline_sweep.py   Phase 0 disc-diameter sweep (L10_D02/D03/D04)
+│   │   ├── phase1_sweep.py            Phase 1 dish + piezo architecture sweep
+│   │   ├── impedance_sweep.py         Phase 2 wall impedance sweep
+│   │   ├── farfield_vortex_plus_standing.py  Far-field PML demo (2 MHz)
+│   │   ├── farfield_pml_operator_check.py    A2: PML vs rigid diagnostic
+│   │   ├── farfield_s4_topbc_sensitivity.py  B1: top BC sensitivity sweep
+│   │   ├── farfield_plastic_lens_gallery.py  D3: lens preset gallery
+│   │   ├── farfield_plastic_vs_ideal.py      E1: plastic vs ideal comparison
+│   │   └── ...                        Other experiment pipelines
 │   └── analysis/                 Postprocessing, plotting, export
 │
-├── results/                      Current run outputs
+├── results/
+│   ├── phase0_baseline_latest -> phase0_baseline_<stamp>/
+│   ├── phase2_impedance_latest -> phase2_impedance_<stamp>/
+│   ├── farfield_latest -> farfield_vortex_standing_<stamp>/
+│   └── ...                       Timestamped run outputs
+│
 ├── docs/                         Maintained documentation
 ├── archive/                      Quarantined old docs, scripts, results
-│   ├── redundant_docs/
-│   ├── scripts_old/
-│   └── results/
 │
 ├── docker/Dockerfile
 └── environment/
@@ -316,25 +365,235 @@ acousto-tweezers/
     └── setup_env_complex.sh
 ```
 
-The active solver lives entirely in
-`src/acoustweezers/experiments/shallow_square_dish/`.  Legacy code under
-`src/acoustweezers/legacy/` is retained for reference but is not imported by
-any current script.
+The active solvers live in `src/acoustweezers/experiments/shallow_square_dish/`
+(shallow cavity, 500 kHz) and `src/acoustweezers/experiments/farfield_petri_cuboid/`
+(far-field PML, 2 MHz).  Legacy code under `src/acoustweezers/legacy/` is
+retained for reference but is not imported by any current script.
 
 ---
 
-## 9  Roadmap
+## 9  Far-Field Petri Cuboid (2 MHz PML Demo)
 
-- **COMSOL cross-validation**: compare pressure fields and streaming velocities
-  against a COMSOL Multiphysics model with identical geometry and BCs.
-- **Frequency-hopping atlas**: precompute Gor'kov landscapes at multiple
-  frequencies to enable frequency-based selectivity.
-- **Lens library**: catalogue vortex-beam profiles (different $\ell$,
-  apodisations, focal-plane offsets) and their streaming/trapping properties.
-- **Conforming disc mesh**: generate a mesh that conforms to the disc boundary
-  for improved accuracy at the transducer edge.
-- **Boundary-layer streaming**: implement Schlichting-streaming corrections
-  for thin viscous boundary layers near rigid walls.
+### 9.1  Domain Layout
+
+A taller cuboid domain (default 6×6×4 mm) models upward propagation from a
+bottom-mounted vortex disc through a water under-bath (3 mm) into a thin petri
+slab (1 mm) at the top.  Perfectly Matched Layers (PML) absorb outgoing waves
+on the four lateral faces and the bottom face (outside the disc column),
+preventing artificial reflections.  The top face carries a water-air impedance
+Robin BC ($Z_\text{air} \approx 413$ Pa·s/m).
+
+### 9.2  PML Formulation
+
+Complex coordinate stretching: $\tilde{x}_\alpha = x_\alpha + \frac{i}{\omega}\int_0^{x_\alpha} \sigma_\alpha(s)\,ds$.
+The absorption profile $\sigma_\alpha$ uses a polynomial ramp of degree 2
+with $\sigma_\text{max} = 5\omega$.  PML thickness defaults to 1 wavelength
+(λ ≈ 0.742 mm at 2 MHz in water).
+
+The stretch factors $s_\alpha = 1 + i\sigma_\alpha / \omega$ and the PML metric
+tensor $\Lambda_x = s_y s_z / s_x$ and Jacobian $J = s_x s_y s_z$ are built
+as **UFL expressions** from the σ `fem.Function` objects.  FFCx evaluates these
+rational expressions at quadrature points, avoiding P2 projection error that
+would arise from DOF-array arithmetic on the products of P2 functions.
+
+### 9.3  Boundary Conditions
+
+| Boundary | BC |
+|----------|----|
+| Bottom disc ($z=0$, $r \le R_\text{disc}$) | Neumann: $\partial_n p = -i\omega\rho\,v_n(\mathbf{x})$ (plastic lens or ideal vortex) |
+| Bottom outside disc | PML absorbing layer |
+| Lateral faces | PML absorbing layer |
+| Petri slab sides ($z \ge H_\text{under}$) | Standing-wave Neumann patches |
+| Top ($z = H$) | Robin: $\partial_n p = +i\omega\rho\,p / Z_\text{top}$ (i.e. $+ik/Z_\text{rel}$) |
+
+### 9.4  Plastic Lens Vortex Drive (Day 2)
+
+The default bottom-disc drive models a **fabricable plastic spiral-phase lens**
+that encodes both vortex and focusing phases via thickness variation:
+
+$$\varphi_\mathrm{target}(x,y) = \ell\,\theta + k_w\left(\sqrt{(x - x_f)^2 + (y - y_f)^2 + f^2} - f\right)$$
+
+$$\varphi_\mathrm{plastic} = \mathrm{mod}(\varphi_\mathrm{target},\, 2\pi)$$
+
+The boundary velocity is $v_n(x,y) = V_0\,A(r)\,\exp(i\varphi_\mathrm{plastic})$,
+where $A(r)$ is one of `cosine_taper`, `tukey`, or `uniform` apodization.
+
+Physical thickness for fabrication:
+
+$$t(x,y) = t_0 + \frac{\mathrm{mod}(\varphi_\mathrm{target},\,2\pi)}{k_\mathrm{lens} - k_\mathrm{water}}$$
+
+Configuration fields (in `FarFieldConfig`):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `lens_drive` | `"plastic"` | `"plastic"` (focused+vortex) or `"ideal"` (pure $e^{i\ell\theta}$) |
+| `lens_l` | 1 | Topological charge $\ell$ |
+| `lens_focal_length` | 10 mm | Focusing focal length $f$ |
+| `lens_focus_offset_x` | 0.2 mm | Off-axis focus $x_f$ (biases translation) |
+| `lens_focus_offset_y` | 0.0 | Off-axis focus $y_f$ |
+| `lens_c_lens` | 2700 m/s | Speed of sound in plastic (polycarbonate/acrylic) |
+| `lens_apodization` | `"cosine_taper"` | Amplitude taper profile |
+| `lens_apodization_strength` | 1.0 | Tukey taper parameter |
+
+The physics module lives in `src/acoustweezers/physics/acoustics/vortex_lens.py`
+(`PlasticLensConfig`, `create_plastic_lens_drive()`).
+
+### 9.5  Running
+
+```bash
+# Default: plastic lens drive (focused vortex)
+micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py
+
+# Fallback: legacy ideal vortex (pure exp(i ℓ θ), no focusing)
+micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py --ideal
+
+# Fast mode: 4 elem/λ for quick qualitative checks
+micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py --fast
+
+# Custom solver parameters
+micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py \
+    --rtol 1e-5 --restart 300 --maxit 8000
+```
+
+**CLI arguments** (added 2026-02-17):
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--ideal` | off | Use ideal vortex instead of plastic lens |
+| `--fast` | off | 4 elem/λ (qualitative only, ~5× faster) |
+| `--rtol` | 1e-4 | GMRES relative tolerance |
+| `--restart` | 200 | GMRES subspace restart |
+| `--maxit` | 5000 | Maximum GMRES iterations |
+
+Outputs land in `results/farfield_vortex_standing_<timestamp>/` (symlinked as
+`results/farfield_latest`).  Generates:
+
+- Diagnostic PNGs: XY/XZ slices, centerline, energy, disk drive patterns
+  (disk_amplitude.png, disk_phase.png, disk_real.png, disk_imag.png)
+- `csv/summary.csv` — PML vs rigid comparison metrics
+- `config.json` — full configuration dump
+
+### 9.6  PML Diagnostic Findings (Part 1)
+
+Systematic diagnostics (`scripts/experiments/farfield_part1_diagnostics.py`)
+confirmed the PML implementation is correct:
+
+| Suspect | Test | Verdict |
+|---------|------|---------|
+| **S1**: PML leaks into top | σ_z = 0 at all DOFs near top face and in petri slab; only σ_x, σ_y nonzero (in lateral PML bands) | **PASS** |
+| **S2**: Disk source damped by PML | σ_z = 0 for all 5530 DOFs in disk column ($r \le R$, $z < t_\mathrm{pml}$); σ_z active only outside disk | **PASS** |
+| **S3**: GMRES convergence | GMRES(30)+ILU stagnated at residual ~124 after 4800 iters.  GMRES(200)+ILU converges: rtol=1e-3 → 1e-5 gives identical max\|p\| to 4 d.p. (18.0069 Pa) | **FIXED** |
+| **S4**: Top BC toggleable | Impedance vs pressure-release gives only 0.02% difference — PML domination makes top BC nearly irrelevant | **PASS** (by design) |
+
+**S3 critical fix**: GMRES restart increased 30 → 200, default rtol changed to
+1e-4.  The complex-indefinite Helmholtz+PML system requires a large Krylov
+subspace.  rtol=1e-3 to 1e-5 tolerance sweep shows solutions are converged
+(0.00% variation in max|p| and centerline max).
+
+**S4 note**: The near-identical impedance vs pressure-release results confirm
+that the PML + water column geometry dominates the physics — by the time acoustic
+energy reaches the top face, it has already been absorbed or spread laterally.
+The top BC choice is cosmetic at the current domain depth (3 mm underbath).
+
+### 9.7  Memory Notes
+
+At 2 MHz (λ = 0.742 mm) the mesh is dense.  On a 7.5 GB machine, use
+≤ 6 mm domain, 5 elem/λ, and GMRES(200)+ILU (MUMPS is infeasible).  The driver
+script explicitly frees the PML solution before starting the rigid solve.
+
+### 9.8  Lens Presets (Day 2)
+
+Three presets cover common use cases.  Access via:
+
+```python
+from acoustweezers.physics.acoustics.vortex_lens import LENS_PRESETS
+lens_cfg = LENS_PRESETS["B"]()  # focused preset
+```
+
+| Preset | l | f (mm) | Offset (x, y) mm | Description |
+|--------|---|--------|-------------------|-------------|
+| A | 1 | 50 | (0, 0) | Weak focus / pure vortex |
+| B | 1 | 10 | (0, 0) | Strong focus |
+| C | 1 | 10 | (0.2, 0) | Off-axis focus (biased transport) |
+
+Gallery: `python scripts/experiments/farfield_plastic_lens_gallery.py`
+→ `results/farfield_lens_gallery_latest/`
+
+### 9.9  Diagnostic Scripts (Day 2)
+
+| Script | Purpose | Key Result |
+|--------|---------|------------|
+| `farfield_pml_operator_check.py` | PML vs rigid comparison (A2) | 98.4% diff in max\|p\|, 7 vs 5000 iters |
+| `farfield_s4_topbc_sensitivity.py` | Impedance vs Dirichlet sweep (B1) | < 0.4% diff with PML on |
+| `farfield_plastic_lens_gallery.py` | Lens preset visual gallery (D3) | Thickness [0.200, 1.848] mm |
+| `farfield_plastic_vs_ideal.py` | Plastic vs ideal comparison (E1) | ~0% diff at 4 elem/λ |
+
+All scripts are in `scripts/experiments/` and output timestamped results with
+a `_latest` symlink.
+
+---
+
+## 10  Roadmap
+
+### Phase 0 — 10×10 mm Baseline + Disc Diameter Sweep
+
+| ID | Task | Status |
+|----|------|--------|
+| P0.1 | Define L10_D02/D03/D04 presets (L=10 mm, D=2/3/4 mm) | **Done** |
+| P0.2 | Sweep script: A/B/C + amplitude sweep per preset | **Done** |
+| P0.3 | Comparison table: trap count, authority, selectivity | **Done** |
+| P0.4 | Acceptance: all discs < 15 % coverage, stable runtime | **Done** |
+
+Results: `results/phase0_baseline_latest/`
+
+### Phase 1 — Realistic Lens Boundary Model
+
+| ID | Task | Status |
+|----|------|--------|
+| P1.1 | Plastic lens module (`vortex_lens.py`) with `PlasticLensConfig` + `create_plastic_lens_drive()` | **Done** |
+| P1.2 | Amplitude + phase maps (`disk_amplitude.png`, `disk_phase.png`, `disk_real.png`, `disk_imag.png`) | **Done** |
+| P1.3 | Regression: `--ideal` flag reproduces legacy ideal vortex baseline | **Done** |
+| P1.4 | PML S1–S4 diagnostics (`farfield_part1_diagnostics.py`) | **Done** |
+| P1.5 | GMRES stagnation fix: restart 30→200, rtol 1e-8→1e-4 | **Done** |
+
+### Phase 2 — Wall + Bottom Impedance Sweep (Lossy Cavity)
+
+| ID | Task | Status |
+|----|------|--------|
+| P2.1 | Robin impedance terms on side walls (solver change) | **Done** |
+| P2.2 | Impedance sweep script (`impedance_sweep.py`) | **Done** |
+| P2.3 | Comparison: |p|, trap depth, selectivity vs Z_rel | **Done** |
+| P2.4 | Confirm: resonance peaks soften as walls become less rigid | **Done** |
+
+Results: `results/phase2_impedance_latest/`
+
+Key finding: as Z_rel decreases from ∞ → 1, max|p| drops 81.7 → 57.0 Pa,
+selectivity improves 0.73 → 1.60, confirming lossy walls reduce global
+recirculation while preserving local vortex authority.
+
+### Phase 3 — Frequency Separation (Two-Frequency Operation)
+
+| ID | Task | Status |
+|----|------|--------|
+| P3.1 | Dual Helmholtz solves (f_s for standing, f_v for vortex) | Planned |
+| P3.2 | Gor'kov superposition (no cross terms) | Planned |
+| P3.3 | Demo: lattice stable + local vortex transport | Planned |
+
+### Phase 4 — Integration (Best Available Model)
+
+| ID | Task | Status |
+|----|------|--------|
+| P4.1 | Combine: realistic lens + impedance + dual-frequency | Planned |
+| P4.2 | Reference config + reproducible report | Planned |
+
+### Completed (earlier)
+
+- COMSOL cross-validation (Attempt 4) — pressure fields for Cases A/B/C match
+  expected physics (disc as pure Neumann source, no impedance absorption)
+- Phase 1 architecture sweep (5/10/20 mm piezo, 10/30 mm dish) — see
+  `scripts/experiments/phase1_sweep.py`
+- **Far-field PML demo (2 MHz)** — upward-propagating vortex + standing waves
+  with PML absorption; see Section 9 and `results/farfield_latest/`
 
 ---
 

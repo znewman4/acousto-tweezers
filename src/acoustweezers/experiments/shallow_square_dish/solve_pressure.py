@@ -340,7 +340,19 @@ def solve_helmholtz(
         a += alpha_disc * inner(u, v) * dss(TAG_BOTTOM_DISC)
     
     # --- BOTTOM RIGID (r > R_disc): no term (natural Neumann = rigid) ---
-    # --- SIDE WALLS: no Robin term — rigid or pure Neumann source ---
+    # --- unless bottom_rigid_impedance_Zrel is set ---
+    if cfg.bottom_rigid_impedance_Zrel is not None and cfg.bottom_rigid_impedance_Zrel > 0:
+        Z_br = cfg.bottom_rigid_impedance_Zrel * Z  # absolute impedance
+        alpha_br = -1j * omega * rho / Z_br
+        a += alpha_br * inner(u, v) * dss(TAG_BOTTOM_RIGID)
+    
+    # --- SIDE WALLS: impedance Robin when wall_impedance_Zrel is set ---
+    wall_tags = [TAG_X0, TAG_XL, TAG_Y0, TAG_YL]
+    if cfg.wall_impedance_Zrel is not None and cfg.wall_impedance_Zrel > 0:
+        Z_wall = cfg.wall_impedance_Zrel * Z  # absolute impedance
+        alpha_wall = -1j * omega * rho / Z_wall
+        for wt in wall_tags:
+            a += alpha_wall * inner(u, v) * dss(wt)
     
     if verbose:
         print(f"  BCs:")
@@ -349,8 +361,15 @@ def solve_helmholtz(
             print(f"    Bottom disc: impedance Robin (Z = Z_water)")
         else:
             print(f"    Bottom disc: RIGID (disc_robin=False, investigation mode)")
-        print(f"    Bottom rest: rigid (natural Neumann)")
-        print(f"    Side walls:  rigid (+ Neumann source when active)")
+        if cfg.bottom_rigid_impedance_Zrel is not None and cfg.bottom_rigid_impedance_Zrel > 0:
+            print(f"    Bottom rest: impedance Robin (Z_rel = {cfg.bottom_rigid_impedance_Zrel})")
+        else:
+            print(f"    Bottom rest: rigid (natural Neumann)")
+        if cfg.wall_impedance_Zrel is not None and cfg.wall_impedance_Zrel > 0:
+            print(f"    Side walls:  impedance Robin (Z_rel = {cfg.wall_impedance_Zrel})"
+                  f" + Neumann source when active")
+        else:
+            print(f"    Side walls:  rigid (+ Neumann source when active)")
     
     # =========================================================================
     # LINEAR FORM (RHS): Neumann actuation sources

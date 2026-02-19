@@ -85,8 +85,12 @@ class ShallowDishConfig:
     # Radius defaults to vortex_aperture_radius if None.
     bottom_disc_radius: float = None           # [m], None → vortex_aperture_radius
     
-    # Side walls (x±, y±) are ALWAYS rigid when inactive (natural Neumann)
-    # and pure Neumann source when active. NEVER impedance-matched.
+    # Side walls (x±, y±) impedance: None = rigid (natural Neumann).
+    # When a wall is ACTIVE (standing source), its impedance Robin term
+    # is added IN ADDITION to the Neumann source.
+    # Z_rel = Z_wall / (rho * c).  None or inf → rigid.
+    wall_impedance_Zrel: float = None    # Relative impedance on side walls
+    bottom_rigid_impedance_Zrel: float = None  # Z_rel on bottom rigid region
     
     # ==========================================================================
     # MESH
@@ -317,3 +321,57 @@ def get_path_tracking_config() -> ShallowDishConfig:
         vortex_path_n_steps=20,
         particle_t_max=0.2,
     )
+
+
+# ─── Phase 0 Presets: 10×10 mm baseline with smaller vortex discs ───
+
+def _phase0_base(**overrides) -> ShallowDishConfig:
+    """Base config for Phase 0: L=10 mm, H=1 mm, f=500 kHz."""
+    defaults = dict(
+        L=10e-3, H=1e-3,
+        frequency_hz=500e3,
+        elements_per_wavelength=10,
+        min_elements_z=8,
+        rho=997.0, c=1484.0, mu=1.002e-3,
+        vortex_velocity_amplitude=10e-6,
+        standing_velocity_amplitude=10e-6,
+        vortex_topological_charge=1,
+        vortex_apodization="cosine_taper",
+        vortex_phase_offset=0.0,
+        standing_axis="both",
+        standing_phase_pattern="antiphase",
+        top_bc_type="impedance",
+        top_impedance_factor=0.001,
+        bottom_disc_radius=None,
+        standing_full_wall=True,
+        particle_radius=5e-6,
+        particle_density=1050.0,
+        particle_compressibility=2.4e-10,
+    )
+    defaults.update(overrides)
+    return ShallowDishConfig(**defaults)
+
+
+def get_L10_D02_config() -> ShallowDishConfig:
+    """Phase 0 preset: L=10 mm, D_disc=2 mm (R=1 mm)."""
+    return _phase0_base(vortex_aperture_radius=1.0e-3)
+
+
+def get_L10_D03_config() -> ShallowDishConfig:
+    """Phase 0 preset: L=10 mm, D_disc=3 mm (R=1.5 mm)."""
+    return _phase0_base(vortex_aperture_radius=1.5e-3)
+
+
+def get_L10_D04_config() -> ShallowDishConfig:
+    """Phase 0 preset: L=10 mm, D_disc=4 mm (R=2 mm)."""
+    return _phase0_base(vortex_aperture_radius=2.0e-3)
+
+
+# ─── Phase 0 presets as a look-up dict ───
+
+PHASE0_PRESETS = {
+    "L10_D02": get_L10_D02_config,
+    "L10_D03": get_L10_D03_config,
+    "L10_D04": get_L10_D04_config,
+}
+
