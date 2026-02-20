@@ -1,0 +1,4 @@
+case,mean_abs_p_roi,max_abs_p_roi,max_abs_p_global
+standing_only,0.068508,0.438400,24.597801
+vortex_only,0.265969,0.401082,2.400914
+combined,0.284365,0.592829,24.600518
