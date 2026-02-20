@@ -4,13 +4,52 @@ A finite-element simulation engine for acoustic-tweezer devices that combine
 standing-wave lattices with movable vortex-beam lenses for selective
 micro-particle manipulation in shallow liquid-filled cavities.
 
+Built on **FEniCSx / DOLFINx (v0.9)** with complex PETSc scalars.
+
+---
+
+## Quick Start (Linux)
+
+```bash
+# 1. Clone and enter
+git clone <repo-url> && cd acousto-tweezers
+
+# 2. Create environment (requires micromamba)
+micromamba create -n fenicsx -f environment/complex-fenicsx.yml
+micromamba activate fenicsx
+pip install -e .
+
+# 3. Verify complex PETSc
+micromamba run -n fenicsx python -c \
+  "from petsc4py import PETSc; assert PETSc.ScalarType == complex"
+
+# 4. Smoke test
+micromamba run -n fenicsx python scripts/validation/test_1d_impedance.py
+```
+
+> **Full setup guide:** [docs/LINUX_SETUP.md](docs/LINUX_SETUP.md)
+
+### Where Heavy Results Go
+
+All large 3D files (VTU, H5, XDMF) are written to the OneDrive folder:
+
+```
+~/OneDrive - University of Bristol/Major Project Onedrive/
+  Research/Vortex 3D visualisation/
+```
+
+**Do NOT commit heavy 3D files to the repo.**  The `.gitignore` excludes
+`*.vtu`, `*.pvtu`, `*.h5`, and `*.xdmf`.  Lightweight PNG/CSV/JSON results
+stay in `results/` inside the repo.
+
 ---
 
 ## 1  Project Goal
 
 This codebase models the physics of an acoustic tweezer system operating in
-water at ultrasonic frequencies (typically 500 kHz).  The device geometry is a
-shallow square petri dish (~10-30 mm lateral, ~1 mm deep) instrumented with:
+water at ultrasonic frequencies (typically 500 kHz – 2 MHz).  The device
+geometry is a shallow square petri dish (~6-30 mm lateral, ~1-4 mm deep)
+instrumented with:
 
 - **Side-wall transducer pairs** that generate one- or two-axis standing-wave
   pressure fields, creating a periodic lattice of Gor'kov potential minima
@@ -18,6 +57,14 @@ shallow square petri dish (~10-30 mm lateral, ~1 mm deep) instrumented with:
 - **A bottom-mounted circular vortex transducer** (the "lens") that
   superimposes an orbital-angular-momentum beam, producing localised streaming
   flow and a pressure null at its core.
+
+Three lens models are available:
+
+| Model | Description | Config |
+|-------|-------------|--------|
+| **Ideal** | Pure $e^{i\ell\theta}$ — no focusing | `lens_drive="ideal"` |
+| **Plastic** | Converging spiral-phase lens (fabricable) | `lens_drive="plastic"` |
+| **Axicon** | Bessel-like non-diffracting vortex beam | `lens_drive="axicon"` |
 
 By varying the relative amplitudes, phases, and spatial position of the vortex
 lens, individual particles can be extracted from the lattice, transported along
@@ -132,8 +179,10 @@ by first-assignment priority, with the disc tag evaluated first.
 
 ### 3.3  Linear Solver
 
-The assembled complex-valued system is solved with GMRES + ILU (for the
-Helmholtz pressure) and MUMPS direct LU (for the Stokes streaming system).
+The assembled complex-valued system is solved with **MUMPS direct LU** by
+default.  GMRES + ILU is available but diverges on the PML-Helmholtz system
+(the complex-indefinite operator defeats ILU preconditioning).  MUMPS requires
+more RAM (~7 GB for 79K DOFs at 3 elem/λ) but converges reliably.
 
 ---
 
@@ -213,7 +262,7 @@ streaming drag enters as a body-velocity correction.
 
 ## 6  Validation and Regression Tests
 
-All tests are run with `micromamba run -n acousto-complex python <script>`.
+All tests are run with `micromamba run -n fenicsx python <script>`.
 
 | Test | Script | What It Verifies |
 |------|--------|------------------|
@@ -235,38 +284,74 @@ All tests are run with `micromamba run -n acousto-complex python <script>`.
 ### 7.1  Environment Setup
 
 The project requires a DOLFINx environment with **complex PETSc scalars**.
+See [docs/LINUX_SETUP.md](docs/LINUX_SETUP.md) for detailed Linux instructions.
 
 ```bash
-# Create the environment (conda/micromamba)
-micromamba create -n acousto-complex -f environment/complex-fenicsx.yml
-micromamba activate acousto-complex
-
-# Install the package in editable mode
+micromamba create -n fenicsx -f environment/complex-fenicsx.yml
+micromamba activate fenicsx
 pip install -e .
 ```
 
-All solver commands must be prefixed with `micromamba run -n acousto-complex` to
+All solver commands must be prefixed with `micromamba run -n fenicsx` to
 ensure the correct PETSc scalar type is used.
 
-### 7.2  Quick Start
+### 7.2  Validation Tests
 
 ```bash
-# Run core regression tests
-micromamba run -n acousto-complex python scripts/validation/test_1d_impedance.py
-micromamba run -n acousto-complex python scripts/validation/test_energy_balance.py
-micromamba run -n acousto-complex python scripts/validation/test_petri_dish_bcs.py
+# Core regression tests
+micromamba run -n fenicsx python scripts/validation/test_1d_impedance.py
+micromamba run -n fenicsx python scripts/validation/test_energy_balance.py
+micromamba run -n fenicsx python scripts/validation/test_petri_dish_bcs.py
 
-# Phase 0 — 10×10 mm baseline with disc diameter sweep (D=2,3,4 mm)
-micromamba run -n acousto-complex python scripts/experiments/phase0_baseline_sweep.py
-
-# Phase 1 — Transducer size & dish size architecture sweep
-micromamba run -n acousto-complex python scripts/experiments/phase1_sweep.py
-
-# Phase 2 — Wall impedance sweep (lossy cavity)
-micromamba run -n acousto-complex python scripts/experiments/impedance_sweep.py
+# Run the full validation suite
+micromamba run -n fenicsx python scripts/validation/run_all_tests.py
 ```
 
-### 7.3  Configuration
+### 7.3  Deliverable Scripts
+
+These are the primary outputs.  All 3D exports go to the OneDrive folder.
+
+```bash
+# Vortex 3D Export — VTU primary (plastic lens, standing OFF)
+micromamba run -n fenicsx python scripts/validation/export_vortex_3d.py
+
+# Lens Propagation Diagnostics — z-stack, winding, core ratio, PML decay
+micromamba run -n fenicsx python scripts/validation/diagnostics_lens_propagation.py
+
+# Interaction Diagnostics — standing vs vortex vs combined
+micromamba run -n fenicsx python scripts/validation/diagnostics_interaction.py
+
+# Axicon Lens Demo — Bessel-beam vs plastic lens comparison
+micromamba run -n fenicsx python scripts/experiments/run_axicon_lens_demo.py
+```
+
+### 7.4  Experiment Sweeps
+
+```bash
+# Phase 0 — 10×10 mm baseline with disc diameter sweep
+micromamba run -n fenicsx python scripts/experiments/phase0_baseline_sweep.py
+
+# Phase 1 — Transducer size & dish size architecture sweep
+micromamba run -n fenicsx python scripts/experiments/phase1_sweep.py
+
+# Phase 2 — Wall impedance sweep (lossy cavity)
+micromamba run -n fenicsx python scripts/experiments/impedance_sweep.py
+
+# Far-field PML demo (2 MHz vortex + standing)
+micromamba run -n fenicsx python scripts/experiments/farfield_vortex_plus_standing.py
+```
+
+### 7.5  Repository Cleanup
+
+```bash
+# Preview cleanup (dry run — no files moved)
+micromamba run -n fenicsx python scripts/maintenance/cleanup_repo.py --dry-run
+
+# Execute cleanup (archives old results)
+micromamba run -n fenicsx python scripts/maintenance/cleanup_repo.py
+```
+
+### 7.6  Configuration
 
 All simulation parameters are controlled through `ShallowDishConfig`
 (`src/acoustweezers/experiments/shallow_square_dish/config.py`).  Key fields:
@@ -317,51 +402,59 @@ acousto-tweezers/
 ├── pyproject.toml            Package metadata & dependencies
 ├── environment.yml           Conda environment (real-scalar fallback)
 │
+├── docs/
+│   ├── LINUX_SETUP.md            Linux setup guide (Bristol desktops)
+│   ├── COMSOL_RECREATION_SPEC.md
+│   └── validation.md
+│
 ├── src/acoustweezers/
 │   ├── experiments/
 │   │   ├── shallow_square_dish/
 │   │   │   ├── config.py          ShallowDishConfig + Phase 0 presets
-│   │   │   ├── solve_pressure.py  Helmholtz solver + mesh + BCs + wall impedance
+│   │   │   ├── solve_pressure.py  Helmholtz solver + mesh + BCs
 │   │   │   ├── streaming.py       Stokes streaming solver
 │   │   │   ├── particles.py       Gor'kov + trajectory integration
 │   │   │   └── export.py          VTU/XDMF export
 │   │   └── farfield_petri_cuboid/
-│   │       ├── config.py          FarFieldConfig (+ plastic lens fields, fast_mode_config)
+│   │       ├── config.py          FarFieldConfig (+axicon, fast_mode_config)
 │   │       ├── mesh.py            Mesh with PML cell/facet tags
-│   │       ├── solve_pressure.py  PML-Helmholtz (UFL PML coefficients, KSP reporting)
-│   │       └── post.py            Diagnostics: slicing, plotting, CSV, .npz export
-│   ├── physics/                   Shared physics modules
+│   │       ├── solve_pressure.py  PML-Helmholtz (MUMPS, plastic/axicon/ideal)
+│   │       └── post.py            Slicing, plotting, CSV, .npz export
+│   ├── physics/
 │   │   └── acoustics/
-│   │       └── vortex_lens.py     VortexLensConfig + PlasticLensConfig + LENS_PRESETS
+│   │       └── vortex_lens.py     Ideal + Plastic + Axicon lens models
 │   ├── numerics/                  FEM assembly utilities
 │   └── legacy/                    Archived older solver stacks
 │
 ├── scripts/
-│   ├── validation/               Regression & verification tests
+│   ├── validation/
+│   │   ├── export_vortex_3d.py           VTU primary export (→ OneDrive)
+│   │   ├── diagnostics_lens_propagation.py  Z-stack + winding (→ OneDrive)
+│   │   ├── diagnostics_interaction.py    3-case comparison (→ OneDrive)
+│   │   ├── run_all_tests.py              Full test suite
+│   │   ├── test_1d_impedance.py          Robin BC verification
+│   │   ├── test_energy_balance.py        Power conservation
+│   │   ├── test_petri_dish_bcs.py        Bottom segmentation
+│   │   └── ...                           Other validation scripts
 │   ├── experiments/
-│   │   ├── phase0_baseline_sweep.py   Phase 0 disc-diameter sweep (L10_D02/D03/D04)
-│   │   ├── phase1_sweep.py            Phase 1 dish + piezo architecture sweep
-│   │   ├── impedance_sweep.py         Phase 2 wall impedance sweep
-│   │   ├── farfield_vortex_plus_standing.py  Far-field PML demo (2 MHz)
-│   │   ├── farfield_pml_operator_check.py    A2: PML vs rigid diagnostic
-│   │   ├── farfield_s4_topbc_sensitivity.py  B1: top BC sensitivity sweep
-│   │   ├── farfield_plastic_lens_gallery.py  D3: lens preset gallery
-│   │   ├── farfield_plastic_vs_ideal.py      E1: plastic vs ideal comparison
-│   │   └── ...                        Other experiment pipelines
-│   └── analysis/                 Postprocessing, plotting, export
+│   │   ├── run_axicon_lens_demo.py       Axicon vs plastic comparison (→ OneDrive)
+│   │   ├── farfield_vortex_plus_standing.py  Far-field PML demo
+│   │   ├── phase0_baseline_sweep.py      Phase 0 disc-diameter sweep
+│   │   ├── phase1_sweep.py               Phase 1 architecture sweep
+│   │   ├── impedance_sweep.py            Phase 2 impedance sweep
+│   │   └── ...                           Other experiment pipelines
+│   ├── maintenance/
+│   │   └── cleanup_repo.py               Archive old results + report
+│   └── analysis/                         Postprocessing, plotting
 │
-├── results/
-│   ├── phase0_baseline_latest -> phase0_baseline_<stamp>/
-│   ├── phase2_impedance_latest -> phase2_impedance_<stamp>/
-│   ├── farfield_latest -> farfield_vortex_standing_<stamp>/
-│   └── ...                       Timestamped run outputs
+├── results/                              Lightweight outputs (PNG/CSV/JSON)
+│   ├── *_latest -> *_<timestamp>/        Symlinks to latest runs
+│   └── ...
 │
-├── docs/                         Maintained documentation
-├── archive/                      Quarantined old docs, scripts, results
-│
+├── archive/                              Quarantined old docs, scripts, results
 ├── docker/Dockerfile
 └── environment/
-    ├── complex-fenicsx.yml       Complex PETSc environment spec
+    ├── complex-fenicsx.yml               Complex PETSc environment spec
     └── setup_env_complex.sh
 ```
 
@@ -426,32 +519,53 @@ Configuration fields (in `FarFieldConfig`):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `lens_drive` | `"plastic"` | `"plastic"` (focused+vortex) or `"ideal"` (pure $e^{i\ell\theta}$) |
+| `lens_drive` | `"plastic"` | `"plastic"`, `"axicon"`, or `"ideal"` |
 | `lens_l` | 1 | Topological charge $\ell$ |
-| `lens_focal_length` | 10 mm | Focusing focal length $f$ |
-| `lens_focus_offset_x` | 0.2 mm | Off-axis focus $x_f$ (biases translation) |
-| `lens_focus_offset_y` | 0.0 | Off-axis focus $y_f$ |
-| `lens_c_lens` | 2700 m/s | Speed of sound in plastic (polycarbonate/acrylic) |
+| `lens_focal_length` | 10 mm | Focusing focal length $f$ (plastic only) |
+| `lens_focus_offset_x` | 0.2 mm | Off-axis focus $x_f$ (plastic only) |
+| `lens_focus_offset_y` | 0.0 | Off-axis focus $y_f$ (plastic only) |
+| `lens_c_lens` | 2700 m/s | Speed of sound in plastic |
+| `lens_axicon_angle_deg` | 15.0 | Axicon half-angle $\alpha$ in degrees (axicon only) |
 | `lens_apodization` | `"cosine_taper"` | Amplitude taper profile |
 | `lens_apodization_strength` | 1.0 | Tukey taper parameter |
 
 The physics module lives in `src/acoustweezers/physics/acoustics/vortex_lens.py`
-(`PlasticLensConfig`, `create_plastic_lens_drive()`).
+(`PlasticLensConfig`, `AxiconLensConfig`, `create_plastic_lens_drive()`,
+`create_axicon_lens_drive()`).
 
-### 9.5  Running
+### 9.5  Axicon (Bessel-like) Vortex Lens
+
+The axicon lens imparts a radial phase:
+
+$$\varphi_\mathrm{axicon}(r,\theta) = \ell\,\theta + k_r\,r, \qquad k_r = k_0\sin\alpha$$
+
+where $\alpha$ is the axicon half-angle.  This produces a non-diffracting
+Bessel-like vortex beam whose core diameter is determined by $\alpha$ rather
+than focal geometry.  A larger $\alpha$ gives a tighter core.
+
+Run the comparison demo:
+
+```bash
+micromamba run -n fenicsx python scripts/experiments/run_axicon_lens_demo.py
+```
+
+Output goes to `~/OneDrive - .../AxiconLensDemo/` with VTU fields,
+radial-profile comparison, and per-case XY/XZ PNG slices.
+
+### 9.6  Running
 
 ```bash
 # Default: plastic lens drive (focused vortex)
-micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py
+micromamba run -n fenicsx python scripts/experiments/farfield_vortex_plus_standing.py
 
 # Fallback: legacy ideal vortex (pure exp(i ℓ θ), no focusing)
-micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py --ideal
+micromamba run -n fenicsx python scripts/experiments/farfield_vortex_plus_standing.py --ideal
 
 # Fast mode: 4 elem/λ for quick qualitative checks
-micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py --fast
+micromamba run -n fenicsx python scripts/experiments/farfield_vortex_plus_standing.py --fast
 
 # Custom solver parameters
-micromamba run -n acousto-complex python scripts/experiments/farfield_vortex_plus_standing.py \
+micromamba run -n fenicsx python scripts/experiments/farfield_vortex_plus_standing.py \
     --rtol 1e-5 --restart 300 --maxit 8000
 ```
 
@@ -473,7 +587,7 @@ Outputs land in `results/farfield_vortex_standing_<timestamp>/` (symlinked as
 - `csv/summary.csv` — PML vs rigid comparison metrics
 - `config.json` — full configuration dump
 
-### 9.6  PML Diagnostic Findings (Part 1)
+### 9.7  PML Diagnostic Findings (Part 1)
 
 Systematic diagnostics (`scripts/experiments/farfield_part1_diagnostics.py`)
 confirmed the PML implementation is correct:
@@ -495,13 +609,16 @@ that the PML + water column geometry dominates the physics — by the time acous
 energy reaches the top face, it has already been absorbed or spread laterally.
 The top BC choice is cosmetic at the current domain depth (3 mm underbath).
 
-### 9.7  Memory Notes
+### 9.8  Memory Notes
 
-At 2 MHz (λ = 0.742 mm) the mesh is dense.  On a 7.5 GB machine, use
-≤ 6 mm domain, 5 elem/λ, and GMRES(200)+ILU (MUMPS is infeasible).  The driver
-script explicitly frees the PML solution before starting the rigid solve.
+At 2 MHz (λ = 0.742 mm) the mesh is dense.  On a 7.5 GB machine:
 
-### 9.8  Lens Presets (Day 2)
+- **5 elem/λ** (348K DOFs): OOM-kills MUMPS.  Use GMRES(200)+ILU if attempted.
+- **3 elem/λ** (79K DOFs): Works with MUMPS direct.  This is the default for
+  all deliverable scripts (they auto-fallback from 5 → 3 if OOM).
+- The driver scripts explicitly free memory with `gc.collect()` between cases.
+
+### 9.9  Lens Presets
 
 Three presets cover common use cases.  Access via:
 
@@ -519,7 +636,7 @@ lens_cfg = LENS_PRESETS["B"]()  # focused preset
 Gallery: `python scripts/experiments/farfield_plastic_lens_gallery.py`
 → `results/farfield_lens_gallery_latest/`
 
-### 9.9  Diagnostic Scripts (Day 2)
+### 9.10  Diagnostic Scripts
 
 | Script | Purpose | Key Result |
 |--------|---------|------------|

@@ -440,7 +440,35 @@ def _create_disk_source(
     func = fem.Function(V)
     func.x.array[:] = 0.0 + 0.0j
 
-    if cfg.lens_drive == "plastic":
+    if cfg.lens_drive == "axicon":
+        from acoustweezers.physics.acoustics.vortex_lens import (
+            AxiconLensConfig, create_axicon_lens_drive,
+        )
+        axicon_cfg = AxiconLensConfig(
+            topological_charge=cfg.lens_l,
+            axicon_angle_deg=cfg.lens_axicon_angle_deg,
+            c_water=cfg.c,
+            frequency_hz=cfg.frequency_hz,
+            aperture_radius=cfg.disk_radius,
+            center=None,
+            apodization=cfg.lens_apodization,
+            apodization_strength=cfg.lens_apodization_strength,
+        )
+        x_d = coords[disk_dofs, 0]
+        y_d = coords[disk_dofs, 1]
+        pattern = create_axicon_lens_drive(
+            x_d, y_d, axicon_cfg,
+            center_x=cx, center_y=cy, verbose=verbose,
+        )
+        func.x.array[disk_dofs] = pattern.astype(np.complex128)
+
+        if verbose:
+            n_active = int(np.sum(np.abs(pattern) > 1e-10))
+            print(f"  Disk source: axicon lens  l={cfg.lens_l}  "
+                  f"alpha={cfg.lens_axicon_angle_deg:.1f} deg  "
+                  f"active={n_active}/{len(disk_dofs)}")
+
+    elif cfg.lens_drive == "plastic":
         from acoustweezers.physics.acoustics.vortex_lens import (
             PlasticLensConfig, create_plastic_lens_drive,
         )

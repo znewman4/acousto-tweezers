@@ -58,8 +58,8 @@ class FarFieldConfig:
     vortex_topological_charge: int = 1
     vortex_apodization: str = "cosine_taper"
 
-    # plastic lens model (Day 2) — set lens_drive="plastic" to enable
-    lens_drive: str = "plastic"   # "ideal" (pure ell*theta) or "plastic"
+    # lens model — set lens_drive to "plastic", "ideal", or "axicon"
+    lens_drive: str = "plastic"   # "ideal", "plastic", or "axicon"
     lens_l: int = 1               # topological charge (overrides vortex_topological_charge when plastic)
     lens_focal_length: float = 10e-3      # focusing focal distance [m]
     lens_focus_offset_x: float = 0.2e-3   # off-axis bias for translation [m]
@@ -67,6 +67,9 @@ class FarFieldConfig:
     lens_c_lens: float = 2700.0           # speed of sound in plastic [m/s]
     lens_apodization: str = "cosine_taper"  # "cosine_taper", "tukey", "uniform"
     lens_apodization_strength: float = 1.0  # taper parameter
+
+    # axicon lens — set lens_drive="axicon" to enable
+    lens_axicon_angle_deg: float = 15.0   # axicon half-angle [degrees]
 
     # ── standing-wave transducers (petri slab side-walls) ─────────────
     standing_velocity_amplitude: float = 1e-6
@@ -192,15 +195,22 @@ class FarFieldConfig:
         return d
 
     def describe(self) -> str:
-        lens_info = (
-            f"  Lens drive:  {self.lens_drive}\n"
-            if self.lens_drive == "ideal" else
-            f"  Lens drive:  {self.lens_drive}  l={self.lens_l}  "
-            f"f={self.lens_focal_length*1e3:.1f} mm  "
-            f"offset=({self.lens_focus_offset_x*1e3:.2f}, {self.lens_focus_offset_y*1e3:.2f}) mm\n"
-            f"  Lens plastic: c_lens={self.lens_c_lens:.0f} m/s  "
-            f"apod={self.lens_apodization}\n"
-        )
+        if self.lens_drive == "axicon":
+            lens_info = (
+                f"  Lens drive:  axicon  l={self.lens_l}  "
+                f"alpha={self.lens_axicon_angle_deg:.1f} deg  "
+                f"apod={self.lens_apodization}\n"
+            )
+        elif self.lens_drive == "plastic":
+            lens_info = (
+                f"  Lens drive:  plastic  l={self.lens_l}  "
+                f"f={self.lens_focal_length*1e3:.1f} mm  "
+                f"offset=({self.lens_focus_offset_x*1e3:.2f}, {self.lens_focus_offset_y*1e3:.2f}) mm\n"
+                f"  Lens plastic: c_lens={self.lens_c_lens:.0f} m/s  "
+                f"apod={self.lens_apodization}\n"
+            )
+        else:
+            lens_info = f"  Lens drive:  {self.lens_drive}\n"
         return (
             f"Far-Field Petri Cuboid Config\n"
             f"{'='*40}\n"

@@ -846,6 +846,202 @@ LENS_PRESETS = {"A": lens_preset_A, "B": lens_preset_B, "C": lens_preset_C}
 
 
 # =====================================================================
+# AXICON LENS MODEL — Bessel-like vortex via conical wavefront
+# =====================================================================
+
+@dataclass
+class AxiconLensConfig:
+    """
+    Configuration for an axicon (conical) vortex lens.
+
+    The axicon generates a Bessel-like beam with a non-diffracting
+    central core by impressing a conical phase:
+
+        phi(r, theta) = ell * theta + k_r * r
+
+    where:
+        k_r = k0 * sin(alpha)
+        alpha = axicon half-angle
+        r = radial distance from optical axis
+
+    Unlike a converging (spherical) lens, the axicon produces an
+    extended focal region along the beam axis rather than a single
+    focal point.  The resulting field approximates J_ell(k_r r) —
+    a Bessel vortex beam.
+
+    Parameters
+    ----------
+    topological_charge : int
+        Vortex topological charge ell.
+    axicon_angle_deg : float
+        Axicon half-angle alpha [degrees].  Typical range 5–30 deg.
+        Larger angle → tighter core, shorter depth of field.
+    c_water : float
+        Speed of sound in water [m/s].
+    frequency_hz : float
+        Operating frequency [Hz].
+    aperture_radius : float
+        Lens disk radius [m].
+    center : tuple or None
+        (x_c, y_c) center of the disk.
+    apodization : str
+        Amplitude taper: 'cosine_taper', 'uniform', 'gaussian'.
+    apodization_strength : float
+        Controls taper width parameter.
+    """
+    topological_charge: int = 1
+    axicon_angle_deg: float = 15.0
+    c_water: float = 1484.0
+    frequency_hz: float = 2.0e6
+    aperture_radius: float = 1.0e-3
+    center: Optional[Tuple[float, float]] = None
+    apodization: str = "cosine_taper"
+    apodization_strength: float = 1.0
+
+    @property
+    def omega(self) -> float:
+        return 2 * np.pi * self.frequency_hz
+
+    @property
+    def k_water(self) -> float:
+        return self.omega / self.c_water
+
+    @property
+    def axicon_angle_rad(self) -> float:
+        return np.deg2rad(self.axicon_angle_deg)
+
+    @property
+    def k_r(self) -> float:
+        """Transverse wavenumber k_r = k0 sin(alpha)."""
+        return self.k_water * np.sin(self.axicon_angle_rad)
+
+    @property
+    def wavelength_water(self) -> float:
+        return self.c_water / self.frequency_hz
+
+
+def compute_axicon_phase(
+    x: np.ndarray,
+    y: np.ndarray,
+    axicon_cfg: AxiconLensConfig,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+) -> np.ndarray:
+    """
+    Compute axicon vortex phase: phi = ell * theta + k_r * r.
+
+    Parameters
+    ----------
+    x, y : np.ndarray
+        Coordinates of evaluation points.
+    axicon_cfg : AxiconLensConfig
+    center_x, center_y : float
+        Override center position.
+
+    Returns
+    -------
+    phi : np.ndarray
+        Phase values [rad].
+    """
+    if axicon_cfg.center is not None:
+        cx, cy = axicon_cfg.center
+    else:
+        cx, cy = center_x, center_y
+
+    dx = x - cx
+    dy = y - cy
+    r = np.sqrt(dx**2 + dy**2)
+    theta = np.arctan2(dy, dx)
+
+    phi = axicon_cfg.topological_charge * theta + axicon_cfg.k_r * r
+    return phi
+
+
+def compute_axicon_amplitude(
+    x: np.ndarray,
+    y: np.ndarray,
+    axicon_cfg: AxiconLensConfig,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+) -> np.ndarray:
+    """
+    Compute amplitude apodization for the axicon lens.
+
+    Returns values in [0, 1].
+    """
+    if axicon_cfg.center is not None:
+        cx, cy = axicon_cfg.center
+    else:
+        cx, cy = center_x, center_y
+
+    dx = x - cx
+    dy = y - cy
+    r = np.sqrt(dx**2 + dy**2)
+    R = axicon_cfg.aperture_radius
+
+    amp = np.zeros_like(r)
+
+    if axicon_cfg.apodization == "cosine_taper":
+        inside = r <= R
+        amp[inside] = 0.5 * (1 + np.cos(np.pi * r[inside] / R))
+    elif axicon_cfg.apodization == "uniform":
+        amp[r <= R] = 1.0
+    elif axicon_cfg.apodization == "gaussian":
+        sigma = R * axicon_cfg.apodization_strength * 0.5
+        amp = np.exp(-r**2 / (2 * sigma**2))
+        amp[r > R] = 0.0
+    else:
+        inside = r <= R
+        amp[inside] = 0.5 * (1 + np.cos(np.pi * r[inside] / R))
+
+    return amp
+
+
+def create_axicon_lens_drive(
+    coords_x: np.ndarray,
+    coords_y: np.ndarray,
+    axicon_cfg: AxiconLensConfig,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+    verbose: bool = True,
+) -> np.ndarray:
+    """
+    Build complex boundary field for axicon lens drive.
+
+    Returns pattern = A(r) * exp(i * phi(r, theta))
+    with unit peak amplitude (caller scales by V0 * (-i omega rho)).
+
+    Parameters
+    ----------
+    coords_x, coords_y : np.ndarray
+        (x, y) coordinates of DOFs on the disk boundary.
+    axicon_cfg : AxiconLensConfig
+    center_x, center_y : float
+    verbose : bool
+
+    Returns
+    -------
+    pattern : np.ndarray (complex128)
+    """
+    phi = compute_axicon_phase(coords_x, coords_y, axicon_cfg,
+                               center_x, center_y)
+    amp = compute_axicon_amplitude(coords_x, coords_y, axicon_cfg,
+                                    center_x, center_y)
+    pattern = amp * np.exp(1j * phi)
+
+    if verbose:
+        n_active = int(np.sum(amp > 1e-10))
+        print(f"  [AxiconLens] l={axicon_cfg.topological_charge}  "
+              f"alpha={axicon_cfg.axicon_angle_deg:.1f} deg  "
+              f"k_r={axicon_cfg.k_r:.1f} rad/m")
+        print(f"    phi range: [{phi.min():.2f}, {phi.max():.2f}] rad")
+        print(f"    amplitude: min={amp.min():.4f}  max={amp.max():.4f}")
+        print(f"    active DOFs: {n_active}/{len(coords_x)}")
+
+    return pattern
+
+
+# =====================================================================
 # Export helpers
 # =====================================================================
 

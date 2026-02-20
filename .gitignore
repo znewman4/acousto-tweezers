@@ -5,10 +5,16 @@ __pycache__/
 *.pyd
 .ipynb_checkpoints/
 
-# Data / results
+# Data / results (heavy outputs live in OneDrive, not the repo)
 results/
 *.npz
 *.csv
+
+# 3D visualisation exports
+*.vtu
+*.pvtu
+*.h5
+*.xdmf
 
 # OS / editor
 .DS_Store
