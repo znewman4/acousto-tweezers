@@ -269,16 +269,16 @@ def solve_helmholtz(
         - k**2 * Jac * inner(u, v)
     ) * dx
 
-    # ── top face: impedance Robin ─────────────────────────────────────
-    if cfg.top_bc_type == "impedance":
-        Z_top = cfg.Z_top
-        alpha_top = fem.Constant(domain, PETSc.ScalarType(-1j * omega * rho / Z_top))
-        a_form += alpha_top * inner(u, v) * dss(TAG_TOP)
-        if verbose:
-            print(f"  Top BC: impedance Robin  Z_rel = {cfg.top_impedance_Zrel}")
-    else:
-        if verbose:
-            print(f"  Top BC: pressure-release Dirichlet (p=0)")
+    # ── top face: water–air Robin BC (fixed) ──────────────────────
+    # ∂p/∂n + ik(ρ_water c_water)/(ρ_air c_air) p = 0
+    # ⇒ α = -iωρ / Z_air   (Z_air = ρ_air * c_air)
+    Z_air = cfg.Z_air   # = ρ_air · c_air = 411.6 Pa·s/m
+    alpha_top = fem.Constant(domain, PETSc.ScalarType(-1j * omega * rho / Z_air))
+    a_form += alpha_top * inner(u, v) * dss(TAG_TOP)
+    if verbose:
+        Z_rel = Z_air / cfg.Z_water
+        print(f"  Top BC: water–air Robin  Z_air={Z_air:.1f} Pa·s/m  "
+              f"Z_rel={Z_rel:.6f}")
 
     # ── RHS: Neumann sources ──────────────────────────────────────────
     L_terms = []
@@ -331,12 +331,8 @@ def solve_helmholtz(
     for t in L_terms[1:]:
         L_form = L_form + t
 
-    # ── Dirichlet BCs (top pressure-release) ──────────────────────────
-    bcs = []
-    if cfg.top_bc_type == "dirichlet":
-        top_facets = facet_tags.indices[facet_tags.values == TAG_TOP]
-        top_dofs = fem.locate_dofs_topological(V, domain.topology.dim - 1, top_facets)
-        bcs.append(fem.dirichletbc(PETSc.ScalarType(0.0), top_dofs, V))
+    # ── Dirichlet BCs ─────────────────────────────────────────────
+    bcs = []  # no Dirichlet BCs (Robin on top, Neumann elsewhere)
 
     # ── solve ─────────────────────────────────────────────────────────
     # NOTE: MUMPS direct solver is the reliable default.

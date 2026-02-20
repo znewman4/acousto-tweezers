@@ -1,0 +1,1370 @@
+
+########################################################################
+  CORRECTED MODEL SWEEP — 20260220_172314
+  H_petri = 2 mm (fixed)
+  Top BC: water–air Robin  Z_air = 411.6 Pa·s/m
+  V_disk = 1.0 µm/s,  V_stand = 10.0 µm/s
+  OMP_NUM_THREADS = 8 / 24 cores
+  Output: results/corrected_model_20260220_172314
+########################################################################
+
+========================================================================
+  PHASE 1: Vortex-Only H_bath × f_lens Sweep
+========================================================================
+
+
+────────────────────────────────────────────────────────────
+  H_bath=3mm  f=2mm  H_total=5mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 5.0 mm
+  Under-bath:  3.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×26
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 5.00 mm
+  Grid: 32 × 32 × 26  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 159744,  Vertices: 29403
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1024 facets)
+     4: x=6.0 (below petri)  (1024 facets)
+     5: y=0 (below petri)  (1024 facets)
+     6: y=6.0 (below petri)  (1024 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (78160 cells)
+    1: PML-x  (25344 cells)
+    2: PML-y  (25344 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (8448 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 223925
+  PML DOFs: 113024,  Physical DOFs: 110901
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 20.6s  total 21.0s
+  max|p| = 2.40 Pa   DOFs = 223925
+======================================================================
+
+  z_focus = 1.30 mm  (1.70 mm below petri)
+  max|p| bath = 0.2359 Pa
+  max|p| petri = 0.1630 Pa
+  SKIP H_bath=3mm, f=3mm (f >= H_bath)
+  SKIP H_bath=3mm, f=4mm (f >= H_bath)
+  SKIP H_bath=3mm, f=5mm (f >= H_bath)
+  SKIP H_bath=3mm, f=6mm (f >= H_bath)
+
+────────────────────────────────────────────────────────────
+  H_bath=4mm  f=2mm  H_total=6mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 6.0 mm
+  Under-bath:  4.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×32
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 6.00 mm
+  Grid: 32 × 32 × 32  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 196608,  Vertices: 35937
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1408 facets)
+     4: x=6.0 (below petri)  (1408 facets)
+     5: y=0 (below petri)  (1408 facets)
+     6: y=6.0 (below petri)  (1408 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (98896 cells)
+    1: PML-x  (32256 cells)
+    2: PML-y  (32256 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (10752 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 274625
+  PML DOFs: 134912,  Physical DOFs: 139713
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.2s  assemble+solve 31.3s  total 31.7s
+  max|p| = 2.32 Pa   DOFs = 274625
+======================================================================
+
+  z_focus = 1.18 mm  (2.82 mm below petri)
+  max|p| bath = 0.2533 Pa
+  max|p| petri = 0.1219 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=4mm  f=3mm  H_total=6mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 6.0 mm
+  Under-bath:  4.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×32
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 6.00 mm
+  Grid: 32 × 32 × 32  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 196608,  Vertices: 35937
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1408 facets)
+     4: x=6.0 (below petri)  (1408 facets)
+     5: y=0 (below petri)  (1408 facets)
+     6: y=6.0 (below petri)  (1408 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (98896 cells)
+    1: PML-x  (32256 cells)
+    2: PML-y  (32256 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (10752 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 274625
+  PML DOFs: 134912,  Physical DOFs: 139713
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.48, 4.91] rad
+    phi_plastic range: [0.00, 6.28] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=3.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.2s  assemble+solve 37.9s  total 38.3s
+  max|p| = 2.04 Pa   DOFs = 274625
+======================================================================
+
+  z_focus = 1.18 mm  (2.82 mm below petri)
+  max|p| bath = 0.1737 Pa
+  max|p| petri = 0.0831 Pa
+  SKIP H_bath=4mm, f=4mm (f >= H_bath)
+  SKIP H_bath=4mm, f=5mm (f >= H_bath)
+  SKIP H_bath=4mm, f=6mm (f >= H_bath)
+
+────────────────────────────────────────────────────────────
+  H_bath=5mm  f=2mm  H_total=7mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 7.0 mm
+  Under-bath:  5.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×37
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 7.00 mm
+  Grid: 32 × 32 × 37  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 227328,  Vertices: 41382
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1728 facets)
+     4: x=6.0 (below petri)  (1728 facets)
+     5: y=0 (below petri)  (1728 facets)
+     6: y=6.0 (below petri)  (1728 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (116176 cells)
+    1: PML-x  (38016 cells)
+    2: PML-y  (38016 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (12672 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 316875
+  PML DOFs: 153152,  Physical DOFs: 163723
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 43.4s  total 43.9s
+  max|p| = 2.28 Pa   DOFs = 316875
+======================================================================
+
+  z_focus = 1.47 mm  (3.53 mm below petri)
+  max|p| bath = 0.3842 Pa
+  max|p| petri = 0.1719 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=5mm  f=3mm  H_total=7mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 7.0 mm
+  Under-bath:  5.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×37
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 7.00 mm
+  Grid: 32 × 32 × 37  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 227328,  Vertices: 41382
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1728 facets)
+     4: x=6.0 (below petri)  (1728 facets)
+     5: y=0 (below petri)  (1728 facets)
+     6: y=6.0 (below petri)  (1728 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (116176 cells)
+    1: PML-x  (38016 cells)
+    2: PML-y  (38016 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (12672 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 316875
+  PML DOFs: 153152,  Physical DOFs: 163723
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.48, 4.91] rad
+    phi_plastic range: [0.00, 6.28] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=3.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 38.9s  total 39.4s
+  max|p| = 2.03 Pa   DOFs = 316875
+======================================================================
+
+  z_focus = 1.47 mm  (3.53 mm below petri)
+  max|p| bath = 0.2692 Pa
+  max|p| petri = 0.1180 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=5mm  f=4mm  H_total=7mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 7.0 mm
+  Under-bath:  5.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=4.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×37
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 7.00 mm
+  Grid: 32 × 32 × 37  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 227328,  Vertices: 41382
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1728 facets)
+     4: x=6.0 (below petri)  (1728 facets)
+     5: y=0 (below petri)  (1728 facets)
+     6: y=6.0 (below petri)  (1728 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (116176 cells)
+    1: PML-x  (38016 cells)
+    2: PML-y  (38016 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (12672 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 316875
+  PML DOFs: 153152,  Physical DOFs: 163723
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=4.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.57, 4.48] rad
+    phi_plastic range: [0.00, 6.27] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=4.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 44.4s  total 44.9s
+  max|p| = 1.91 Pa   DOFs = 316875
+======================================================================
+
+  z_focus = 1.47 mm  (3.53 mm below petri)
+  max|p| bath = 0.2057 Pa
+  max|p| petri = 0.0890 Pa
+  SKIP H_bath=5mm, f=5mm (f >= H_bath)
+  SKIP H_bath=5mm, f=6mm (f >= H_bath)
+
+────────────────────────────────────────────────────────────
+  H_bath=6mm  f=2mm  H_total=8mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 8.0 mm
+  Under-bath:  6.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×43
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 8.00 mm
+  Grid: 32 × 32 × 43  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 264192,  Vertices: 47916
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2112 facets)
+     4: x=6.0 (below petri)  (2112 facets)
+     5: y=0 (below petri)  (2112 facets)
+     6: y=6.0 (below petri)  (2112 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (136912 cells)
+    1: PML-x  (44928 cells)
+    2: PML-y  (44928 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (14976 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 367575
+  PML DOFs: 175040,  Physical DOFs: 192535
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 46.0s  total 46.5s
+  max|p| = 2.40 Pa   DOFs = 367575
+======================================================================
+
+  z_focus = 1.36 mm  (4.64 mm below petri)
+  max|p| bath = 0.2407 Pa
+  max|p| petri = 0.1020 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=6mm  f=3mm  H_total=8mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 8.0 mm
+  Under-bath:  6.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×43
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 8.00 mm
+  Grid: 32 × 32 × 43  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 264192,  Vertices: 47916
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2112 facets)
+     4: x=6.0 (below petri)  (2112 facets)
+     5: y=0 (below petri)  (2112 facets)
+     6: y=6.0 (below petri)  (2112 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (136912 cells)
+    1: PML-x  (44928 cells)
+    2: PML-y  (44928 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (14976 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 367575
+  PML DOFs: 175040,  Physical DOFs: 192535
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.48, 4.91] rad
+    phi_plastic range: [0.00, 6.28] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=3.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 48.8s  total 49.4s
+  max|p| = 2.10 Pa   DOFs = 367575
+======================================================================
+
+  z_focus = 1.36 mm  (4.64 mm below petri)
+  max|p| bath = 0.1723 Pa
+  max|p| petri = 0.0712 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=6mm  f=4mm  H_total=8mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 8.0 mm
+  Under-bath:  6.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=4.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×43
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 8.00 mm
+  Grid: 32 × 32 × 43  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 264192,  Vertices: 47916
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2112 facets)
+     4: x=6.0 (below petri)  (2112 facets)
+     5: y=0 (below petri)  (2112 facets)
+     6: y=6.0 (below petri)  (2112 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (136912 cells)
+    1: PML-x  (44928 cells)
+    2: PML-y  (44928 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (14976 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 367575
+  PML DOFs: 175040,  Physical DOFs: 192535
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=4.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.57, 4.48] rad
+    phi_plastic range: [0.00, 6.27] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=4.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 46.0s  total 46.5s
+  max|p| = 1.95 Pa   DOFs = 367575
+======================================================================
+
+  z_focus = 1.36 mm  (4.64 mm below petri)
+  max|p| bath = 0.1329 Pa
+  max|p| petri = 0.0546 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=6mm  f=5mm  H_total=8mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 8.0 mm
+  Under-bath:  6.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=5.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×43
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 8.00 mm
+  Grid: 32 × 32 × 43  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 264192,  Vertices: 47916
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2112 facets)
+     4: x=6.0 (below petri)  (2112 facets)
+     5: y=0 (below petri)  (2112 facets)
+     6: y=6.0 (below petri)  (2112 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (136912 cells)
+    1: PML-x  (44928 cells)
+    2: PML-y  (44928 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (14976 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 367575
+  PML DOFs: 175040,  Physical DOFs: 192535
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=5.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.62, 4.22] rad
+    phi_plastic range: [0.00, 6.25] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=5.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.3s  assemble+solve 47.4s  total 47.9s
+  max|p| = 1.87 Pa   DOFs = 367575
+======================================================================
+
+  z_focus = 1.36 mm  (4.64 mm below petri)
+  max|p| bath = 0.1078 Pa
+  max|p| petri = 0.0445 Pa
+  SKIP H_bath=6mm, f=6mm (f >= H_bath)
+
+────────────────────────────────────────────────────────────
+  H_bath=7mm  f=2mm  H_total=9mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 9.0 mm
+  Under-bath:  7.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×48
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 9.00 mm
+  Grid: 32 × 32 × 48  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 294912,  Vertices: 53361
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2432 facets)
+     4: x=6.0 (below petri)  (2432 facets)
+     5: y=0 (below petri)  (2432 facets)
+     6: y=6.0 (below petri)  (2432 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (154192 cells)
+    1: PML-x  (50688 cells)
+    2: PML-y  (50688 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (16896 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 409825
+  PML DOFs: 193280,  Physical DOFs: 216545
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.4s  assemble+solve 57.8s  total 58.5s
+  max|p| = 2.32 Pa   DOFs = 409825
+======================================================================
+
+  z_focus = 1.17 mm  (5.83 mm below petri)
+  max|p| bath = 0.2411 Pa
+  max|p| petri = 0.0788 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=7mm  f=3mm  H_total=9mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 9.0 mm
+  Under-bath:  7.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×48
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 9.00 mm
+  Grid: 32 × 32 × 48  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 294912,  Vertices: 53361
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2432 facets)
+     4: x=6.0 (below petri)  (2432 facets)
+     5: y=0 (below petri)  (2432 facets)
+     6: y=6.0 (below petri)  (2432 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (154192 cells)
+    1: PML-x  (50688 cells)
+    2: PML-y  (50688 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (16896 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 409825
+  PML DOFs: 193280,  Physical DOFs: 216545
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=3.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.48, 4.91] rad
+    phi_plastic range: [0.00, 6.28] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=3.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.4s  assemble+solve 56.8s  total 57.4s
+  max|p| = 2.04 Pa   DOFs = 409825
+======================================================================
+
+  z_focus = 1.17 mm  (5.83 mm below petri)
+  max|p| bath = 0.1663 Pa
+  max|p| petri = 0.0536 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=7mm  f=4mm  H_total=9mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 9.0 mm
+  Under-bath:  7.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=4.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×48
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 9.00 mm
+  Grid: 32 × 32 × 48  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 294912,  Vertices: 53361
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2432 facets)
+     4: x=6.0 (below petri)  (2432 facets)
+     5: y=0 (below petri)  (2432 facets)
+     6: y=6.0 (below petri)  (2432 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (154192 cells)
+    1: PML-x  (50688 cells)
+    2: PML-y  (50688 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (16896 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 409825
+  PML DOFs: 193280,  Physical DOFs: 216545
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=4.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.57, 4.48] rad
+    phi_plastic range: [0.00, 6.27] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=4.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.4s  assemble+solve 55.7s  total 56.3s
+  max|p| = 1.91 Pa   DOFs = 409825
+======================================================================
+
+  z_focus = 1.17 mm  (5.83 mm below petri)
+  max|p| bath = 0.1261 Pa
+  max|p| petri = 0.0403 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=7mm  f=5mm  H_total=9mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 9.0 mm
+  Under-bath:  7.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=5.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×48
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 9.00 mm
+  Grid: 32 × 32 × 48  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 294912,  Vertices: 53361
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2432 facets)
+     4: x=6.0 (below petri)  (2432 facets)
+     5: y=0 (below petri)  (2432 facets)
+     6: y=6.0 (below petri)  (2432 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (154192 cells)
+    1: PML-x  (50688 cells)
+    2: PML-y  (50688 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (16896 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 409825
+  PML DOFs: 193280,  Physical DOFs: 216545
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=5.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.62, 4.22] rad
+    phi_plastic range: [0.00, 6.25] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=5.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.4s  assemble+solve 54.4s  total 55.0s
+  max|p| = 1.84 Pa   DOFs = 409825
+======================================================================
+
+  z_focus = 1.28 mm  (5.72 mm below petri)
+  max|p| bath = 0.1014 Pa
+  max|p| petri = 0.0322 Pa
+
+────────────────────────────────────────────────────────────
+  H_bath=7mm  f=6mm  H_total=9mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 9.0 mm
+  Under-bath:  7.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=6.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×48
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 9.00 mm
+  Grid: 32 × 32 × 48  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 294912,  Vertices: 53361
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (2432 facets)
+     4: x=6.0 (below petri)  (2432 facets)
+     5: y=0 (below petri)  (2432 facets)
+     6: y=6.0 (below petri)  (2432 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (154192 cells)
+    1: PML-x  (50688 cells)
+    2: PML-y  (50688 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (16896 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 409825
+  PML DOFs: 193280,  Physical DOFs: 216545
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=6.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.66, 4.05] rad
+    phi_plastic range: [0.00, 6.28] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=6.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.4s  assemble+solve 55.0s  total 55.6s
+  max|p| = 1.81 Pa   DOFs = 409825
+======================================================================
+
+  z_focus = 1.28 mm  (5.72 mm below petri)
+  max|p| bath = 0.0848 Pa
+  max|p| petri = 0.0269 Pa
+
+========================================================================
+  SWEEP SUMMARY
+========================================================================
+  H_bath   f_lens    z_focus  below_petri   max_p_bath  max_p_petri     status
+--------------------------------------------------------------------------------
+      3mm       2mm      1.30mm        1.70mm      0.2359      0.1630         OK
+      3mm       3mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      3mm       4mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      3mm       5mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      3mm       6mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      4mm       2mm      1.18mm        2.82mm      0.2533      0.1219         OK
+      4mm       3mm      1.18mm        2.82mm      0.1737      0.0831         OK
+      4mm       4mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      4mm       5mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      4mm       6mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      5mm       2mm      1.47mm        3.53mm      0.3842      0.1719         OK
+      5mm       3mm      1.47mm        3.53mm      0.2692      0.1180         OK
+      5mm       4mm      1.47mm        3.53mm      0.2057      0.0890         OK
+      5mm       5mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      5mm       6mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      6mm       2mm      1.36mm        4.64mm      0.2407      0.1020         OK
+      6mm       3mm      1.36mm        4.64mm      0.1723      0.0712         OK
+      6mm       4mm      1.36mm        4.64mm      0.1329      0.0546         OK
+      6mm       5mm      1.36mm        4.64mm      0.1078      0.0445         OK
+      6mm       6mm       nanmm         nanmm         nan         nan SKIPPED (f>=H_bath)
+      7mm       2mm      1.17mm        5.83mm      0.2411      0.0788         OK
+      7mm       3mm      1.17mm        5.83mm      0.1663      0.0536         OK
+      7mm       4mm      1.17mm        5.83mm      0.1261      0.0403         OK
+      7mm       5mm      1.28mm        5.72mm      0.1014      0.0322         OK
+      7mm       6mm      1.28mm        5.72mm      0.0848      0.0269         OK
+
+  SELECTED: H_bath=3mm  f=2mm  focus 1.70mm below petri
+
+========================================================================
+  PHASE 2: Interaction Check
+  H_bath=3mm  f=2mm
+========================================================================
+
+
+  ──────────────────────────────────────── standing_only
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 5.0 mm
+  Under-bath:  3.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×26
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 5.00 mm
+  Grid: 32 × 32 × 26  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 159744,  Vertices: 29403
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1024 facets)
+     4: x=6.0 (below petri)  (1024 facets)
+     5: y=0 (below petri)  (1024 facets)
+     6: y=6.0 (below petri)  (1024 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (78160 cells)
+    1: PML-x  (25344 cells)
+    2: PML-y  (25344 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (8448 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 223925
+  PML DOFs: 113024,  Physical DOFs: 110901
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=10.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.2s  assemble+solve 22.8s  total 23.1s
+  max|p| = 24.60 Pa   DOFs = 223925
+======================================================================
+
+
+  ──────────────────────────────────────── vortex_only
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 5.0 mm
+  Under-bath:  3.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×26
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 5.00 mm
+  Grid: 32 × 32 × 26  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 159744,  Vertices: 29403
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1024 facets)
+     4: x=6.0 (below petri)  (1024 facets)
+     5: y=0 (below petri)  (1024 facets)
+     6: y=6.0 (below petri)  (1024 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (78160 cells)
+    1: PML-x  (25344 cells)
+    2: PML-y  (25344 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (8448 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 223925
+  PML DOFs: 113024,  Physical DOFs: 110901
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.2s  assemble+solve 22.1s  total 22.5s
+  max|p| = 2.40 Pa   DOFs = 223925
+======================================================================
+
+
+  ──────────────────────────────────────── combined
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 5.0 mm
+  Under-bath:  3.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        32×32×26
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 5.00 mm
+  Grid: 32 × 32 × 26  (tet)
+  λ = 0.7420 mm   elem/λ = 4
+  Cells: 159744,  Vertices: 29403
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (142 facets)
+     7: bottom outside disk  (1832 facets)
+     2: top face (impedance)  (2048 facets)
+     3: x=0 (below petri)  (1024 facets)
+     4: x=6.0 (below petri)  (1024 facets)
+     5: y=0 (below petri)  (1024 facets)
+     6: y=6.0 (below petri)  (1024 facets)
+    13: x=0 standing patch (petri slab)  (640 facets)
+    14: x=6.0 standing patch  (640 facets)
+    15: y=0 standing patch  (640 facets)
+    16: y=6.0 standing patch  (640 facets)
+
+  Cell tags:
+    0: physical  (78160 cells)
+    1: PML-x  (25344 cells)
+    2: PML-y  (25344 cells)
+    3: PML-z  (11696 cells)
+    4: PML-xy  (8448 cells)
+    5: PML-xz  (4608 cells)
+    6: PML-yz  (4608 cells)
+    7: PML-xyz  (1536 cells)
+======================================================================
+
+  DOFs: 223925
+  PML DOFs: 113024,  Physical DOFs: 110901
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.34, 5.69] rad
+    phi_plastic range: [0.00, 6.26] rad
+    amplitude: min=0.0048  max=1.0000
+    active DOFs: 319/319
+  Disk source: plastic lens  l=1  f=2.0 mm  active=319/319
+  Standing wave: V=10.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=4  iters=1  |r|=0.00e+00
+  Timing: mesh 0.2s  assemble+solve 22.9s  total 23.3s
+  max|p| = 24.60 Pa   DOFs = 223925
+======================================================================
+
+
+  Wrote results/corrected_model_20260220_172314/INDEX.md
+
+########################################################################
+  CORRECTED MODEL SWEEP COMPLETE
+  Output: results/corrected_model_20260220_172314
+########################################################################
+

@@ -42,8 +42,8 @@ class FarFieldConfig:
     # ── geometry ──────────────────────────────────────────────────────
     Lx: float = 10e-3           # lateral size [m]
     Ly: float = 10e-3
-    H_under: float = 5e-3       # under-bath depth (below petri) [m]
-    H_top: float = 1e-3         # petri slab thickness [m]
+    H_under: float = 5e-3       # water-bath depth (below petri) [m]  (= H_bath)
+    H_top: float = 2e-3         # petri slab thickness [m]  (fixed at 2 mm)
 
     # ── frequency ─────────────────────────────────────────────────────
     frequency_hz: float = 2.0e6   # 2 MHz
@@ -76,9 +76,13 @@ class FarFieldConfig:
     standing_phase_pattern: str = "antiphase"
     standing_axis: str = "both"
 
-    # ── top boundary ──────────────────────────────────────────────────
-    top_bc_type: str = "impedance"       # "impedance" or "dirichlet"
-    top_impedance_Zrel: float = 0.001    # Z_top / Z_water
+    # ── top boundary (water–air Robin — NOT tunable) ─────────────────
+    # Physical water–air interface.  Do NOT change these values.
+    rho_air: float = 1.2        # air density [kg/m³]
+    c_air:   float = 343.0      # speed of sound in air [m/s]
+    # Legacy compat — these fields are IGNORED by the solver.
+    top_bc_type: str = "impedance"       # DEPRECATED – always Robin
+    top_impedance_Zrel: float = -1.0     # DEPRECATED – computed from air props
 
     # ── PML ───────────────────────────────────────────────────────────
     pml_n_wavelengths_xy: float = 1.5    # PML thickness in wavelengths (each side)
@@ -112,8 +116,14 @@ class FarFieldConfig:
         return self.rho * self.c
 
     @property
+    def Z_air(self) -> float:
+        """Acoustic impedance of air [Pa·s/m]."""
+        return self.rho_air * self.c_air
+
+    @property
     def Z_top(self) -> float:
-        return self.top_impedance_Zrel * self.Z_water
+        """Top face impedance = water–air interface (fixed)."""
+        return self.Z_air
 
     @property
     def H_total(self) -> float:
@@ -192,6 +202,8 @@ class FarFieldConfig:
         d["mesh_nx"] = self.mesh_nx
         d["mesh_ny"] = self.mesh_ny
         d["mesh_nz"] = self.mesh_nz
+        d["Z_air"] = self.Z_air
+        d["Z_water"] = self.Z_water
         return d
 
     def describe(self) -> str:
@@ -225,7 +237,7 @@ class FarFieldConfig:
             f"PML z:       {self.t_pml_z*1e3:.3f} mm ({self.pml_n_wavelengths_z:.1f}λ)\n"
             f"σ_max:       {self.sigma_max:.2e}  (factor {self.pml_sigma_max_factor})\n"
             f"Mesh:        {self.mesh_nx}×{self.mesh_ny}×{self.mesh_nz}\n"
-            f"Top BC:      {self.top_bc_type} (Z_rel={self.top_impedance_Zrel})\n"
+            f"Top BC:      water–air Robin (Z_air={self.Z_air:.1f} Pa·s/m, Z_rel={self.Z_air/self.Z_water:.6f})\n"
         )
 
 
@@ -243,7 +255,7 @@ def fast_mode_config(**overrides) -> FarFieldConfig:
     import warnings
     warnings.warn("fast_mode_config: 4 elem/λ is qualitative only", stacklevel=2)
     defaults = dict(
-        Lx=6e-3, Ly=6e-3, H_under=3e-3, H_top=1e-3,
+        Lx=6e-3, Ly=6e-3, H_under=3e-3, H_top=2e-3,
         frequency_hz=2.0e6, disk_radius=1.0e-3,
         elements_per_wavelength=4,
         pml_n_wavelengths_xy=1.0, pml_n_wavelengths_z=1.0,
@@ -257,11 +269,11 @@ def demo_config(**overrides) -> FarFieldConfig:
     Standard 6×6×4 mm demo config used by farfield_vortex_plus_standing.py.
     """
     defaults = dict(
-        Lx=6e-3, Ly=6e-3, H_under=3e-3, H_top=1e-3,
+        Lx=6e-3, Ly=6e-3, H_under=3e-3, H_top=2e-3,
         frequency_hz=2.0e6, disk_radius=1.0e-3,
         disk_velocity_amplitude=10e-6, vortex_topological_charge=1,
         standing_velocity_amplitude=1e-6, standing_phase_pattern="antiphase",
-        standing_axis="both", top_bc_type="impedance", top_impedance_Zrel=0.001,
+        standing_axis="both",
         pml_n_wavelengths_xy=1.0, pml_n_wavelengths_z=1.0,
         pml_degree=2, pml_sigma_max_factor=5.0, pml_enabled=True,
         elements_per_wavelength=5,

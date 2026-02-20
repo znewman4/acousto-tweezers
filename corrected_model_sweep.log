@@ -1,0 +1,176 @@
+
+########################################################################
+  CORRECTED MODEL SWEEP — 20260220_170736
+  H_petri = 2 mm (fixed)
+  Top BC: water–air Robin  Z_air = 411.6 Pa·s/m
+  V_disk = 1.0 µm/s,  V_stand = 10.0 µm/s
+  OMP_NUM_THREADS = 12 / 24 cores
+  Output: results/corrected_model_20260220_170736
+########################################################################
+
+========================================================================
+  PHASE 1: Vortex-Only H_bath × f_lens Sweep
+========================================================================
+
+
+────────────────────────────────────────────────────────────
+  H_bath=3mm  f=2mm  H_total=5mm
+────────────────────────────────────────────────────────────
+Far-Field Petri Cuboid Config
+========================================
+Box:  6.0 × 6.0 × 5.0 mm
+  Under-bath:  3.0 mm
+  Petri slab:  2.0 mm
+Freq:        2.00 MHz
+Wavelength:  0.742 mm
+Disk radius: 1.00 mm
+  Lens drive:  plastic  l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+  Lens plastic: c_lens=2700 m/s  apod=cosine_taper
+PML xy:      0.742 mm (1.0λ)
+PML z:       0.742 mm (1.0λ)
+σ_max:       6.28e+07  (factor 5.0)
+Mesh:        40×40×33
+Top BC:      water–air Robin (Z_air=411.6 Pa·s/m, Z_rel=0.000278)
+
+
+======================================================================
+MESH GENERATION  (far-field petri cuboid)
+======================================================================
+  Box: 6.00 × 6.00 × 5.00 mm
+  Grid: 40 × 40 × 33  (tet)
+  λ = 0.7420 mm   elem/λ = 5
+  Cells: 316800,  Vertices: 57154
+
+  Facet tags:
+     1: bottom disk (R=1.00 mm)  (230 facets)
+     7: bottom outside disk  (2880 facets)
+     2: top face (impedance)  (3200 facets)
+     3: x=0 (below petri)  (1600 facets)
+     4: x=6.0 (below petri)  (1600 facets)
+     5: y=0 (below petri)  (1600 facets)
+     6: y=6.0 (below petri)  (1600 facets)
+    13: x=0 standing patch (petri slab)  (1040 facets)
+    14: x=6.0 standing patch  (1040 facets)
+    15: y=0 standing patch  (1040 facets)
+    16: y=6.0 standing patch  (1040 facets)
+
+  Cell tags:
+    0: physical  (155390 cells)
+    1: PML-x  (50400 cells)
+    2: PML-y  (50400 cells)
+    3: PML-z  (22810 cells)
+    4: PML-xy  (16800 cells)
+    5: PML-xz  (9000 cells)
+    6: PML-yz  (9000 cells)
+    7: PML-xyz  (3000 cells)
+======================================================================
+
+  DOFs: 439587
+  PML DOFs: 221960,  Physical DOFs: 217627
+  Top BC: water–air Robin  Z_air=411.6 Pa·s/m  Z_rel=0.000278
+  [PlasticLens] l=1  f=2.0 mm  offset=(0.20, 0.00) mm
+    k_water=8467.9  k_lens=4654.2  dk=-3813.7 rad/m
+    phi_target range: [-2.43, 5.53] rad
+    phi_plastic range: [0.00, 6.28] rad
+    amplitude: min=0.0039  max=1.0000
+    active DOFs: 503/503
+  Disk source: plastic lens  l=1  f=2.0 mm  active=503/503
+  Standing wave: V=0.0 μm/s  pattern=antiphase  axis=both
+  Assembling & solving …
+  KSP converged: REASON=-11  iters=0  |r|=0.00e+00
+  Timing: mesh 0.4s  assemble+solve 16.7s  total 17.4s
+  max|p| = inf Pa   DOFs = 439587
+======================================================================
+
+  z_focus = 0.75 mm  (2.25 mm below petri)
+  max|p| bath = nan Pa
+  max|p| petri = nan Pa
+Traceback (most recent call last):
+  File "/home/js23252/Desktop/acousto-tweezers/scripts/experiments/corrected_model_sweep.py", line 677, in <module>
+    main()
+  File "/home/js23252/Desktop/acousto-tweezers/scripts/experiments/corrected_model_sweep.py", line 348, in main
+    plot_xz_vortex(sol, cfg, fig_dir, label, z_focus=z_focus)
+  File "/home/js23252/Desktop/acousto-tweezers/scripts/experiments/corrected_model_sweep.py", line 196, in plot_xz_vortex
+    plt.colorbar(im, ax=ax, label="Pa")
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/pyplot.py", line 2533, in colorbar
+    ret = gcf().colorbar(mappable, cax=cax, ax=ax, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/figure.py", line 1308, in colorbar
+    cb = cbar.Colorbar(cax, mappable, **{
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 387, in __init__
+    self._reset_locator_formatter_scale()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 1163, in _reset_locator_formatter_scale
+    self._process_values()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 1099, in _process_values
+    self.norm.vmin, self.norm.vmax = mtransforms.nonsingular(
+    ^^^^^^^^^^^^^^
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colors.py", line 2184, in vmin
+    self._changed()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colors.py", line 2212, in _changed
+    self.callbacks.process('changed')
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorizer.py", line 297, in changed
+    self.callbacks.process('changed')
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorizer.py", line 589, in changed
+    self.callbacks.process('changed', self)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 513, in update_normal
+    self._draw_all()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 540, in _draw_all
+    self._process_values()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 1099, in _process_values
+    self.norm.vmin, self.norm.vmax = mtransforms.nonsingular(
+                    ^^^^^^^^^^^^^^
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colors.py", line 2195, in vmax
+    self._changed()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colors.py", line 2212, in _changed
+    self.callbacks.process('changed')
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorizer.py", line 297, in changed
+    self.callbacks.process('changed')
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorizer.py", line 589, in changed
+    self.callbacks.process('changed', self)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 366, in process
+    self.exception_handler(exc)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 110, in _exception_printer
+    raise exc
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/cbook.py", line 361, in process
+    func(*args, **kwargs)
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 513, in update_normal
+    self._draw_all()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 540, in _draw_all
+    self._process_values()
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colorbar.py", line 1103, in _process_values
+    b = self.norm.inverse(b)
+        ^^^^^^^^^^^^^^^^^^^^
+  File "/home/js23252/.conda/envs/acousto-complex/lib/python3.11/site-packages/matplotlib/colors.py", line 2692, in inverse
+    raise ValueError("Invalid vmin or vmax")
+ValueError: Invalid vmin or vmax
