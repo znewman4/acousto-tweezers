@@ -15,13 +15,24 @@ After sweep, selects best geometry and runs interaction check.
 
 Usage:
     python scripts/experiments/corrected_model_sweep.py
+<<<<<<< HEAD
 """
 from __future__ import annotations
 
+=======
+    python scripts/experiments/corrected_model_sweep.py --out results/my_sweep
+    python scripts/experiments/corrected_model_sweep.py --elem-per-lambda 5 --threads 4
+    python scripts/experiments/corrected_model_sweep.py --tag nightly
+"""
+from __future__ import annotations
+
+import argparse
+>>>>>>> chore/linux-ready-audit
 import gc
 import csv
 import json
 import os
+<<<<<<< HEAD
 import sys
 import time
 import traceback
@@ -37,6 +48,30 @@ os.environ["OMP_NUM_THREADS"] = str(OMP_THREADS)
 os.environ["OPENBLAS_NUM_THREADS"] = str(OMP_THREADS)
 os.environ["MKL_NUM_THREADS"] = str(OMP_THREADS)
 
+=======
+import platform
+import socket
+import subprocess
+import sys
+import time
+import traceback
+from dataclasses import replace
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+# ── Early thread control (must precede numpy / BLAS import) ───────
+_pre = argparse.ArgumentParser(add_help=False)
+_pre.add_argument("--threads", type=int, default=None)
+_pre_args, _ = _pre.parse_known_args()
+NCORES = os.cpu_count() or 8
+OMP_THREADS = _pre_args.threads or min(8, max(1, NCORES // 2))
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ[_v] = str(OMP_THREADS)
+del _pre, _pre_args, _v
+
+import numpy as np
+>>>>>>> chore/linux-ready-audit
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -49,6 +84,7 @@ from acoustweezers.experiments.farfield_petri_cuboid.solve_pressure import solve
 from acoustweezers.experiments.farfield_petri_cuboid.post import (
     slice_xy, slice_xz, centerline_z,
 )
+<<<<<<< HEAD
 
 # ═════════════════════════════════════════════════════════════════════
 #  CONSTANTS
@@ -63,12 +99,32 @@ ELEM_PER_LAMBDA = 4     # eps=4: fits in 30 GB RAM for all domains
 # Amplitudes for interaction check
 V_DISK = 1e-6            # 1 µm/s
 V_STAND = 10e-6          # 10 µm/s
+=======
+from acoustweezers.experiments.farfield_petri_cuboid.presets import (
+    CORRECTED_PRESET, PETSC_MUMPS,
+)
+from acoustweezers.core.case_loader import load_case_overrides, write_case_summary
+
+# ═════════════════════════════════════════════════════════════════════
+#  CONSTANTS  (derived from CORRECTED_PRESET — single source of truth)
+# ═════════════════════════════════════════════════════════════════════
+_P = CORRECTED_PRESET
+H_PETRI = _P["H_top"]
+LX = _P["Lx"]
+LY = _P["Ly"]
+FREQ = _P["frequency_hz"]
+DISK_RADIUS = _P["disk_radius"]
+V_DISK = _P["disk_velocity_amplitude"]
+V_STAND = _P["standing_velocity_amplitude"]
+ELEM_PER_LAMBDA = 4     # default; overridden by --elem-per-lambda
+>>>>>>> chore/linux-ready-audit
 
 # Sweep parameters
 H_BATH_LIST = [3e-3, 4e-3, 5e-3, 6e-3, 7e-3]   # m
 F_LENS_LIST = [2e-3, 3e-3, 4e-3, 5e-3, 6e-3]    # m
 
 PETSC_OPTS = {
+<<<<<<< HEAD
     "ksp_type": "preonly",
     "pc_type": "lu",
     "pc_factor_mat_solver_type": "mumps",
@@ -78,14 +134,31 @@ PETSC_OPTS = {
     "mat_mumps_icntl_29": 2,     # ParMETIS ordering (less fill-in)
 }
 
+=======
+    **PETSC_MUMPS,
+    "mat_mumps_icntl_14": "30",    # low memory overhead (30 % relaxation)
+    "mat_mumps_icntl_28": "2",     # parallel analysis
+    "mat_mumps_icntl_29": "2",     # ParMETIS ordering (less fill-in)
+}
+
+_OUT_ROOT: Optional[Path] = None  # set in main(); used by __main__ for FAILED.txt
+
+>>>>>>> chore/linux-ready-audit
 
 # ═════════════════════════════════════════════════════════════════════
 #  HELPERS
 # ═════════════════════════════════════════════════════════════════════
 
 def make_cfg(H_bath, f_lens, V_disk=V_DISK, V_stand=0.0, pml_enabled=True,
+<<<<<<< HEAD
              eps=ELEM_PER_LAMBDA):
     """Build a FarFieldConfig for the corrected model."""
+=======
+             eps=None):
+    """Build a FarFieldConfig for the corrected model."""
+    if eps is None:
+        eps = ELEM_PER_LAMBDA
+>>>>>>> chore/linux-ready-audit
     return FarFieldConfig(
         Lx=LX, Ly=LY,
         H_under=H_bath,
@@ -267,15 +340,87 @@ def slice_xy_complex(sol, z_val, nx=200, ny=200):
 #  MAIN
 # ═════════════════════════════════════════════════════════════════════
 
+<<<<<<< HEAD
 def main():
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_root = Path("results") / f"corrected_model_{stamp}"
     out_root.mkdir(parents=True, exist_ok=True)
+=======
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Corrected model sweep: H_bath × f_lens grid")
+    p.add_argument("--out", type=str, default=None,
+                   help="Output directory (default: results/corrected_model_<stamp>)")
+    p.add_argument("--case", type=str, default=None,
+                   help="Path to canonical case JSON (overrides presets)")
+    p.add_argument("--elem-per-lambda", type=int, default=ELEM_PER_LAMBDA,
+                   help=f"Elements per wavelength (default: {ELEM_PER_LAMBDA})")
+    p.add_argument("--threads", type=int, default=OMP_THREADS,
+                   help=f"OMP thread count (default: {OMP_THREADS})")
+    p.add_argument("--tag", type=str, default="",
+                   help="Tag appended to output dir name")
+    p.add_argument("--overwrite", action="store_true",
+                   help="Allow writing into an existing output directory")
+    return p.parse_args()
+
+
+def _system_banner(out_root, eps, threads):
+    """Print system-info banner."""
+    git_hash = "unknown"
+    try:
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        pass
+    cfg_est = FarFieldConfig(**{**CORRECTED_PRESET, "elements_per_wavelength": eps})
+    est_dofs = (2*cfg_est.mesh_nx+1) * (2*cfg_est.mesh_ny+1) * (2*cfg_est.mesh_nz+1)
+    print(f"\n{'#'*72}")
+    print(f"  CORRECTED MODEL SWEEP")
+    print(f"  Host       : {socket.gethostname()}")
+    print(f"  Python     : {platform.python_version()}")
+    print(f"  Git        : {git_hash}")
+    print(f"  Threads    : {threads} / {NCORES} cores")
+    print(f"  Elem/λ     : {eps}")
+    print(f"  Est. DOFs  : ~{est_dofs:,}")
+    print(f"  H_petri    : {H_PETRI*1e3:.0f} mm (fixed)")
+    print(f"  Top BC     : water–air Robin  Z_air = {1.2*343:.1f} Pa·s/m")
+    print(f"  V_disk     : {V_DISK*1e6:.1f} µm/s")
+    print(f"  V_stand    : {V_STAND*1e6:.1f} µm/s")
+    print(f"  Output     : {out_root}")
+    print(f"{'#'*72}\n")
+
+
+def main():
+    global ELEM_PER_LAMBDA, _OUT_ROOT
+    args = _parse_args()
+    ELEM_PER_LAMBDA = args.elem_per_lambda
+
+    # Merge case file overrides if provided
+    _case_overrides = {}
+    if args.case:
+        _case_overrides = load_case_overrides(args.case)
+        print(f"  Loaded case overrides from {args.case}")
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tag = f"_{args.tag}" if args.tag else ""
+    if args.out:
+        out_root = Path(args.out)
+    else:
+        out_root = Path("results") / f"corrected_model_{stamp}{tag}"
+
+    if out_root.exists() and not args.overwrite:
+        sys.exit(f"ERROR: {out_root} exists. Use --overwrite or different --out.")
+
+    out_root.mkdir(parents=True, exist_ok=True)
+    _OUT_ROOT = out_root
+>>>>>>> chore/linux-ready-audit
     fig_dir = out_root / "figures"
     csv_dir = out_root / "csv"
     fig_dir.mkdir(exist_ok=True)
     csv_dir.mkdir(exist_ok=True)
 
+<<<<<<< HEAD
     print(f"\n{'#'*72}")
     print(f"  CORRECTED MODEL SWEEP — {stamp}")
     print(f"  H_petri = {H_PETRI*1e3:.0f} mm (fixed)")
@@ -284,6 +429,14 @@ def main():
     print(f"  OMP_NUM_THREADS = {OMP_THREADS} / {NCORES} cores")
     print(f"  Output: {out_root}")
     print(f"{'#'*72}\n")
+=======
+    # Write CASE_SUMMARY.md
+    effective = {**CORRECTED_PRESET, **_case_overrides, "elements_per_wavelength": ELEM_PER_LAMBDA}
+    write_case_summary(out_root, args.case, effective,
+                       extra_info={"script": "corrected_model_sweep.py"})
+
+    _system_banner(out_root, ELEM_PER_LAMBDA, OMP_THREADS)
+>>>>>>> chore/linux-ready-audit
 
     # ══════════════════════════════════════════════════════════════════
     #  PHASE 1: Vortex-Only Sweep (H_bath × f_lens)
@@ -714,4 +867,16 @@ def _write_config(out_root, sweep_rows):
 
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     main()
+=======
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:
+        traceback.print_exc()
+        if _OUT_ROOT and _OUT_ROOT.exists():
+            (_OUT_ROOT / "FAILED.txt").write_text(traceback.format_exc())
+        sys.exit(1)
+>>>>>>> chore/linux-ready-audit

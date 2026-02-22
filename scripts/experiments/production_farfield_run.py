@@ -1,17 +1,31 @@
 #!/usr/bin/env python3
 """
+<<<<<<< HEAD
 Production Far-Field Run — Week 17 Vortex + Standing-Wave Interaction
 ======================================================================
 
 5 elements/wavelength, MUMPS direct solver, full verification pipeline.
+=======
+Production Far-Field Run — Vortex + Standing-Wave Interaction
+=============================================================
+
+MUMPS direct solver, full verification pipeline.
+>>>>>>> chore/linux-ready-audit
 
 Steps:
   1. Environment validation (done externally)
   2. Solver config lock (MUMPS, thread controls)
+<<<<<<< HEAD
   3. Production mesh setup (5 elem/λ)
   4. Canonical cases: standing_only, vortex_only, combined, rigid_combined
   5. Free-space vortex propagation verification
   6. PML stability check (1λ vs 2λ)
+=======
+  3. Production mesh setup
+  4. Canonical cases: standing_only, vortex_only, combined, rigid_combined
+  5. Free-space vortex propagation verification
+  6. PML thickness perturbation check (1λ vs 2λ, confounded)
+>>>>>>> chore/linux-ready-audit
   7. Interaction metrics (Δ|p|, ΔU, selectivity, Hessian)
   8. Particle scaling (10–100 µm)
 
@@ -19,23 +33,43 @@ Output: results/farfield_production_<timestamp>/
 
 Usage:
     python scripts/experiments/production_farfield_run.py
+<<<<<<< HEAD
 """
 from __future__ import annotations
 
+=======
+    python scripts/experiments/production_farfield_run.py --out results/prod_v2
+    python scripts/experiments/production_farfield_run.py --elem-per-lambda 6 --threads 4
+    python scripts/experiments/production_farfield_run.py --tag nightly
+"""
+from __future__ import annotations
+
+import argparse
+>>>>>>> chore/linux-ready-audit
 import gc
 import json
 import csv
 import os
+<<<<<<< HEAD
+=======
+import platform
+import socket
+import subprocess
+>>>>>>> chore/linux-ready-audit
 import sys
 import time
 import traceback
 import resource
+<<<<<<< HEAD
 import numpy as np
+=======
+>>>>>>> chore/linux-ready-audit
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+<<<<<<< HEAD
 # ── Thread controls (STEP 2) ─────────────────────────────────────────
 NCORES = os.cpu_count() or 8
 HALF_CORES = max(1, NCORES // 2)
@@ -44,6 +78,20 @@ os.environ["OPENBLAS_NUM_THREADS"] = str(HALF_CORES)
 os.environ["MKL_NUM_THREADS"] = str(HALF_CORES)
 os.environ["NUMEXPR_NUM_THREADS"] = str(HALF_CORES)
 
+=======
+# ── Early thread control (must precede numpy / BLAS import) ───────
+_pre = argparse.ArgumentParser(add_help=False)
+_pre.add_argument("--threads", type=int, default=None)
+_pre_args, _ = _pre.parse_known_args()
+NCORES = os.cpu_count() or 8
+OMP_THREADS = _pre_args.threads or max(1, NCORES // 2)
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS"):
+    os.environ[_v] = str(OMP_THREADS)
+del _pre, _pre_args, _v
+
+import numpy as np
+>>>>>>> chore/linux-ready-audit
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -56,6 +104,7 @@ from acoustweezers.experiments.farfield_petri_cuboid.solve_pressure import solve
 from acoustweezers.experiments.farfield_petri_cuboid.post import (
     slice_xy, slice_xz, centerline_z, energy_physical_vs_pml,
 )
+<<<<<<< HEAD
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -102,6 +151,32 @@ PETSC_OPTS = {
     "pc_factor_mat_solver_type": "mumps",
     # Conservative MUMPS memory tuning for large problems
     "mat_mumps_icntl_14": "100",   # 100% workspace increase
+=======
+from acoustweezers.experiments.farfield_petri_cuboid.presets import (
+    CORRECTED_PRESET, PETSC_MUMPS,
+)
+from acoustweezers.core.case_loader import load_case_overrides, write_case_summary
+from acoustweezers.core.audit import generate_manifest, write_solver_info
+from acoustweezers.core.report import (
+    write_summary_cases_csv, write_roi_metrics_csv,
+    write_focus_metrics_csv, write_audit_report,
+)
+
+
+# ═════════════════════════════════════════════════════════════════════
+#  GLOBAL CONFIG  (from CORRECTED_PRESET — single source of truth)
+# ═════════════════════════════════════════════════════════════════════
+ELEM_PER_LAMBDA = 5  # production default; overridden by --elem-per-lambda
+
+# NOTE: BASE_CFG is rebuilt in main() after CLI parsing to pick up
+#       the user's --elem-per-lambda value.
+BASE_CFG = {**CORRECTED_PRESET, "elements_per_wavelength": ELEM_PER_LAMBDA}
+
+PETSC_OPTS = {
+    **PETSC_MUMPS,
+    # Conservative MUMPS memory tuning for large problems
+    "mat_mumps_icntl_14": "100",   # 100 % workspace increase
+>>>>>>> chore/linux-ready-audit
     "mat_mumps_icntl_23": "16000", # max 16 GB workspace
     "mat_mumps_icntl_28": "0",     # automatic parallelism selection
 }
@@ -114,6 +189,11 @@ OMEGA = 2 * np.pi * FREQ
 K_WATER = OMEGA / C_WATER
 WAVELENGTH = C_WATER / FREQ
 
+<<<<<<< HEAD
+=======
+_OUT_ROOT: Optional[Path] = None  # set in main(); used by __main__ for FAILED.txt
+
+>>>>>>> chore/linux-ready-audit
 
 # ═════════════════════════════════════════════════════════════════════
 #  HELPERS
@@ -351,15 +431,90 @@ def find_trap_locations(U_2d, xg, yg, roi_mask, n_traps=3):
 #  MAIN
 # ═════════════════════════════════════════════════════════════════════
 
+<<<<<<< HEAD
 def main():
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_root = Path("results") / f"farfield_production_{stamp}"
     out_root.mkdir(parents=True, exist_ok=True)
+=======
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Production far-field verification pipeline")
+    p.add_argument("--out", type=str, default=None,
+                   help="Output directory (default: results/farfield_production_<stamp>)")
+    p.add_argument("--case", type=str, default=None,
+                   help="Path to canonical case JSON (overrides presets)")
+    p.add_argument("--elem-per-lambda", type=int, default=ELEM_PER_LAMBDA,
+                   help=f"Elements per wavelength (default: {ELEM_PER_LAMBDA})")
+    p.add_argument("--threads", type=int, default=OMP_THREADS,
+                   help=f"OMP thread count (default: {OMP_THREADS})")
+    p.add_argument("--tag", type=str, default="",
+                   help="Tag appended to output dir name")
+    p.add_argument("--overwrite", action="store_true",
+                   help="Allow writing into an existing output directory")
+    p.add_argument("--export-fields", action="store_true",
+                   help="Export XDMF pressure fields for each case")
+    return p.parse_args()
+
+def _system_banner(out_root, ref_cfg):
+    """Print system-info banner."""
+    git_hash = "unknown"
+    try:
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        pass
+    est_dofs = ((2*ref_cfg.mesh_nx+1) * (2*ref_cfg.mesh_ny+1)
+                * (2*ref_cfg.mesh_nz+1))
+    print(f"\n{'#'*72}")
+    print(f"  PRODUCTION FAR-FIELD RUN")
+    print(f"  Host       : {socket.gethostname()}")
+    print(f"  Python     : {platform.python_version()}")
+    print(f"  Git        : {git_hash}")
+    print(f"  Threads    : {OMP_THREADS} / {NCORES} cores")
+    print(f"  Elem/λ     : {ref_cfg.elements_per_wavelength}")
+    print(f"  Est. DOFs  : ~{est_dofs:,}")
+    print(f"  H_top      : {ref_cfg.H_top*1e3:.1f} mm")
+    print(f"  H_under    : {ref_cfg.H_under*1e3:.1f} mm")
+    print(f"  V_disk     : {ref_cfg.disk_velocity_amplitude*1e6:.1f} µm/s")
+    print(f"  V_stand    : {ref_cfg.standing_velocity_amplitude*1e6:.1f} µm/s")
+    print(f"  Output     : {out_root}")
+    print(f"{'#'*72}\n")
+
+
+def main():
+    global ELEM_PER_LAMBDA, BASE_CFG, _OUT_ROOT
+    args = _parse_args()
+    ELEM_PER_LAMBDA = args.elem_per_lambda
+
+    # Merge case file overrides if provided
+    _case_overrides = {}
+    if args.case:
+        _case_overrides = load_case_overrides(args.case)
+        print(f"  Loaded case overrides from {args.case}")
+
+    BASE_CFG = {**CORRECTED_PRESET, **_case_overrides, "elements_per_wavelength": ELEM_PER_LAMBDA}
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tag = f"_{args.tag}" if args.tag else ""
+    if args.out:
+        out_root = Path(args.out)
+    else:
+        out_root = Path("results") / f"farfield_production_{stamp}{tag}"
+
+    if out_root.exists() and not args.overwrite:
+        sys.exit(f"ERROR: {out_root} exists. Use --overwrite or different --out.")
+
+    out_root.mkdir(parents=True, exist_ok=True)
+    _OUT_ROOT = out_root
+>>>>>>> chore/linux-ready-audit
     fig_dir = out_root / "figures"
     csv_dir = out_root / "csv"
     fig_dir.mkdir(exist_ok=True)
     csv_dir.mkdir(exist_ok=True)
 
+<<<<<<< HEAD
     print(f"\n{'#'*72}")
     print(f"  PRODUCTION FAR-FIELD RUN — {stamp}")
     print(f"  OMP_NUM_THREADS = {HALF_CORES} / {NCORES} cores")
@@ -369,10 +524,25 @@ def main():
     checklist = {}  # deliverable checklist
     all_ok = True
 
+=======
+    checklist = {}  # deliverable checklist
+    all_ok = True
+
+    # Write CASE_SUMMARY.md
+    write_case_summary(out_root, args.case, BASE_CFG,
+                       extra_info={"script": "production_farfield_run.py"})
+
+>>>>>>> chore/linux-ready-audit
     # ══════════════════════════════════════════════════════════════════
     #  STEP 3 — Production Mesh Setup (info only)
     # ══════════════════════════════════════════════════════════════════
     ref_cfg = FarFieldConfig(**BASE_CFG)
+<<<<<<< HEAD
+=======
+
+    _system_banner(out_root, ref_cfg)
+
+>>>>>>> chore/linux-ready-audit
     nx, ny, nz = ref_cfg.mesh_nx, ref_cfg.mesh_ny, ref_cfg.mesh_nz
     n_cells = nx * ny * nz * 6  # structured tet mesh: 6 tets per hex cell
     # P2: ~(2n+1)^3 DOFs approx => rough estimate
@@ -424,7 +594,14 @@ def main():
         mem_before = _peak_memory_mb()
 
         try:
+<<<<<<< HEAD
             sol = solve_helmholtz(cfg, verbose=True, petsc_options=PETSC_OPTS)
+=======
+            _export = args.export_fields
+            _edir = str(out_root / "fields" / case_name) if _export else None
+            sol = solve_helmholtz(cfg, verbose=True, petsc_options=PETSC_OPTS,
+                                  export_fields=_export, export_dir=_edir)
+>>>>>>> chore/linux-ready-audit
         except Exception as e:
             print(f"  *** SOLVER FAILED: {e}")
             traceback.print_exc()
@@ -481,6 +658,24 @@ def main():
             "cfg": cfg,
         }
 
+<<<<<<< HEAD
+=======
+        # Write per-case solver_info.json + config.json
+        case_dir = out_root / case_name
+        case_dir.mkdir(exist_ok=True)
+        write_solver_info(
+            case_dir,
+            ksp_type="preonly", pc_type="lu", lu_backend="mumps",
+            dofs=sol.dofs, walltime_s=wall_time, mesh_time_s=sol.mesh_time,
+            ksp_iterations=sol.ksp_iterations,
+            ksp_converged_reason=reason_str,
+            ksp_residual_norm=sol.ksp_residual_norm,
+            max_pressure=sol.max_pressure,
+        )
+        with open(case_dir / "config.json", "w") as _f:
+            json.dump(cfg.to_dict(), _f, indent=2, default=str)
+
+>>>>>>> chore/linux-ready-audit
         solver_rows.append({
             "case": case_name,
             "dofs": sol.dofs,
@@ -881,10 +1076,17 @@ def main():
     print(f"  Step 5 complete.\n")
 
     # ══════════════════════════════════════════════════════════════════
+<<<<<<< HEAD
     #  STEP 6 — PML Stability Check (1λ vs 2λ)
     # ══════════════════════════════════════════════════════════════════
     print(f"{'='*72}")
     print(f"  STEP 6: PML Stability Check")
+=======
+    #  STEP 6 — PML Thickness Perturbation (Confounded: 1λ vs 2λ)
+    # ══════════════════════════════════════════════════════════════════
+    print(f"{'='*72}")
+    print(f"  STEP 6: PML Thickness Perturbation (Confounded)")
+>>>>>>> chore/linux-ready-audit
     print(f"{'='*72}\n")
 
     pml_sweep_rows = []
@@ -962,6 +1164,7 @@ def main():
         if not np.isnan(test_val) and not np.isnan(ref_val_inner):
             pct_diff = abs(test_val - ref_val_inner) / (abs(ref_val_inner) + 1e-30) * 100
             pml_stable = pct_diff < 10.0
+<<<<<<< HEAD
             checklist["pml_sensitivity_under_10pct"] = f"{'YES' if pml_stable else 'FAIL'} ({pct_diff:.1f}% on inner ROI)"
             if not pml_stable:
                 print(f"  *** PML SENSITIVITY: {pct_diff:.1f}% on inner ROI")
@@ -971,14 +1174,31 @@ def main():
                 print(f"  shrinks the cavity and changes the resonance pattern.")
         else:
             checklist["pml_sensitivity_under_10pct"] = "INCOMPLETE (solve failed)"
+=======
+            checklist["pml_thickness_perturbation_confounded"] = f"{'YES' if pml_stable else 'FAIL'} ({pct_diff:.1f}% on inner ROI)"
+            if not pml_stable:
+                print(f"  *** PML THICKNESS PERTURBATION (CONFOUNDED): {pct_diff:.1f}% on inner ROI")
+                print(f"  NOTE: This test is confounded — standing-wave sources sit on")
+                print(f"  domain walls, so increasing PML thickness shrinks the physical")
+                print(f"  cavity and changes the resonance pattern. A >10% difference")
+                print(f"  does NOT necessarily indicate PML inadequacy.")
+        else:
+            checklist["pml_thickness_perturbation_confounded"] = "INCOMPLETE (solve failed)"
+>>>>>>> chore/linux-ready-audit
     elif len(pml_sweep_rows) >= 2 and not np.isnan(pml_sweep_rows[1].get("mean_abs_p_roi", float("nan"))):
         ref_val = pml_sweep_rows[0]["mean_abs_p_roi"]
         test_val = pml_sweep_rows[1]["mean_abs_p_roi"]
         pct_diff = abs(test_val - ref_val) / (abs(ref_val) + 1e-30) * 100
         pml_stable = pct_diff < 10.0
+<<<<<<< HEAD
         checklist["pml_sensitivity_under_10pct"] = f"{'YES' if pml_stable else 'FAIL'} ({pct_diff:.1f}%)"
     else:
         checklist["pml_sensitivity_under_10pct"] = "INCOMPLETE"
+=======
+        checklist["pml_thickness_perturbation_confounded"] = f"{'YES' if pml_stable else 'FAIL'} ({pct_diff:.1f}%)"
+    else:
+        checklist["pml_thickness_perturbation_confounded"] = "INCOMPLETE"
+>>>>>>> chore/linux-ready-audit
 
     # Write pml_sweep.csv
     with open(csv_dir / "pml_sweep.csv", "w", newline="") as f:
@@ -1173,6 +1393,123 @@ def main():
     print(f"  Step 8 complete.\n")
 
     # ══════════════════════════════════════════════════════════════════
+<<<<<<< HEAD
+=======
+    #  STEP 9 — Standardised CSVs + Audit Report  (Directive 6)
+    # ══════════════════════════════════════════════════════════════════
+    print(f"{'='*72}")
+    print(f"  STEP 9: Standardised CSVs + Audit Report")
+    print(f"{'='*72}\n")
+
+    # --- summary_cases.csv (one row per solved case) ---
+    summary_cases = []
+    for cn, s in solutions.items():
+        summary_cases.append({
+            "case": cn,
+            "dofs": s["dofs"],
+            "ksp_type": "preonly",
+            "pc_type": "lu/mumps",
+            "ksp_converged_reason": s["ksp_reason"],
+            "max_abs_p_Pa": f"{s['max_pressure']:.4f}",
+            "wall_time_s": f"{s['wall_time']:.1f}",
+            "status": "OK" if "FAIL" not in str(s["ksp_reason"]).upper() else "FAILED",
+        })
+    _p = write_summary_cases_csv(out_root, summary_cases)
+    print(f"  Wrote {_p}")
+
+    # --- roi_metrics.csv (standardised columns) ---
+    std_roi_rows = []
+    for r in roi_rows:
+        std_roi_rows.append({
+            "case": r["case"],
+            "mean_abs_p": r["mean_abs_p_roi"],
+            "max_abs_p": r["max_abs_p_roi"],
+            "energy_physical": r.get("energy_physical", ""),
+            "energy_pml": r.get("energy_pml", ""),
+            "energy_ratio": r.get("energy_ratio", ""),
+        })
+    _p = write_roi_metrics_csv(out_root, std_roi_rows)
+    print(f"  Wrote {_p}")
+
+    # --- focus_metrics.csv (z_focus, peak |p|, ring radius estimate) ---
+    focus_rows = []
+    for cn in ["vortex_only", "combined"]:
+        if cn in solutions:
+            s = solutions[cn]
+            zc = np.asarray(s["zc"])
+            pc = np.abs(np.asarray(s["pc"]))
+            if len(pc) > 0:
+                i_peak = int(np.argmax(pc))
+                z_focus_mm = float(zc[i_peak]) * 1e3
+                peak_p = float(pc[i_peak])
+            else:
+                z_focus_mm = float("nan")
+                peak_p = float("nan")
+            # Ring radius from XY slice at petri mid
+            pmag = s["pmag_xy_petri"]
+            xg = s["xg_xy"]
+            yg = s["yg_xy"]
+            cx = float(np.mean(xg))
+            cy = float(np.mean(yg))
+            Xg, Yg = np.meshgrid(xg, yg)
+            R = np.sqrt((Xg - cx)**2 + (Yg - cy)**2)
+            if pmag.max() > 0:
+                i_flat = int(np.argmax(pmag))
+                i_r, i_c = np.unravel_index(i_flat, pmag.shape)
+                ring_r_mm = float(R[i_r, i_c]) * 1e3
+            else:
+                ring_r_mm = float("nan")
+            focus_rows.append({
+                "case": cn,
+                "z_focus_mm": f"{z_focus_mm:.3f}",
+                "peak_p_Pa": f"{peak_p:.4f}",
+                "ring_radius_mm": f"{ring_r_mm:.4f}",
+            })
+    _p = write_focus_metrics_csv(out_root, focus_rows)
+    print(f"  Wrote {_p}")
+
+    # --- AUDIT_REPORT.md ---
+    cases_status = {}
+    dofs_by_case = {}
+    walltimes = {}
+    for cn, s in solutions.items():
+        is_ok = "FAIL" not in str(s["ksp_reason"]).upper()
+        cases_status[cn] = "OK" if is_ok else f"FAILED: {s['ksp_reason']}"
+        dofs_by_case[cn] = s["dofs"]
+        walltimes[cn] = s["wall_time"]
+
+    total_wt = sum(walltimes.values())
+
+    pml_settings_dict = {
+        "pml_n_wavelengths_xy": ref_cfg.pml_n_wavelengths_xy,
+        "pml_n_wavelengths_z": ref_cfg.pml_n_wavelengths_z,
+        "pml_sigma_max_factor": ref_cfg.pml_sigma_max_factor,
+        "pml_enabled": ref_cfg.pml_enabled,
+    }
+
+    audit_warnings: list = []
+    if "pml_thickness_perturbation_confounded" in checklist:
+        val = str(checklist["pml_thickness_perturbation_confounded"])
+        if "FAIL" in val or "INCOMPLETE" in val:
+            audit_warnings.append(f"PML thickness perturbation check: {val}")
+    for cn, s in solutions.items():
+        if "FAIL" in str(s["ksp_reason"]).upper():
+            audit_warnings.append(f"Solver failed for case '{cn}': {s['ksp_reason']}")
+
+    _p = write_audit_report(
+        out_root,
+        cases_status=cases_status,
+        dofs_by_case=dofs_by_case,
+        walltimes=walltimes,
+        pml_settings=pml_settings_dict,
+        warnings=audit_warnings,
+        total_walltime_s=total_wt,
+    )
+    print(f"  Wrote {_p}")
+    print(f"  Step 9 complete.\n")
+
+    # ══════════════════════════════════════════════════════════════════
+>>>>>>> chore/linux-ready-audit
     #  OUTPUT: config.json + INDEX.md
     # ══════════════════════════════════════════════════════════════════
     print(f"{'='*72}")
@@ -1184,7 +1521,11 @@ def main():
     config_out["petsc_options"] = PETSC_OPTS
     config_out["cases"] = list(CASES.keys())
     config_out["thread_controls"] = {
+<<<<<<< HEAD
         "OMP_NUM_THREADS": HALF_CORES,
+=======
+        "OMP_NUM_THREADS": OMP_THREADS,
+>>>>>>> chore/linux-ready-audit
         "NCORES": NCORES,
     }
     config_out["timestamp"] = stamp
@@ -1217,8 +1558,13 @@ def main():
          checklist.get("standing_wave_visible") == "YES"),
         ("Verified combined ≠ vortex-only",
          checklist.get("combined_ne_vortex") == "YES"),
+<<<<<<< HEAD
         ("PML sensitivity under 10% in ROI",
          "YES" in str(checklist.get("pml_sensitivity_under_10pct", ""))),
+=======
+        ("PML thickness perturbation <10% (confounded — see AUDIT.md)",
+         "YES" in str(checklist.get("pml_thickness_perturbation_confounded", ""))),
+>>>>>>> chore/linux-ready-audit
         ("Quantified interaction metrics (Δ|p|, ΔU, selectivity)",
          checklist.get("interaction_metrics_computed") == "YES"),
         ("Particle scaling up to 100 µm with ka reported",
@@ -1297,7 +1643,13 @@ def _write_index(out_root, cfg, solutions, checklist,
     lines.append("")
 
     # PML sweep
+<<<<<<< HEAD
     lines.append("## PML Thickness Sweep\n")
+=======
+    lines.append("## PML Thickness Perturbation (Confounded)\n")
+    lines.append("> **Note:** Sources are placed on domain walls. Increasing PML thickness")
+    lines.append("> shrinks the physical cavity, confounding this comparison.\n")
+>>>>>>> chore/linux-ready-audit
     if pml_sweep_rows:
         lines.append("| PML thickness [λ] | mean|p| ROI | max|p| ROI |")
         lines.append("|-------------------|-------------|------------|")
@@ -1322,10 +1674,20 @@ def _write_index(out_root, cfg, solutions, checklist,
     lines.append("## Files\n")
     lines.append("- `config.json` — Full configuration")
     lines.append("- `csv/solver_report.csv` — Per-case solver metrics")
+<<<<<<< HEAD
     lines.append("- `csv/roi_metrics.csv` — ROI pressure metrics + interaction")
     lines.append("- `csv/pml_sweep.csv` — PML thickness comparison")
     lines.append("- `csv/particle_scaling.csv` — Particle size sweep")
     lines.append("- `checklist.json` — Machine-readable checklist")
+=======
+    lines.append("- `csv/summary_cases.csv` — Standardised one-row-per-case summary")
+    lines.append("- `csv/roi_metrics.csv` — ROI pressure metrics + interaction")
+    lines.append("- `csv/focus_metrics.csv` — Focal depth, peak |p|, ring radius")
+    lines.append("- `csv/pml_sweep.csv` — PML thickness perturbation (confounded)")
+    lines.append("- `csv/particle_scaling.csv` — Particle size sweep")
+    lines.append("- `checklist.json` — Machine-readable checklist")
+    lines.append("- `audit/AUDIT_REPORT.md` — Human-readable audit summary")
+>>>>>>> chore/linux-ready-audit
     lines.append("")
 
     with open(out_root / "INDEX.md", "w") as f:
@@ -1334,4 +1696,16 @@ def _write_index(out_root, cfg, solutions, checklist,
 
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     main()
+=======
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:
+        traceback.print_exc()
+        if _OUT_ROOT and _OUT_ROOT.exists():
+            (_OUT_ROOT / "FAILED.txt").write_text(traceback.format_exc())
+        sys.exit(1)
+>>>>>>> chore/linux-ready-audit
