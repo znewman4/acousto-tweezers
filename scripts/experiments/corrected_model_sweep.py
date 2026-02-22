@@ -63,6 +63,7 @@ from acoustweezers.experiments.farfield_petri_cuboid.post import (
 from acoustweezers.experiments.farfield_petri_cuboid.presets import (
     CORRECTED_PRESET, PETSC_MUMPS,
 )
+from acoustweezers.core.case_loader import load_case_overrides, write_case_summary
 
 # ═════════════════════════════════════════════════════════════════════
 #  CONSTANTS  (derived from CORRECTED_PRESET — single source of truth)
@@ -286,6 +287,8 @@ def _parse_args() -> argparse.Namespace:
         description="Corrected model sweep: H_bath × f_lens grid")
     p.add_argument("--out", type=str, default=None,
                    help="Output directory (default: results/corrected_model_<stamp>)")
+    p.add_argument("--case", type=str, default=None,
+                   help="Path to canonical case JSON (overrides presets)")
     p.add_argument("--elem-per-lambda", type=int, default=ELEM_PER_LAMBDA,
                    help=f"Elements per wavelength (default: {ELEM_PER_LAMBDA})")
     p.add_argument("--threads", type=int, default=OMP_THREADS,
@@ -329,6 +332,12 @@ def main():
     args = _parse_args()
     ELEM_PER_LAMBDA = args.elem_per_lambda
 
+    # Merge case file overrides if provided
+    _case_overrides = {}
+    if args.case:
+        _case_overrides = load_case_overrides(args.case)
+        print(f"  Loaded case overrides from {args.case}")
+
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     tag = f"_{args.tag}" if args.tag else ""
     if args.out:
@@ -345,6 +354,11 @@ def main():
     csv_dir = out_root / "csv"
     fig_dir.mkdir(exist_ok=True)
     csv_dir.mkdir(exist_ok=True)
+
+    # Write CASE_SUMMARY.md
+    effective = {**CORRECTED_PRESET, **_case_overrides, "elements_per_wavelength": ELEM_PER_LAMBDA}
+    write_case_summary(out_root, args.case, effective,
+                       extra_info={"script": "corrected_model_sweep.py"})
 
     _system_banner(out_root, ELEM_PER_LAMBDA, OMP_THREADS)
 

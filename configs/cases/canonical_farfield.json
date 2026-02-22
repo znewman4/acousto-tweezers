@@ -1,0 +1,97 @@
+{
+  "_description": "Canonical far-field petri cuboid case — single source of truth for COMSOL comparison",
+  "_date": "2026-02-22",
+  "_notes": "Based on CORRECTED_PRESET with all implicit values made explicit. This file defines THE reference geometry, frequency, and amplitudes.",
+
+  "geometry": {
+    "Lx": 6e-3,
+    "Ly": 6e-3,
+    "H_under": 3e-3,
+    "H_top": 2e-3,
+    "_H_total_derived": 5e-3,
+    "_units": "metres"
+  },
+
+  "frequency": {
+    "frequency_hz": 2.0e6,
+    "_wavelength_derived_mm": 0.742,
+    "_k_derived": 8469.0
+  },
+
+  "disk_source": {
+    "disk_radius": 1e-3,
+    "disk_velocity_amplitude": 1e-6,
+    "vortex_topological_charge": 1,
+    "_units_radius": "metres",
+    "_units_velocity": "m/s"
+  },
+
+  "lens": {
+    "lens_drive": "plastic",
+    "lens_l": 1,
+    "lens_focal_length": 10e-3,
+    "lens_focus_offset_x": 0.2e-3,
+    "lens_focus_offset_y": 0.0,
+    "lens_c_lens": 2700.0,
+    "lens_apodization": "cosine_taper",
+    "lens_apodization_strength": 1.0
+  },
+
+  "standing_wave": {
+    "standing_velocity_amplitude": 10e-6,
+    "standing_phase_pattern": "antiphase",
+    "standing_axis": "both"
+  },
+
+  "pml": {
+    "pml_n_wavelengths_xy": 1.0,
+    "pml_n_wavelengths_z": 1.0,
+    "pml_degree": 2,
+    "pml_sigma_max_factor": 5.0,
+    "pml_enabled": true
+  },
+
+  "material_water_20C": {
+    "rho": 997.0,
+    "c": 1484.0,
+    "_Z_water": 1479548.0
+  },
+
+  "material_air": {
+    "rho_air": 1.2,
+    "c_air": 343.0,
+    "_Z_air": 411.6
+  },
+
+  "top_bc": {
+    "_type": "water-air Robin (fixed, not tunable)",
+    "_formula": "dp/dn + ik (rho_water c_water) / (rho_air c_air) p = 0"
+  },
+
+  "flat_overrides": {
+    "Lx": 6e-3,
+    "Ly": 6e-3,
+    "H_under": 3e-3,
+    "H_top": 2e-3,
+    "frequency_hz": 2.0e6,
+    "disk_radius": 1e-3,
+    "disk_velocity_amplitude": 1e-6,
+    "vortex_topological_charge": 1,
+    "standing_velocity_amplitude": 10e-6,
+    "standing_phase_pattern": "antiphase",
+    "standing_axis": "both",
+    "pml_n_wavelengths_xy": 1.0,
+    "pml_n_wavelengths_z": 1.0,
+    "pml_degree": 2,
+    "pml_sigma_max_factor": 5.0,
+    "pml_enabled": true,
+    "lens_drive": "plastic",
+    "lens_l": 1,
+    "lens_focal_length": 10e-3,
+    "lens_focus_offset_x": 0.2e-3,
+    "lens_focus_offset_y": 0.0,
+    "lens_c_lens": 2700.0,
+    "lens_apodization": "cosine_taper",
+    "lens_apodization_strength": 1.0
+  }
+}
