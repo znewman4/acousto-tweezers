@@ -119,15 +119,16 @@ def create_mesh(cfg: FarFieldConfig, verbose: bool = True):
     def _yL(x):
         return np.isclose(x[1], Ly, atol=tol)
 
-    # Standing-wave patches: side walls restricted to petri slab  z ∈ [H_under, H]
+    # Standing-wave patches: side walls restricted to petri slab  z ∈ [H_under, H_under + H_top]
+    H_top = cfg.H_top
     def _stand_x0(x):
-        return np.isclose(x[0], 0.0, atol=tol) & (x[2] >= H_under - tol)
+        return np.isclose(x[0], 0.0, atol=tol) & (x[2] >= H_under - tol) & (x[2] <= H_under + H_top + tol)
     def _stand_xL(x):
-        return np.isclose(x[0], Lx, atol=tol)  & (x[2] >= H_under - tol)
+        return np.isclose(x[0], Lx, atol=tol)  & (x[2] >= H_under - tol) & (x[2] <= H_under + H_top + tol)
     def _stand_y0(x):
-        return np.isclose(x[1], 0.0, atol=tol) & (x[2] >= H_under - tol)
+        return np.isclose(x[1], 0.0, atol=tol) & (x[2] >= H_under - tol) & (x[2] <= H_under + H_top + tol)
     def _stand_yL(x):
-        return np.isclose(x[1], Ly, atol=tol)  & (x[2] >= H_under - tol)
+        return np.isclose(x[1], Ly, atol=tol)  & (x[2] >= H_under - tol) & (x[2] <= H_under + H_top + tol)
 
     # Build (standing patches AFTER full side tags so they overwrite in petri slab)
     boundaries = [

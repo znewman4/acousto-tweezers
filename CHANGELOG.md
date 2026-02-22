@@ -1,5 +1,34 @@
 # Changelog
 
+## [Fix] Standing-Wave Boundary Condition Height Restriction
+
+### Problem
+Standing-wave drive boundary condition was applied to entire vertical sidewalls
+(bath + petri), causing incorrect cavity excitation and non-physical standing patterns.
+
+### Root Cause
+Facet selection logic did not restrict BC to petri slab z-range.
+
+### Fix
+Added z-range filtering to standing-wall facet selection:
+`z >= H_under and z <= H_under + H_top`
+
+### Impact
+Standing-wave excitation now correctly confined to petri slab only.
+Bath region no longer directly driven.
+Produces physically consistent modal structure.
+
+### Files Modified
+- src/acoustweezers/experiments/farfield_petri_cuboid/solve_pressure.py
+- src/acoustweezers/experiments/farfield_petri_cuboid/mesh.py
+
+### Regression Check
+- standing_only: PASS
+- vortex_only: PASS
+- combined: PASS
+
+---
+
 ## 2026-02-17 — Far-Field Hardening + Day-2 Deliverables
 
 ### Part A: PML Coefficient Refactoring
