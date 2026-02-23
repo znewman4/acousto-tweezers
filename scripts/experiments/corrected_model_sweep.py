@@ -15,11 +15,6 @@ After sweep, selects best geometry and runs interaction check.
 
 Usage:
     python scripts/experiments/corrected_model_sweep.py
-<<<<<<< HEAD
-"""
-from __future__ import annotations
-
-=======
     python scripts/experiments/corrected_model_sweep.py --out results/my_sweep
     python scripts/experiments/corrected_model_sweep.py --elem-per-lambda 5 --threads 4
     python scripts/experiments/corrected_model_sweep.py --tag nightly
@@ -27,28 +22,10 @@ from __future__ import annotations
 from __future__ import annotations
 
 import argparse
->>>>>>> chore/linux-ready-audit
 import gc
 import csv
 import json
 import os
-<<<<<<< HEAD
-import sys
-import time
-import traceback
-import numpy as np
-from dataclasses import replace
-from datetime import datetime
-from pathlib import Path
-
-# Thread controls – cap at 8 to reduce MUMPS per-thread memory
-NCORES = os.cpu_count() or 8
-OMP_THREADS = min(8, max(1, NCORES // 2))
-os.environ["OMP_NUM_THREADS"] = str(OMP_THREADS)
-os.environ["OPENBLAS_NUM_THREADS"] = str(OMP_THREADS)
-os.environ["MKL_NUM_THREADS"] = str(OMP_THREADS)
-
-=======
 import platform
 import socket
 import subprocess
@@ -71,7 +48,6 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
 del _pre, _pre_args, _v
 
 import numpy as np
->>>>>>> chore/linux-ready-audit
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -84,22 +60,6 @@ from acoustweezers.experiments.farfield_petri_cuboid.solve_pressure import solve
 from acoustweezers.experiments.farfield_petri_cuboid.post import (
     slice_xy, slice_xz, centerline_z,
 )
-<<<<<<< HEAD
-
-# ═════════════════════════════════════════════════════════════════════
-#  CONSTANTS
-# ═════════════════════════════════════════════════════════════════════
-H_PETRI = 2e-3          # fixed petri slab thickness [m]
-LX = 6e-3               # lateral domain
-LY = 6e-3
-FREQ = 2.0e6
-DISK_RADIUS = 1.0e-3
-ELEM_PER_LAMBDA = 4     # eps=4: fits in 30 GB RAM for all domains
-
-# Amplitudes for interaction check
-V_DISK = 1e-6            # 1 µm/s
-V_STAND = 10e-6          # 10 µm/s
-=======
 from acoustweezers.experiments.farfield_petri_cuboid.presets import (
     CORRECTED_PRESET, PETSC_MUMPS,
 )
@@ -117,24 +77,12 @@ DISK_RADIUS = _P["disk_radius"]
 V_DISK = _P["disk_velocity_amplitude"]
 V_STAND = _P["standing_velocity_amplitude"]
 ELEM_PER_LAMBDA = 4     # default; overridden by --elem-per-lambda
->>>>>>> chore/linux-ready-audit
 
 # Sweep parameters
 H_BATH_LIST = [3e-3, 4e-3, 5e-3, 6e-3, 7e-3]   # m
 F_LENS_LIST = [2e-3, 3e-3, 4e-3, 5e-3, 6e-3]    # m
 
 PETSC_OPTS = {
-<<<<<<< HEAD
-    "ksp_type": "preonly",
-    "pc_type": "lu",
-    "pc_factor_mat_solver_type": "mumps",
-    "mat_mumps_icntl_14": 30,    # low memory overhead (30% relaxation)
-    "mat_mumps_icntl_23": 0,     # let MUMPS manage memory automatically
-    "mat_mumps_icntl_28": 2,     # parallel analysis
-    "mat_mumps_icntl_29": 2,     # ParMETIS ordering (less fill-in)
-}
-
-=======
     **PETSC_MUMPS,
     "mat_mumps_icntl_14": "30",    # low memory overhead (30 % relaxation)
     "mat_mumps_icntl_28": "2",     # parallel analysis
@@ -143,22 +91,16 @@ PETSC_OPTS = {
 
 _OUT_ROOT: Optional[Path] = None  # set in main(); used by __main__ for FAILED.txt
 
->>>>>>> chore/linux-ready-audit
 
 # ═════════════════════════════════════════════════════════════════════
 #  HELPERS
 # ═════════════════════════════════════════════════════════════════════
 
 def make_cfg(H_bath, f_lens, V_disk=V_DISK, V_stand=0.0, pml_enabled=True,
-<<<<<<< HEAD
-             eps=ELEM_PER_LAMBDA):
-    """Build a FarFieldConfig for the corrected model."""
-=======
              eps=None):
     """Build a FarFieldConfig for the corrected model."""
     if eps is None:
         eps = ELEM_PER_LAMBDA
->>>>>>> chore/linux-ready-audit
     return FarFieldConfig(
         Lx=LX, Ly=LY,
         H_under=H_bath,
@@ -340,12 +282,6 @@ def slice_xy_complex(sol, z_val, nx=200, ny=200):
 #  MAIN
 # ═════════════════════════════════════════════════════════════════════
 
-<<<<<<< HEAD
-def main():
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_root = Path("results") / f"corrected_model_{stamp}"
-    out_root.mkdir(parents=True, exist_ok=True)
-=======
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Corrected model sweep: H_bath × f_lens grid")
@@ -414,29 +350,17 @@ def main():
 
     out_root.mkdir(parents=True, exist_ok=True)
     _OUT_ROOT = out_root
->>>>>>> chore/linux-ready-audit
     fig_dir = out_root / "figures"
     csv_dir = out_root / "csv"
     fig_dir.mkdir(exist_ok=True)
     csv_dir.mkdir(exist_ok=True)
 
-<<<<<<< HEAD
-    print(f"\n{'#'*72}")
-    print(f"  CORRECTED MODEL SWEEP — {stamp}")
-    print(f"  H_petri = {H_PETRI*1e3:.0f} mm (fixed)")
-    print(f"  Top BC: water–air Robin  Z_air = {1.2*343:.1f} Pa·s/m")
-    print(f"  V_disk = {V_DISK*1e6:.1f} µm/s,  V_stand = {V_STAND*1e6:.1f} µm/s")
-    print(f"  OMP_NUM_THREADS = {OMP_THREADS} / {NCORES} cores")
-    print(f"  Output: {out_root}")
-    print(f"{'#'*72}\n")
-=======
     # Write CASE_SUMMARY.md
     effective = {**CORRECTED_PRESET, **_case_overrides, "elements_per_wavelength": ELEM_PER_LAMBDA}
     write_case_summary(out_root, args.case, effective,
                        extra_info={"script": "corrected_model_sweep.py"})
 
     _system_banner(out_root, ELEM_PER_LAMBDA, OMP_THREADS)
->>>>>>> chore/linux-ready-audit
 
     # ══════════════════════════════════════════════════════════════════
     #  PHASE 1: Vortex-Only Sweep (H_bath × f_lens)
@@ -867,9 +791,6 @@ def _write_config(out_root, sweep_rows):
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
-    main()
-=======
     try:
         main()
     except SystemExit:
@@ -879,4 +800,3 @@ if __name__ == "__main__":
         if _OUT_ROOT and _OUT_ROOT.exists():
             (_OUT_ROOT / "FAILED.txt").write_text(traceback.format_exc())
         sys.exit(1)
->>>>>>> chore/linux-ready-audit

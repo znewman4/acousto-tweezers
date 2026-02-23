@@ -44,11 +44,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Activate environment ─────────────────────────────────────────────
-CONDA_ENV="fenicsx"
+CONDA_ENV="acousto-complex"
+
+# Try module system first (Bristol Linux desktops)
+if type module &>/dev/null; then
+    module load anaconda/3-2025 2>/dev/null || true
+fi
 
 if command -v conda &>/dev/null; then
+    set +u  # conda activation scripts may reference unbound vars
     eval "$(conda shell.bash hook)"
     conda activate "$CONDA_ENV"
+    set -u
 elif [[ -n "${CONDA_PREFIX:-}" ]]; then
     : # already inside the env
 else
