@@ -175,11 +175,8 @@ def solve_helmholtz(
     cfg: FarFieldConfig,
     verbose: bool = True,
     petsc_options: Optional[dict] = None,
-<<<<<<< HEAD
-=======
     export_fields: bool = False,
     export_dir: Optional[str] = None,
->>>>>>> 9638297 (pre pull remote)
 ) -> PressureSolution:
     """
     Solve the PML-Helmholtz system for the far-field cuboid.
@@ -190,13 +187,10 @@ def solve_helmholtz(
     verbose : bool
     petsc_options : dict, optional
         PETSc solver options.  Default uses MUMPS direct solver.
-<<<<<<< HEAD
-=======
     export_fields : bool
         If True, export XDMF field files after solving.
     export_dir : str, optional
         Directory for XDMF exports (required if export_fields=True).
->>>>>>> 9638297 (pre pull remote)
 
     Returns
     -------
@@ -415,8 +409,6 @@ def solve_helmholtz(
     sol.sigma_x = sigma_x
     sol.sigma_y = sigma_y
     sol.sigma_z = sigma_z
-<<<<<<< HEAD
-=======
 
     # Optional field export
     if export_fields and export_dir is not None:
@@ -425,7 +417,6 @@ def solve_helmholtz(
             print(f"  Exporting fields to {export_dir} …")
         export_pressure_fields(sol, export_dir, verbose=verbose)
 
->>>>>>> 9638297 (pre pull remote)
     return sol
 
 
