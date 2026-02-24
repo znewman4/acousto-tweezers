@@ -68,7 +68,7 @@ from mpi4py import MPI
 # Import production PML implementation (SINGLE SOURCE OF TRUTH)
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from tweezers.fenicsx.pml import (
+from acoustweezers.physics.acoustics.pml import (
     pml_complex_stretch,
     build_pml_stretch_dg0,
     helmholtz_anisotropic_pml_forms

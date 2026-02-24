@@ -469,12 +469,20 @@ retained for reference but is not imported by any current script.
 
 ### 9.1  Domain Layout
 
-A taller cuboid domain (default 6×6×4 mm) models upward propagation from a
-bottom-mounted vortex disc through a water under-bath (3 mm) into a thin petri
-slab (1 mm) at the top.  Perfectly Matched Layers (PML) absorb outgoing waves
-on the four lateral faces and the bottom face (outside the disc column),
-preventing artificial reflections.  The top face carries a water-air impedance
-Robin BC ($Z_\text{air} \approx 413$ Pa·s/m).
+A taller cuboid domain (default 6×6×5.0085 mm) models upward propagation from a
+bottom-mounted vortex disc through a water under-bath ($H_\text{under}$ = 3 mm)
+into a thin petri slab ($H_\text{top}$ = 2.0085 mm, tuned to the m = 14
+quarter-wave resonance) at the top.  Perfectly Matched Layers (PML) absorb
+outgoing waves on the bottom face (outside the disc column) and on the four
+lateral faces **in the water-bath region only** ($z < H_\text{under}$).  In the
+petri slab ($z \ge H_\text{under}$), the lateral faces are rigid walls (or
+standing-wave transducers) with no PML absorption — this is essential because
+the standing-wave BCs sit on the mesh boundary and must not be damped.  The top
+face carries a water–air impedance Robin BC ($Z_\text{air} \approx 413$ Pa·s/m).
+
+> **Critical fix (2026-02-24):** Prior to this date, lateral PML extended the
+> full domain height, absorbing standing waves before they reached the physical
+> interior.  See CHANGELOG for details.
 
 ### 9.2  PML Formulation
 
@@ -489,14 +497,19 @@ as **UFL expressions** from the σ `fem.Function` objects.  FFCx evaluates these
 rational expressions at quadrature points, avoiding P2 projection error that
 would arise from DOF-array arithmetic on the products of P2 functions.
 
+**Z-filter (2026-02-24 fix):** The lateral absorption profiles σ_x and σ_y are
+set to **zero** for $z \ge H_\text{under}$.  This confines the lateral PML to
+the water-bath region and leaves the petri slab as a pure rigid-walled cavity
+where standing waves can resonate freely.  The bottom PML (σ_z) is unchanged.
+
 ### 9.3  Boundary Conditions
 
 | Boundary | BC |
 |----------|----|
 | Bottom disc ($z=0$, $r \le R_\text{disc}$) | Neumann: $\partial_n p = -i\omega\rho\,v_n(\mathbf{x})$ (plastic lens or ideal vortex) |
-| Bottom outside disc | PML absorbing layer |
-| Lateral faces | PML absorbing layer |
-| Petri slab sides ($z \ge H_\text{under}$) | Standing-wave Neumann patches |
+| Bottom outside disc | PML absorbing layer (σ_z ramp) |
+| Lateral faces, $z < H_\text{under}$ (bath) | PML absorbing layer (σ_x, σ_y ramps) |
+| Lateral faces, $z \ge H_\text{under}$ (petri) | Rigid walls or standing-wave Neumann transducers |
 | Top ($z = H$) | Robin: $\partial_n p = +i\omega\rho\,p / Z_\text{top}$ (i.e. $+ik/Z_\text{rel}$) |
 
 ### 9.4  Plastic Lens Vortex Drive (Day 2)
@@ -521,8 +534,8 @@ Configuration fields (in `FarFieldConfig`):
 |-----------|---------|-------------|
 | `lens_drive` | `"plastic"` | `"plastic"`, `"axicon"`, or `"ideal"` |
 | `lens_l` | 1 | Topological charge $\ell$ |
-| `lens_focal_length` | 10 mm | Focusing focal length $f$ (plastic only) |
-| `lens_focus_offset_x` | 0.2 mm | Off-axis focus $x_f$ (plastic only) |
+| `lens_focal_length` | 2 mm | Focusing focal length $f$ (plastic only) |
+| `lens_focus_offset_x` | 0.0 | Off-axis focus $x_f$ (plastic only) |
 | `lens_focus_offset_y` | 0.0 | Off-axis focus $y_f$ (plastic only) |
 | `lens_c_lens` | 2700 m/s | Speed of sound in plastic |
 | `lens_axicon_angle_deg` | 15.0 | Axicon half-angle $\alpha$ in degrees (axicon only) |
@@ -648,6 +661,30 @@ Gallery: `python scripts/experiments/farfield_plastic_lens_gallery.py`
 All scripts are in `scripts/experiments/` and output timestamped results with
 a `_latest` symlink.
 
+### 9.11  Gallery Script (Corrected Model)
+
+```bash
+micromamba run -n acousto-complex python scripts/experiments/fixed_vortex_gallery.py
+```
+
+Generates a comprehensive 127-PNG gallery for the corrected far-field model
+using the `CORRECTED_PRESET` (H_top = 2.0085 mm, f = 2 mm, plastic lens).
+For each case (standing, vortex, combined) it produces:
+
+- XY and XZ slices (linear + log scale)
+- Centerline pressure profiles
+- 3-way comparison panels
+- Z-progression panels (9 heights through the petri slab)
+- Physics audit bar chart (physical vs PML max|p|)
+
+Key features: physical-domain-only interpolation (PML DOFs filtered out),
+per-case colorscales, and automatic PML/physical ratio diagnostics.
+
+Results: `results/fixed_gallery_<timestamp>/`
+
+**Current best results (2026-02-24):** standing max|p| = 59.9 Pa,
+vortex max|p| = 1.3 Pa, combined max|p| = 59.7 Pa — all in the physical domain.
+
 ---
 
 ## 10  Roadmap
@@ -711,6 +748,10 @@ recirculation while preserving local vortex authority.
   `scripts/experiments/phase1_sweep.py`
 - **Far-field PML demo (2 MHz)** — upward-propagating vortex + standing waves
   with PML absorption; see Section 9 and `results/farfield_latest/`
+- **Lateral PML z-filter fix (2026-02-24)** — standing waves now reach the
+  physical interior; max|p| increased from 0.77 → 59.9 Pa
+- **Resonance optimisation** — H_top = 2.0085 mm (m = 14 quarter-wave),
+  f = 2 mm focal length (optimal vortex ring size ≈ 1.2λ)
 
 ---
 

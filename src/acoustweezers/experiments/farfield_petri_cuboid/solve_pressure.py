@@ -138,17 +138,19 @@ def _build_sigma_functions(V: fem.FunctionSpace, cfg: FarFieldConfig):
         frac = np.clip(distance / thickness, 0.0, 1.0)
         return sigma_max * frac ** deg
 
-    # σ_x
+    # σ_x — lateral PML only in water bath (z < H_under).
+    # Petri slab has physical walls (transducers), no absorption.
+    H_under = cfg.H_under
     sx_arr = np.zeros_like(x)
-    mask_lo = x < t_xy
-    mask_hi = x > Lx - t_xy
+    mask_lo = (x < t_xy) & (z < H_under)
+    mask_hi = (x > Lx - t_xy) & (z < H_under)
     sx_arr[mask_lo] = _ramp(t_xy - x[mask_lo], t_xy)
     sx_arr[mask_hi] = _ramp(x[mask_hi] - (Lx - t_xy), t_xy)
 
-    # σ_y
+    # σ_y — same z-filter
     sy_arr = np.zeros_like(y)
-    mask_lo = y < t_xy
-    mask_hi = y > Ly - t_xy
+    mask_lo = (y < t_xy) & (z < H_under)
+    mask_hi = (y > Ly - t_xy) & (z < H_under)
     sy_arr[mask_lo] = _ramp(t_xy - y[mask_lo], t_xy)
     sy_arr[mask_hi] = _ramp(y[mask_hi] - (Ly - t_xy), t_xy)
 

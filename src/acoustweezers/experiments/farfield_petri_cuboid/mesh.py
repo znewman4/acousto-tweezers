@@ -7,8 +7,11 @@ Creates a structured tetrahedral box mesh with:
 
 PML geometry
 ------------
-Side PML (x):  cells with  x < t_pml_xy  OR  x > Lx - t_pml_xy
-Side PML (y):  cells with  y < t_pml_xy  OR  y > Ly - t_pml_xy
+Side PML (x):  cells with  (x < t_pml_xy  OR  x > Lx - t_pml_xy)  AND  z < H_under
+Side PML (y):  cells with  (y < t_pml_xy  OR  y > Ly - t_pml_xy)  AND  z < H_under
+  → Lateral PML is DISABLED in the petri slab (z ≥ H_under) because
+    the dish walls are physical boundaries driven by standing-wave
+    transducers.  PML only models the open water bath below.
 Bottom PML (z): cells with  z < t_pml_z  AND  r > disk_radius
   (a "column" directly above the disk is excluded so the source is in
    the physical domain)
@@ -183,8 +186,10 @@ def create_mesh(cfg: FarFieldConfig, verbose: bool = True):
 
     xm, ym, zm = midpoints[:, 0], midpoints[:, 1], midpoints[:, 2]
 
-    in_pml_x = (xm < t_xy) | (xm > Lx - t_xy)
-    in_pml_y = (ym < t_xy) | (ym > Ly - t_xy)
+    # Lateral PML only in the water bath (z < H_under).
+    # The petri slab (z >= H_under) has physical walls with transducers.
+    in_pml_x = ((xm < t_xy) | (xm > Lx - t_xy)) & (zm < H_under)
+    in_pml_y = ((ym < t_xy) | (ym > Ly - t_xy)) & (zm < H_under)
 
     # Bottom PML: only outside the disk column (r > R_disk)
     r2_m = (xm - cx)**2 + (ym - cy)**2

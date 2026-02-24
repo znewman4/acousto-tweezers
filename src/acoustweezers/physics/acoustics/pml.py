@@ -49,8 +49,14 @@ from ufl import (
     Measure, SpatialCoordinate
 )
 
-from .config import FEMConfig, GeometryConfig
-from .domains import Domain
+# Optional imports — only needed by PMLManager class, not standalone functions
+try:
+    from .config import FEMConfig, GeometryConfig
+    from .domains import Domain
+except ImportError:
+    FEMConfig = None  # type: ignore[assignment,misc]
+    GeometryConfig = None  # type: ignore[assignment,misc]
+    Domain = None  # type: ignore[assignment,misc]
 
 
 # ============================================================================

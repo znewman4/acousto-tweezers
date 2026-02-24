@@ -1,5 +1,81 @@
 # Changelog
 
+## 2026-02-24 — Lateral PML Z-Filter Fix (Critical Physics Bug)
+
+### Problem
+Standing waves were invisible in the physical domain interior.  Gallery
+z-progression panels appeared black or nearly black at all heights.  Diagnostic
+probing (zprog_diagnostic.py) revealed that global max|p| = 24.46 Pa occurred
+at the mesh boundary (inside the PML), while the physical interior had only
+max|p| = 0.77 Pa — a 32× ratio in favour of the PML edge.
+
+### Root Cause
+The lateral PML strips (x and y absorption layers) extended the **full domain
+height** [0, H_total].  Standing-wave Neumann BCs are applied at x = 0 / x = Lx
+and y = 0 / y = Ly, which are the outer faces of the PML.  Because the lateral
+PML stretched up through the petri slab, it absorbed the standing-wave energy
+before it could reach the physical interior.  The transducers were effectively
+driving into an absorbing wall.
+
+### Fix (two-part)
+
+1. **Mesh cell tags** (`mesh.py`): Lateral PML cell markers (`in_pml_x`,
+   `in_pml_y`) now include a z-filter `& (zm < H_under)`.  Cells in the petri
+   slab (z ≥ H_under) are always tagged as physical, even at lateral edges.
+
+2. **PML σ ramp functions** (`solve_pressure.py`): The σ_x and σ_y absorption
+   profiles now include `& (z < H_under)` in their mask conditions.  This
+   ensures σ = 0 in the petri slab, so the Helmholtz equation remains
+   un-damped there — standing waves propagate freely between rigid side walls.
+
+Both changes are required: cell tags control region identification for
+diagnostics, while σ functions control the actual PML absorption strength
+in the weak form.
+
+### Impact
+| Metric | Before Fix | After Fix | Change |
+|--------|-----------|-----------|--------|
+| Physical max\|p\| (standing) | 0.77 Pa | 59.9 Pa | **78× increase** |
+| PML/Physical ratio | 32× | 0.44× | Physical now dominant |
+| Physical cell count | 81,616 | 111,184 | +36% (petri edges reclaimed) |
+| PML-x / PML-y cells | 26,496 each | 13,824 each | −48% |
+| Gallery visibility | Black panels | Clear standing-wave patterns | Fixed |
+
+### Files Modified
+- `src/acoustweezers/experiments/farfield_petri_cuboid/mesh.py` — z-filter on
+  `in_pml_x`, `in_pml_y`; updated docstring
+- `src/acoustweezers/experiments/farfield_petri_cuboid/solve_pressure.py` —
+  z-filter on σ_x, σ_y mask conditions
+- `scripts/experiments/fixed_vortex_gallery.py` — LightSol PML mask updated
+  to match new z-filter logic
+
+### Verification
+- All 3 cases (standing, vortex, combined) converge with KSP iteration count = 4
+- Standing max|p| in physical domain = 59.9 Pa (physically correct for m = 14 resonance)
+- Vortex max|p| in physical domain = 1.3 Pa (consistent with 10:1 velocity ratio)
+- Gallery regenerated: 127 PNGs with clear standing-wave and vortex patterns
+
+### Results
+`results/fixed_gallery_20260224_192554/` — 127 PNGs + results.json
+
+---
+
+## 2026-02-24 — Resonance Sweep & Optimal Geometry (H_top Tuning)
+
+### Summary
+Swept H_top (petri slab thickness) to find quarter-wave resonance modes that
+maximise standing-wave pressure in the physical domain.  Identified m = 14
+mode at H_top = 2.0085 mm as near-optimal.  Updated CORRECTED_PRESET.
+
+Focal length sweep (f = 2, 3, 4, 5, 6, 8 mm) found f = 2 mm optimal for
+vortex ring size (R = 0.90 mm ≈ 1.2λ).  Updated CORRECTED_PRESET.
+
+### Files Modified
+- `src/acoustweezers/experiments/farfield_petri_cuboid/presets.py` —
+  H_top = 2.0085e-3, lens_focal_length = 2e-3
+
+---
+
 ## [Fix] Standing-Wave Boundary Condition Height Restriction
 
 ### Problem

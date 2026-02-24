@@ -18,7 +18,7 @@ CORRECTED_PRESET: dict = dict(
     Lx=6e-3,
     Ly=6e-3,
     H_under=3e-3,          # water-bath depth (= H_bath)
-    H_top=2e-3,            # petri slab thickness — FIXED at 2 mm
+    H_top=2.0085e-3,       # petri slab thickness — m=14 quarter-wave resonance (optimal)
     # frequency
     frequency_hz=2.0e6,
     # disk source
@@ -38,7 +38,7 @@ CORRECTED_PRESET: dict = dict(
     # lens
     lens_drive="plastic",
     lens_l=1,
-    lens_focal_length=10e-3,
+    lens_focal_length=2e-3,            # f=2mm gives tightest ring (0.90mm ≈ 1.2λ) at trap plane
     lens_focus_offset_x=0.2e-3,
     lens_focus_offset_y=0.0,
     lens_c_lens=2700.0,

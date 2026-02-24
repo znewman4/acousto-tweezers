@@ -50,10 +50,10 @@ def run_acoustics_only_test():
     import gmsh
     import ufl
     
-    from tweezers.fenicsx.config import FEMConfig, PhysicsLevel, GeometryConfig, PhysicsConfig
-    from tweezers.fenicsx.domains import Domain, Interface
-    from tweezers.fenicsx.materials import MaterialDatabase
-    from tweezers.fenicsx.acoustics import AcousticSolver, AcousticField
+    from acoustweezers.legacy.src_archive.tweezers.fenicsx.config import FEMConfig, PhysicsLevel, GeometryConfig, PhysicsConfig
+    from acoustweezers.legacy.src_archive.tweezers.fenicsx.domains import Domain, Interface
+    from acoustweezers.legacy.src_archive.tweezers.fenicsx.materials import MaterialDatabase
+    from acoustweezers.legacy.src_archive.tweezers.fenicsx.acoustics import AcousticSolver, AcousticField
     
     print("    Imports successful")
     print()
