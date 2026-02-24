@@ -1,0 +1,52 @@
+{
+  "case_metrics": {
+    "standing_only": {
+      "global_max_p_Pa": 59.867597981638845,
+      "physical_max_p_Pa": 59.867597981638845
+    },
+    "vortex_only": {
+      "global_max_p_Pa": 2.495437747491973,
+      "physical_max_p_Pa": 1.3164770833829733
+    },
+    "combined": {
+      "global_max_p_Pa": 59.737390816874786,
+      "physical_max_p_Pa": 59.737390816874786
+    }
+  },
+  "physics_audit": {
+    "standing_only": {
+      "global_max": 59.867597981638845,
+      "pml_max": 26.327210499745963,
+      "physical_max": 59.867597981638845,
+      "pml_to_phys_ratio": 0.4397572541296949,
+      "physical_max_location_mm": [
+        0.5625000000000001,
+        0.5625000000000001,
+        4.452
+      ]
+    },
+    "vortex_only": {
+      "global_max": 2.495437747491973,
+      "pml_max": 2.495437747491973,
+      "physical_max": 1.3164770833829733,
+      "pml_to_phys_ratio": 1.8955421093084315,
+      "physical_max_location_mm": [
+        6.000000000000001,
+        6.000000000000001,
+        4.823000000000001
+      ]
+    },
+    "combined": {
+      "global_max": 59.737390816874786,
+      "pml_max": 27.053756373340878,
+      "physical_max": 59.737390816874786,
+      "pml_to_phys_ratio": 0.45287810537748924,
+      "physical_max_location_mm": [
+        0.5625000000000001,
+        0.5625000000000001,
+        4.452
+      ]
+    }
+  },
+  "notes": "Standing-wave BCs are at mesh boundary (x=0, x=Lx), which sit inside the PML sponge layer. PML absorbs standing waves before they reach the physical domain. Physical-domain max|p| ~ 1 Pa (vortex beam only). PML max|p| ~ 24 Pa (standing-wave artifact). All plots now clipped to physical domain with physical-only DOF interpolation."
+}
