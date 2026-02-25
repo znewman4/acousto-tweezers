@@ -6,8 +6,19 @@ Implements radiation force and particle trajectory integration per MASTER BRIEF:
 Radiation force from Gor'kov potential:
     F_rad = -∇U
 
-Gor'kov potential:
+Gor'kov potential (Settnes & Bruus 2012, Eq. 18):
     U = (4π/3)a³ [f₁·⟨p²⟩/(2ρc²) - f₂·(3ρ/4)·⟨v²⟩]
+
+where the time-averaged fields are:
+    ⟨p²⟩ = |p̂|² / 2
+    ⟨v²⟩ = |v̂|² / 2   with   v̂ = -(1/(iωρ)) ∇p̂
+
+So  ⟨v²⟩ = |∇p̂|² / (2ω²ρ²).
+
+NOTE (Feb 2026): The plane-wave approximation ⟨v²⟩ ≈ ⟨p²⟩/(ρ²c²)
+is WRONG for standing waves — it gives spatially-incorrect velocity
+fields.  The proper gradient is now computed via FEM L²-projection
+of ∇p̂ into a DG vector space.
 
 Particle velocity (overdamped dynamics):
     ẋ = u_stream(x) + μ F_rad(x)
@@ -15,7 +26,7 @@ Particle velocity (overdamped dynamics):
 where μ = 1/(6πηa) is the Stokes mobility.
 
 Author: Acousto-Tweezers Project
-Date: January 2026
+Date: January 2026 (Gor'kov fix: February 2026)
 """
 
 from __future__ import annotations
@@ -27,6 +38,7 @@ import numpy as np
 from dolfinx import fem, mesh as dmesh
 from dolfinx.fem import Function
 from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
+import ufl
 
 from .config import FEMConfig
 from .domains import Domain
@@ -194,9 +206,13 @@ class ParticleDynamics:
         U = (4π/3)a³ [f₁·⟨p²⟩/(2K) - f₂·(3ρ/4)·⟨v²⟩]
         
         where:
-        - ⟨p²⟩ = |p|²/2 (time-averaged pressure squared)
-        - ⟨v²⟩ = |v|²/2 (time-averaged velocity squared)
+        - ⟨p²⟩ = |p̂|²/2 (time-averaged pressure squared)
+        - ⟨v²⟩ = |∇p̂|² / (2ω²ρ²)  (CORRECT: from v̂ = -(1/(iωρ))∇p̂)
         - K = ρc² (bulk modulus)
+        
+        The velocity field is computed by L²-projecting grad(p) into
+        a DG-1 vector function space, which is exact within each element
+        for a P2 pressure field (grad of P2 is P1 ⊂ DG1).
         
         Parameters
         ----------
@@ -208,6 +224,8 @@ class ParticleDynamics:
         GorkovPotential
             Gor'kov potential and force
         """
+        from petsc4py import PETSc
+
         p = acoustic_field.p_function
         omega = acoustic_field.omega
         
@@ -219,32 +237,86 @@ class ParticleDynamics:
         f1 = self.f1
         f2 = self.f2
         
-        # Create function for potential
-        V = p.function_space
-        U = Function(V)
-        
-        # Get pressure values
+        # ----------------------------------------------------------
+        # Step 1: compute |∇p̂|² via FEM projection
+        # ----------------------------------------------------------
+        mesh = p.function_space.mesh
+        gdim = mesh.geometry.dim  # typically 3
+
+        # Create a DG-1 vector space for the gradient  (grad of P2 → P1)
+        W = fem.functionspace(mesh, ("DG", 1, (gdim,)))
+        grad_p = Function(W)
+
+        # L²-project grad(p) into W:
+        #   ∫ grad_p · w dx = ∫ grad(p) · w dx   ∀ w ∈ W
+        # For DG spaces, this reduces to element-local solves (block-diagonal),
+        # so it is cheap and embarrassingly parallel.
+        w = ufl.TestFunction(W)
+        u_trial = ufl.TrialFunction(W)
+        a_proj = ufl.inner(u_trial, w) * ufl.dx
+        L_proj = ufl.inner(ufl.grad(p), w) * ufl.dx
+
+        # Direct local solve (DG mass matrix is block-diagonal)
+        problem = fem.petsc.LinearProblem(
+            a_proj, L_proj,
+            petsc_options={
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+            },
+        )
+        grad_p = problem.solve()
+
+        # Extract |∇p̂|² at each DOF of the original scalar space
+        # grad_p lives on DG-1, but we need values at the P2 DOF coords.
+        # Strategy: interpolate |∇p|² into DG-0 (piecewise constant per cell),
+        # then evaluate at P2 DOFs by cell ownership.
+        V = p.function_space  # P2 scalar space
+        coords = V.tabulate_dof_coordinates()  # (N, 3)
         p_vals = p.x.array
-        
-        # Time-averaged pressure squared: ⟨p²⟩ = |p|²/2
+
+        # Build |∇p|² on DG-1 DOFs
+        gp_arr = grad_p.x.array.reshape(-1, gdim)
+        grad_p_mag2_dg = np.sum(np.abs(gp_arr)**2, axis=1)  # per DG1 DOF
+
+        # We need grad_p_mag2 at the P2 DOF locations.  Interpolate into
+        # a P2 scalar field for alignment with the pressure DOFs.
+        DG1_scalar = fem.functionspace(mesh, ("DG", 1))
+        gpm2_func = Function(DG1_scalar)
+        # |∇p|² from the vector DOFs: DG1-vector has gdim×(n DG1-scalar DOFs)
+        # Rearrange: the vector DOF layout is interleaved or blocked.
+        # dolfinx stores vector DG1 as shape (n_dg1_dofs * gdim,)
+        n_dg1 = DG1_scalar.dofmap.index_map.size_local
+        # grad_p_mag2 at DG1-scalar DOFs:
+        gpm2_at_dg1 = np.zeros(n_dg1)
+        for d in range(gdim):
+            comp = grad_p.sub(d)
+            gpm2_at_dg1 += np.abs(comp.x.array[:n_dg1])**2
+        gpm2_func.x.array[:n_dg1] = gpm2_at_dg1
+
+        # Now interpolate into P2 for DOF-aligned evaluation
+        gpm2_p2 = Function(V)
+        gpm2_p2.interpolate(gpm2_func)
+        grad_p_mag2 = np.real(gpm2_p2.x.array)
+
+        # ----------------------------------------------------------
+        # Step 2: Gor'kov potential at P2 DOFs
+        # ----------------------------------------------------------
+        # Time-averaged pressure squared: ⟨p²⟩ = |p̂|²/2
         p2_avg = np.abs(p_vals)**2 / 2
-        
-        # Velocity squared: |v|² = |∇p|²/(ω²ρ²)
-        # This requires computing gradient of p
-        # For now, use finite difference approximation
-        
-        # Simplified: assume ⟨v²⟩ ≈ ⟨p²⟩/(ρ²c²) for plane wave
-        v2_avg = p2_avg / (rho**2 * c**2)
-        
+
+        # Time-averaged velocity squared (CORRECT):
+        #   ⟨v²⟩ = |∇p̂|² / (2 ω² ρ²)
+        v2_avg = grad_p_mag2 / (2 * omega**2 * rho**2)
+
         # Gor'kov potential
         prefactor = (4 * np.pi / 3) * a**3
         U_vals = prefactor * (f1 * p2_avg / (2 * K) - f2 * (3 * rho / 4) * v2_avg)
-        
+
+        U = Function(V)
         U.x.array[:] = np.real(U_vals)
         
-        # Compute force as negative gradient
+        # Compute force as negative gradient (deferred to compute_radiation_force)
         # F = -∇U
-        # This would require projecting gradient
         
         return GorkovPotential(
             U_function=U,
@@ -531,3 +603,67 @@ def load_trajectories_csv(filepath: str) -> List[ParticleTrajectory]:
         trajectories.append(traj)
     
     return trajectories
+
+
+# =====================================================================
+# Standalone grid-based Gor'kov for post-processing / diagnostics
+# =====================================================================
+
+def gorkov_grid_2d(
+    p_grid: np.ndarray,
+    dx: float,
+    dy: float,
+    omega: float,
+    rho: float,
+    c: float,
+    a: float,
+    f1: float,
+    f2: float,
+    use_plane_wave_approx: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Gor'kov potential and force on a 2-D complex-pressure grid.
+
+    Parameters
+    ----------
+    p_grid : ndarray, complex, shape (ny, nx)
+        Complex pressure p̂ on a regular grid.
+    dx, dy : float
+        Grid spacing [m].
+    omega : float
+        Angular frequency [rad/s].
+    rho, c : float
+        Fluid density and sound speed.
+    a : float
+        Particle radius [m].
+    f1, f2 : float
+        Monopole / dipole contrast factors.
+    use_plane_wave_approx : bool
+        If True, fall back to the (wrong) plane-wave formula for
+        comparison / sanity-check purposes.
+
+    Returns
+    -------
+    U  : ndarray (ny, nx)   Gor'kov potential [J]
+    Fx : ndarray (ny, nx)   Radiation force x-component [N]
+    Fy : ndarray (ny, nx)   Radiation force y-component [N]
+    """
+    K = rho * c**2
+    p2_avg = np.abs(p_grid)**2 / 2   # ⟨p²⟩ = |p̂|²/2
+
+    if use_plane_wave_approx:
+        # WRONG for standing waves — included only for comparison
+        v2_avg = p2_avg / (rho**2 * c**2)
+    else:
+        # CORRECT: v̂ = -(1/(iωρ))∇p̂  →  ⟨v²⟩ = |∇p̂|² / (2ω²ρ²)
+        dp_dx = np.gradient(p_grid, dx, axis=1)
+        dp_dy = np.gradient(p_grid, dy, axis=0)
+        grad_p_mag2 = np.abs(dp_dx)**2 + np.abs(dp_dy)**2
+        v2_avg = grad_p_mag2 / (2 * omega**2 * rho**2)
+
+    prefactor = (4 * np.pi / 3) * a**3
+    U = prefactor * (f1 * p2_avg / (2 * K) - f2 * (3 * rho / 4) * v2_avg)
+
+    Fx = -np.gradient(U, dx, axis=1)
+    Fy = -np.gradient(U, dy, axis=0)
+    return U, Fx, Fy

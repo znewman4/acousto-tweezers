@@ -1042,6 +1042,318 @@ def create_axicon_lens_drive(
 
 
 # =====================================================================
+# LAGUERRE–GAUSSIAN (LG) BEAM FAMILY
+# =====================================================================
+
+@dataclass
+class LGBeamConfig:
+    """
+    Laguerre–Gaussian–like vortex disk drive.
+
+    Phase:
+        φ(x,y) = ℓ·θ  [+ optional spherical focus term]
+
+    Amplitude:
+        A_LG(r) = (r/w)^|ℓ| · exp(−r²/w²)   normalized to max=1 on disk
+
+    Parameters
+    ----------
+    topological_charge : int
+        Vortex charge ℓ.
+    beam_waist : float
+        Gaussian beam-waist parameter w [m].
+    focal_length : float or None
+        If not None, adds focusing phase:
+            φ_focus = k_w · (√(dx² + dy² + f²) − f)
+    focus_offset_x, focus_offset_y : float
+        Offset of the focal point from disk centre [m].
+    c_water, frequency_hz, aperture_radius : float
+        Physical constants / geometry.
+    apodization : str
+        Extra apodisation multiplied on top of LG envelope:
+        'none' (use LG envelope only), 'cosine_taper', 'tukey', 'uniform'.
+    apodization_strength : float
+        Tukey roll-off fraction.
+    """
+    topological_charge: int = 1
+    beam_waist: float = 0.6e-3        # w [m], default 0.6R for R=1mm
+    focal_length: Optional[float] = None   # None = no focusing
+    focus_offset_x: float = 0.0
+    focus_offset_y: float = 0.0
+    c_water: float = 1484.0
+    frequency_hz: float = 2.0e6
+    aperture_radius: float = 1.0e-3
+    center: Optional[Tuple[float, float]] = None
+    apodization: str = "none"          # extra apod on top of LG
+    apodization_strength: float = 1.0
+
+    @property
+    def omega(self) -> float:
+        return 2 * np.pi * self.frequency_hz
+
+    @property
+    def k_water(self) -> float:
+        return self.omega / self.c_water
+
+
+def create_lg_drive(
+    coords_x: np.ndarray,
+    coords_y: np.ndarray,
+    cfg: LGBeamConfig,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+    verbose: bool = True,
+) -> np.ndarray:
+    """
+    Build LG-like drive pattern on disk DOFs.
+
+    Returns pattern = A(r)·exp(i·φ)  with unit peak amplitude.
+    """
+    cx = cfg.center[0] if cfg.center else center_x
+    cy = cfg.center[1] if cfg.center else center_y
+
+    dx = coords_x - (cx + cfg.focus_offset_x)
+    dy = coords_y - (cy + cfg.focus_offset_y)
+    r = np.sqrt((coords_x - cx)**2 + (coords_y - cy)**2)
+    theta = np.arctan2(coords_y - cy, coords_x - cx)
+    R = cfg.aperture_radius
+    w = cfg.beam_waist
+    ell = abs(cfg.topological_charge)
+
+    # --- LG amplitude envelope ---
+    # A_LG(r) = (r/w)^|ℓ| · exp(−r²/w²)
+    rw = r / w
+    amp_lg = (rw ** ell) * np.exp(-(r**2) / (w**2))
+    amp_lg[r > R] = 0.0
+    # Normalize to max = 1
+    amax = amp_lg.max()
+    if amax > 0:
+        amp_lg /= amax
+
+    # --- Extra apodisation ---
+    if cfg.apodization == "cosine_taper":
+        inside = r <= R
+        apod = np.zeros_like(r)
+        apod[inside] = 0.5 * (1 + np.cos(np.pi * r[inside] / R))
+        amp_lg *= apod
+    elif cfg.apodization == "tukey":
+        inside = r <= R
+        apod = np.zeros_like(r)
+        s = cfg.apodization_strength
+        r_start = R * (1 - s)
+        flat = inside & (r <= r_start)
+        roll = inside & (r > r_start)
+        apod[flat] = 1.0
+        if np.any(roll):
+            xi = (r[roll] - r_start) / (R - r_start)
+            apod[roll] = 0.5 * (1 + np.cos(np.pi * xi))
+        amp_lg *= apod
+    elif cfg.apodization == "uniform":
+        amp_lg[r > R] = 0.0  # already done
+    # else "none": use pure LG
+
+    # Re-normalize
+    amax = amp_lg.max()
+    if amax > 0:
+        amp_lg /= amax
+
+    # --- Phase ---
+    phi = cfg.topological_charge * theta
+    if cfg.focal_length is not None:
+        f = cfg.focal_length
+        k_w = cfg.k_water
+        dx_f = coords_x - (cx + cfg.focus_offset_x)
+        dy_f = coords_y - (cy + cfg.focus_offset_y)
+        rho_f = np.sqrt(dx_f**2 + dy_f**2 + f**2)
+        phi += k_w * (rho_f - f)
+
+    pattern = amp_lg * np.exp(1j * phi)
+
+    if verbose:
+        n_active = int(np.sum(amp_lg > 1e-10))
+        foc_str = f"f={cfg.focal_length*1e3:.1f}mm" if cfg.focal_length else "no-focus"
+        print(f"  [LG] l={cfg.topological_charge}  w={w*1e3:.2f}mm  "
+              f"{foc_str}  apod={cfg.apodization}  "
+              f"active={n_active}/{len(coords_x)}")
+
+    return pattern
+
+
+# =====================================================================
+# BESSEL–GAUSSIAN (BG) BEAM FAMILY
+# =====================================================================
+
+@dataclass
+class BGBeamConfig:
+    """
+    Bessel–Gaussian vortex disk drive.
+
+    Phase:
+        φ(x,y) = ℓ·θ + k_r·r     (conical / axicon)
+
+    Amplitude:
+        A_BG(r) = exp(−r²/w²)     (Gaussian envelope)
+
+    Combines non-diffracting Bessel core with Gaussian taper.
+
+    Parameters
+    ----------
+    topological_charge : int
+    k_r : float
+        Transverse (radial) wavenumber [rad/m].
+    beam_waist : float
+        Gaussian envelope waist w [m].
+    c_water, frequency_hz, aperture_radius : float
+    apodization : str
+        Extra apodisation: 'none', 'cosine_taper', 'tukey', 'uniform'.
+    """
+    topological_charge: int = 1
+    k_r: float = 4234.0            # default = 0.5 k_water
+    beam_waist: float = 0.6e-3     # w [m]
+    c_water: float = 1484.0
+    frequency_hz: float = 2.0e6
+    aperture_radius: float = 1.0e-3
+    center: Optional[Tuple[float, float]] = None
+    apodization: str = "none"
+    apodization_strength: float = 1.0
+
+    @property
+    def omega(self) -> float:
+        return 2 * np.pi * self.frequency_hz
+
+    @property
+    def k_water(self) -> float:
+        return self.omega / self.c_water
+
+
+def create_bg_drive(
+    coords_x: np.ndarray,
+    coords_y: np.ndarray,
+    cfg: BGBeamConfig,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+    verbose: bool = True,
+) -> np.ndarray:
+    """
+    Build Bessel–Gaussian drive pattern on disk DOFs.
+
+    Returns pattern = A(r)·exp(i·φ)  with unit peak amplitude.
+    """
+    cx = cfg.center[0] if cfg.center else center_x
+    cy = cfg.center[1] if cfg.center else center_y
+
+    r = np.sqrt((coords_x - cx)**2 + (coords_y - cy)**2)
+    theta = np.arctan2(coords_y - cy, coords_x - cx)
+    R = cfg.aperture_radius
+    w = cfg.beam_waist
+
+    # --- BG amplitude: Gaussian envelope ---
+    amp = np.exp(-(r**2) / (w**2))
+    amp[r > R] = 0.0
+
+    # --- Extra apodisation ---
+    if cfg.apodization == "cosine_taper":
+        inside = r <= R
+        apod = np.zeros_like(r)
+        apod[inside] = 0.5 * (1 + np.cos(np.pi * r[inside] / R))
+        amp *= apod
+    elif cfg.apodization == "tukey":
+        inside = r <= R
+        apod = np.zeros_like(r)
+        s = cfg.apodization_strength
+        r_start = R * (1 - s)
+        flat = inside & (r <= r_start)
+        roll = inside & (r > r_start)
+        apod[flat] = 1.0
+        if np.any(roll):
+            xi = (r[roll] - r_start) / (R - r_start)
+            apod[roll] = 0.5 * (1 + np.cos(np.pi * xi))
+        amp *= apod
+    elif cfg.apodization == "uniform":
+        amp[r > R] = 0.0
+    # else "none": pure Gaussian
+
+    # Normalize to max = 1
+    amax = amp.max()
+    if amax > 0:
+        amp /= amax
+
+    # --- Phase: ℓθ + k_r·r ---
+    phi = cfg.topological_charge * theta + cfg.k_r * r
+
+    pattern = amp * np.exp(1j * phi)
+
+    if verbose:
+        n_active = int(np.sum(amp > 1e-10))
+        print(f"  [BG] l={cfg.topological_charge}  k_r={cfg.k_r:.1f} rad/m  "
+              f"w={w*1e3:.2f}mm  apod={cfg.apodization}  "
+              f"active={n_active}/{len(coords_x)}")
+
+    return pattern
+
+
+# =====================================================================
+# PURE BESSEL (AXICON) BEAM — wrapper with uniform amplitude option
+# =====================================================================
+# The existing AxiconLensConfig already implements Bessel via k_r = k·sin(α).
+# For the sweep, we add a convenience factory that takes k_r directly.
+
+def create_bessel_drive(
+    coords_x: np.ndarray,
+    coords_y: np.ndarray,
+    topological_charge: int,
+    k_r: float,
+    aperture_radius: float,
+    center_x: float = 0.0,
+    center_y: float = 0.0,
+    apodization: str = "uniform",
+    apodization_strength: float = 1.0,
+    verbose: bool = True,
+) -> np.ndarray:
+    """
+    Pure Bessel (axicon) drive: φ = ℓθ + k_r·r, A(r) = apod(r).
+
+    Thin wrapper that takes k_r directly instead of axicon angle.
+    """
+    r = np.sqrt((coords_x - center_x)**2 + (coords_y - center_y)**2)
+    theta = np.arctan2(coords_y - center_y, coords_x - center_x)
+    R = aperture_radius
+
+    # Amplitude
+    amp = np.zeros_like(r)
+    inside = r <= R
+    if apodization == "cosine_taper":
+        amp[inside] = 0.5 * (1 + np.cos(np.pi * r[inside] / R))
+    elif apodization == "tukey":
+        s = apodization_strength
+        r_start = R * (1 - s)
+        flat = inside & (r <= r_start)
+        roll = inside & (r > r_start)
+        amp[flat] = 1.0
+        if np.any(roll):
+            xi = (r[roll] - r_start) / (R - r_start)
+            amp[roll] = 0.5 * (1 + np.cos(np.pi * xi))
+    else:  # "uniform"
+        amp[inside] = 1.0
+
+    # Normalize
+    amax = amp.max()
+    if amax > 0:
+        amp /= amax
+
+    # Phase
+    phi = topological_charge * theta + k_r * r
+    pattern = amp * np.exp(1j * phi)
+
+    if verbose:
+        n_active = int(np.sum(amp > 1e-10))
+        print(f"  [Bessel] l={topological_charge}  k_r={k_r:.1f} rad/m  "
+              f"apod={apodization}  active={n_active}/{len(coords_x)}")
+
+    return pattern
+
+
+# =====================================================================
 # Export helpers
 # =====================================================================
 

@@ -71,6 +71,10 @@ class FarFieldConfig:
     # axicon lens — set lens_drive="axicon" to enable
     lens_axicon_angle_deg: float = 15.0   # axicon half-angle [degrees]
 
+    # LG / BG / Bessel families — set lens_drive="lg", "bessel_gauss", or "bessel"
+    lens_beam_waist: Optional[float] = None      # beam waist w [m] for LG/BG
+    lens_k_r: Optional[float] = None             # transverse wavenumber [rad/m] for Bessel/BG
+
     # ── standing-wave transducers (petri slab side-walls) ─────────────
     standing_velocity_amplitude: float = 1e-6
     standing_phase_pattern: str = "antiphase"
@@ -220,6 +224,19 @@ class FarFieldConfig:
                 f"offset=({self.lens_focus_offset_x*1e3:.2f}, {self.lens_focus_offset_y*1e3:.2f}) mm\n"
                 f"  Lens plastic: c_lens={self.lens_c_lens:.0f} m/s  "
                 f"apod={self.lens_apodization}\n"
+            )
+        elif self.lens_drive == "lg":
+            w_mm = self.lens_beam_waist * 1e3 if self.lens_beam_waist else 0
+            lens_info = (
+                f"  Lens drive:  LG  l={self.lens_l}  w={w_mm:.2f}mm  "
+                f"f={self.lens_focal_length*1e3:.1f}mm  apod={self.lens_apodization}\n"
+            )
+        elif self.lens_drive in ("bessel", "bessel_gauss"):
+            kr_str = f"{self.lens_k_r:.0f}" if self.lens_k_r else "default"
+            w_mm = self.lens_beam_waist * 1e3 if self.lens_beam_waist else 0
+            lens_info = (
+                f"  Lens drive:  {self.lens_drive}  l={self.lens_l}  "
+                f"k_r={kr_str}  w={w_mm:.2f}mm  apod={self.lens_apodization}\n"
             )
         else:
             lens_info = f"  Lens drive:  {self.lens_drive}\n"

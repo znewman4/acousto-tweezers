@@ -452,7 +452,87 @@ def _create_disk_source(
     func = fem.Function(V)
     func.x.array[:] = 0.0 + 0.0j
 
-    if cfg.lens_drive == "axicon":
+    if cfg.lens_drive == "lg":
+        from acoustweezers.physics.acoustics.vortex_lens import (
+            LGBeamConfig, create_lg_drive,
+        )
+        lg_cfg = LGBeamConfig(
+            topological_charge=cfg.lens_l,
+            beam_waist=cfg.lens_beam_waist if cfg.lens_beam_waist else cfg.disk_radius * 0.6,
+            focal_length=cfg.lens_focal_length if cfg.lens_focal_length > 0 else None,
+            focus_offset_x=cfg.lens_focus_offset_x,
+            focus_offset_y=cfg.lens_focus_offset_y,
+            c_water=cfg.c,
+            frequency_hz=cfg.frequency_hz,
+            aperture_radius=cfg.disk_radius,
+            center=None,
+            apodization=cfg.lens_apodization,
+            apodization_strength=cfg.lens_apodization_strength,
+        )
+        x_d = coords[disk_dofs, 0]
+        y_d = coords[disk_dofs, 1]
+        pattern = create_lg_drive(x_d, y_d, lg_cfg,
+                                  center_x=cx, center_y=cy, verbose=verbose)
+        func.x.array[disk_dofs] = pattern.astype(np.complex128)
+
+        if verbose:
+            n_active = int(np.sum(np.abs(pattern) > 1e-10))
+            print(f"  Disk source: LG beam  l={cfg.lens_l}  "
+                  f"w={lg_cfg.beam_waist*1e3:.2f}mm  "
+                  f"active={n_active}/{len(disk_dofs)}")
+
+    elif cfg.lens_drive == "bessel_gauss":
+        from acoustweezers.physics.acoustics.vortex_lens import (
+            BGBeamConfig, create_bg_drive,
+        )
+        k_w = cfg.omega / cfg.c
+        bg_cfg = BGBeamConfig(
+            topological_charge=cfg.lens_l,
+            k_r=cfg.lens_k_r if cfg.lens_k_r else 0.5 * k_w,
+            beam_waist=cfg.lens_beam_waist if cfg.lens_beam_waist else cfg.disk_radius * 0.6,
+            c_water=cfg.c,
+            frequency_hz=cfg.frequency_hz,
+            aperture_radius=cfg.disk_radius,
+            center=None,
+            apodization=cfg.lens_apodization,
+            apodization_strength=cfg.lens_apodization_strength,
+        )
+        x_d = coords[disk_dofs, 0]
+        y_d = coords[disk_dofs, 1]
+        pattern = create_bg_drive(x_d, y_d, bg_cfg,
+                                  center_x=cx, center_y=cy, verbose=verbose)
+        func.x.array[disk_dofs] = pattern.astype(np.complex128)
+
+        if verbose:
+            n_active = int(np.sum(np.abs(pattern) > 1e-10))
+            print(f"  Disk source: BG beam  l={cfg.lens_l}  "
+                  f"k_r={bg_cfg.k_r:.1f}  w={bg_cfg.beam_waist*1e3:.2f}mm  "
+                  f"active={n_active}/{len(disk_dofs)}")
+
+    elif cfg.lens_drive == "bessel":
+        from acoustweezers.physics.acoustics.vortex_lens import create_bessel_drive
+        k_w = cfg.omega / cfg.c
+        x_d = coords[disk_dofs, 0]
+        y_d = coords[disk_dofs, 1]
+        pattern = create_bessel_drive(
+            x_d, y_d,
+            topological_charge=cfg.lens_l,
+            k_r=cfg.lens_k_r if cfg.lens_k_r else 1.0 * k_w,
+            aperture_radius=cfg.disk_radius,
+            center_x=cx, center_y=cy,
+            apodization=cfg.lens_apodization,
+            apodization_strength=cfg.lens_apodization_strength,
+            verbose=verbose,
+        )
+        func.x.array[disk_dofs] = pattern.astype(np.complex128)
+
+        if verbose:
+            n_active = int(np.sum(np.abs(pattern) > 1e-10))
+            print(f"  Disk source: Bessel  l={cfg.lens_l}  "
+                  f"k_r={cfg.lens_k_r or k_w:.1f}  "
+                  f"active={n_active}/{len(disk_dofs)}")
+
+    elif cfg.lens_drive == "axicon":
         from acoustweezers.physics.acoustics.vortex_lens import (
             AxiconLensConfig, create_axicon_lens_drive,
         )
