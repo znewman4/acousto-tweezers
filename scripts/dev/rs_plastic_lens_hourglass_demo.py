@@ -191,7 +191,8 @@ def _write_vtu(filepath: Path, xg, yg, zg, fields: dict):
     # Point data
     lines.append('<PointData>')
     for name, arr3d in fields.items():
-        flat = arr3d.transpose(2, 1, 0).ravel()  # (nz,ny,nx) → point order
+        # arr3d is (nz, ny, nx); point loop is iz→iy→ix (C-order for that shape)
+        flat = arr3d.ravel()  # C-order matches iz*ny*nx + iy*nx + ix
         lines.append(f'<DataArray type="Float64" Name="{name}" format="ascii">')
         for v in flat:
             lines.append(f"{v:.8e}")
