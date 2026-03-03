@@ -622,8 +622,8 @@ def main():
     }
 
     vtu_path = VTU_DIR / "vortex_free_space.vtu"
-    write_vtu(vtu_path, xg_sub, yg_sub, z_sub * 1e3, fields_vtu)  # z in mm for ParaView
-    print(f"  Written: {vtu_path.relative_to(PROJECT_ROOT)}")
+    write_vtu(vtu_path, xg_sub * 1e3, yg_sub * 1e3, z_sub * 1e3, fields_vtu)  # all in mm
+    print(f"  Written: {vtu_path.relative_to(PROJECT_ROOT)} (coordinates in mm)")
 
     # Self-check: extract one z-slice from VTU arrays and compare to computed
     iz_check = len(z_sub) // 2
