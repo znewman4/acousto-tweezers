@@ -17,7 +17,7 @@ Rayleigh–Sommerfeld Type-I diffraction integral.
     p(x, y, z) = F⁻¹[ F[D] · H ]
 
     where H(kx, ky; z) = exp(i kz z)
-
+whyve 
           kz = √(k² − kx² − ky²)        for propagating modes (kx²+ky² ≤ k²)
           kz = i √(kx² + ky² − k²)       for evanescent modes  (kx²+ky² > k²)
 
