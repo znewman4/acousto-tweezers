@@ -1,0 +1,18 @@
+FEM Standing-Wave Cache
+=======================
+Created       : 2026-03-04T10:43:36.132519
+elem/λ        : 6
+Mesh          : 48×48×40
+DOFs          : 762129
+Solve time    : 151.5s
+max|p|        : 60.5857 Pa
+Frequency     : 2.0 MHz
+λ             : 0.7420 mm
+Domain        : 6.0×6.0×5.01 mm
+Standing V    : 10.0 µm/s
+Pattern       : antiphase, axis=both
+
+To load in Python:
+  d = np.load('standing_wave_epl6.npz')
+  coords = d['coords']          # (N,3) float64
+  p = d['p_real'] + 1j*d['p_imag']  # complex128

@@ -1,0 +1,59 @@
+{
+  "timestamp": "20260304_110236",
+  "physics": {
+    "c_water": 1484.0,
+    "rho_water": 997.0,
+    "frequency_hz": 2000000.0,
+    "wavelength_m": 0.000742,
+    "k_water": 8467.904726657123,
+    "trap_spacing_m": 0.000371,
+    "z_star_m": 0.00418975
+  },
+  "vortex_lens": {
+    "topological_charge": 2,
+    "aperture_radius_m": 0.005,
+    "focal_length_m": 0.004,
+    "c_lens": 2700.0,
+    "apodization": "cosine_taper",
+    "fresnel_number": 8.423180592991914
+  },
+  "grid": {
+    "local_region_half_m": 0.000742,
+    "local_region_size_m": 0.001484,
+    "ngrid_local": 600,
+    "asm_n": 512,
+    "asm_domain_m": 0.012968,
+    "dx_asm_m": 2.5328125000000177e-05
+  },
+  "fem": {
+    "elements_per_wavelength": 6,
+    "domain_Lx_m": 0.006,
+    "domain_Ly_m": 0.006,
+    "source": "latest",
+    "solve_time_s": 0.0
+  },
+  "validation": {
+    "measured_trap_spacing_m": 0.00018746132442960494,
+    "expected_trap_spacing_m": 0.000371,
+    "waist_radius_m": 0.00221487,
+    "waist_diameter_m": 0.00442974,
+    "waist_diameter_over_lambda": 5.97
+  },
+  "perturbation": {
+    "0.05": {
+      "n_perturbed": 0,
+      "n_total": 14,
+      "vortex_ratio_pct": 5.0
+    },
+    "0.1": {
+      "n_perturbed": 1,
+      "n_total": 14,
+      "vortex_ratio_pct": 10.0
+    },
+    "0.2": {
+      "n_perturbed": 2,
+      "n_total": 14,
+      "vortex_ratio_pct": 20.0
+    }
+  }
+}

@@ -354,12 +354,71 @@ def solve_helmholtz(
             "pc_factor_mat_solver_type": "mumps",
         }
 
+    # Extract MUMPS-specific options (mat_mumps_*) that need
+    # to be applied directly to the factored matrix after setup,
+    # because DOLFINx LinearProblem's prefix mechanism doesn't
+    # propagate them to the MUMPS internal control parameters.
+    mumps_icntl = {}
+    base_petsc_options = {}
+    for k, v in petsc_options.items():
+        if k.startswith("mat_mumps_icntl_"):
+            idx = int(k.split("_")[-1])
+            mumps_icntl[idx] = int(v)
+        else:
+            base_petsc_options[k] = v
+
     if verbose:
         print("  Assembling & solving …")
+        if mumps_icntl:
+            print(f"  MUMPS icntl overrides: {mumps_icntl}")
 
     t_asm = time.time()
-    problem = LinearProblem(a_form, L_form, bcs=bcs, petsc_options=petsc_options)
-    ph = problem.solve()
+    problem = LinearProblem(a_form, L_form, bcs=bcs, petsc_options=base_petsc_options)
+
+    # Apply MUMPS icntl parameters directly to the factored matrix.
+    # We need to: assemble the matrix first, then set MUMPS options
+    # on the factored matrix, then solve.  This avoids the prefix
+    # issue where DOLFINx's LinearProblem doesn't propagate
+    # mat_mumps_* options to the MUMPS library.
+    if mumps_icntl:
+        # Step 1: Manually assemble (matching LinearProblem.solve internals)
+        problem._A.zeroEntries()
+        from dolfinx.fem.petsc import assemble_matrix_mat, assemble_vector, apply_lifting
+        assemble_matrix_mat(problem._A, problem._a, bcs=problem.bcs)
+        problem._A.assemble()
+
+        with problem._b.localForm() as b_loc:
+            b_loc.set(0)
+        assemble_vector(problem._b, problem._L)
+        apply_lifting(problem._b, [problem._a], bcs=[problem.bcs])
+        from petsc4py import PETSc as _PETSc
+        problem._b.ghostUpdate(addv=_PETSc.InsertMode.ADD,
+                               mode=_PETSc.ScatterMode.REVERSE)
+        for bc in problem.bcs:
+            bc.set(problem._b.array_w)
+
+        # Step 2: Set up the PC + extract MUMPS matrix + set icntl
+        ksp = problem.solver
+        ksp.setOperators(problem._A)
+        pc = ksp.getPC()
+        pc.setUp()
+        try:
+            F = pc.getFactorMatrix()
+            for idx, val in mumps_icntl.items():
+                F.setMumpsIcntl(idx, val)
+                if verbose:
+                    print(f"    set MUMPS icntl[{idx}] = {val}")
+        except Exception as e:
+            if verbose:
+                print(f"  WARNING: Could not set MUMPS icntl: {e}")
+
+        # Step 3: Solve (KSP will re-do factorization with new icntl)
+        ksp.solve(problem._b, problem._x)
+        problem.u.x.scatter_forward()
+        ph = problem.u
+    else:
+        ph = problem.solve()
+
     ph.name = "pressure"
     t_solve_end = time.time()
 

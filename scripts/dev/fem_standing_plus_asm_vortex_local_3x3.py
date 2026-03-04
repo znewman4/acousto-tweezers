@@ -109,13 +109,27 @@ NZ_MERID = 200            # z-points for XZ slice
 # ═══════════════════════════════════════════════════════════════════
 # CLI
 # ═══════════════════════════════════════════════════════════════════
+# Canonical location for reusable standing-wave data
+STANDING_DATA_DIR = PROJECT_ROOT / "results" / "fem_standing_wave_cache"
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="FEM standing + ASM vortex 3×3 overlay study")
     p.add_argument("--timestamp",
                    default=datetime.now().strftime("%Y%m%d_%H%M%S"))
-    p.add_argument("--elem-per-lam", type=int, default=4,
-                   help="FEM mesh elements per wavelength (default: 4)")
+    p.add_argument("--elem-per-lam", type=int, default=6,
+                   help="FEM mesh elements per wavelength (default: 6; "
+                        "with P2 elements this gives 12 pts/λ)")
+    p.add_argument("--save-standing-only", action="store_true",
+                   help="Solve FEM standing wave, save it, and exit "
+                        "(no vortex overlay). Use this to pre-compute "
+                        "reusable standing-wave data.")
+    p.add_argument("--load-standing", type=str, default=None,
+                   metavar="PATH",
+                   help="Load previously saved FEM standing-wave .npz "
+                        "instead of re-solving. Accepts a path to the "
+                        ".npz file, or 'latest' to auto-detect.")
     return p.parse_args()
 
 
@@ -233,6 +247,113 @@ def _count_perturbed_traps(xg, yg, p_stand_mag, p_diff_mag,
 # MAIN
 # ═══════════════════════════════════════════════════════════════════
 
+def _save_standing_wave(coords_fem, pv_fem, cfg, elem_per_lam, solve_time, dofs):
+    """
+    Save FEM standing-wave solution to a canonical cache directory.
+
+    The file is named with the elements-per-wavelength so different
+    resolutions can coexist.  The saved .npz contains everything
+    needed to reconstruct the complex pressure field on the FEM DOF
+    coordinates — no FEniCSx required to *load* it.
+
+    Returns the path to the saved file.
+    """
+    STANDING_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    fname = f"standing_wave_epl{elem_per_lam}.npz"
+    path = STANDING_DATA_DIR / fname
+
+    np.savez_compressed(
+        path,
+        # DOF coordinates (N×3)
+        coords=coords_fem,
+        # Complex pressure at each DOF
+        p_real=np.real(pv_fem),
+        p_imag=np.imag(pv_fem),
+        # Physics / config (scalar metadata stored as 0-d arrays)
+        frequency_hz=np.float64(cfg.frequency_hz),
+        c_water=np.float64(cfg.c),
+        rho_water=np.float64(cfg.rho),
+        Lx=np.float64(cfg.Lx),
+        Ly=np.float64(cfg.Ly),
+        H_under=np.float64(cfg.H_under),
+        H_top=np.float64(cfg.H_top),
+        H_total=np.float64(cfg.H_total),
+        wavelength=np.float64(cfg.wavelength),
+        elements_per_wavelength=np.int64(elem_per_lam),
+        mesh_nx=np.int64(cfg.mesh_nx),
+        mesh_ny=np.int64(cfg.mesh_ny),
+        mesh_nz=np.int64(cfg.mesh_nz),
+        solve_time_s=np.float64(solve_time),
+        dofs=np.int64(dofs),
+        standing_velocity_amplitude=np.float64(
+            cfg.standing_velocity_amplitude),
+        standing_phase_pattern=np.array(cfg.standing_phase_pattern),
+        standing_axis=np.array(cfg.standing_axis),
+    )
+
+    # Also write a human-readable sidecar
+    meta_path = STANDING_DATA_DIR / f"standing_wave_epl{elem_per_lam}_INFO.txt"
+    meta_path.write_text(
+        f"FEM Standing-Wave Cache\n"
+        f"=======================\n"
+        f"Created       : {datetime.now().isoformat()}\n"
+        f"elem/λ        : {elem_per_lam}\n"
+        f"Mesh          : {cfg.mesh_nx}×{cfg.mesh_ny}×{cfg.mesh_nz}\n"
+        f"DOFs          : {dofs}\n"
+        f"Solve time    : {solve_time:.1f}s\n"
+        f"max|p|        : {np.abs(pv_fem).max():.4f} Pa\n"
+        f"Frequency     : {cfg.frequency_hz/1e6:.1f} MHz\n"
+        f"λ             : {cfg.wavelength*1e3:.4f} mm\n"
+        f"Domain        : {cfg.Lx*1e3:.1f}×{cfg.Ly*1e3:.1f}×{cfg.H_total*1e3:.2f} mm\n"
+        f"Standing V    : {cfg.standing_velocity_amplitude*1e6:.1f} µm/s\n"
+        f"Pattern       : {cfg.standing_phase_pattern}, axis={cfg.standing_axis}\n"
+        f"\n"
+        f"To load in Python:\n"
+        f"  d = np.load('{fname}')\n"
+        f"  coords = d['coords']          # (N,3) float64\n"
+        f"  p = d['p_real'] + 1j*d['p_imag']  # complex128\n"
+    )
+    return path
+
+
+def _load_standing_wave(path_or_tag):
+    """
+    Load a previously saved FEM standing-wave .npz.
+
+    Parameters
+    ----------
+    path_or_tag : str
+        Full path to the .npz, or 'latest' to auto-detect the
+        highest-resolution file in the cache directory.
+
+    Returns
+    -------
+    coords : ndarray (N,3)
+    p_values : ndarray (N,) complex128
+    metadata : dict
+    """
+    if path_or_tag == "latest":
+        candidates = sorted(STANDING_DATA_DIR.glob("standing_wave_epl*.npz"))
+        if not candidates:
+            raise FileNotFoundError(
+                f"No standing-wave cache found in {STANDING_DATA_DIR}")
+        path = candidates[-1]  # highest epl number (alphabetical sort)
+    else:
+        path = Path(path_or_tag)
+        if not path.exists():
+            raise FileNotFoundError(f"Standing-wave file not found: {path}")
+
+    d = np.load(path, allow_pickle=True)
+    coords = d["coords"]
+    p_values = d["p_real"] + 1j * d["p_imag"]
+    metadata = {
+        k: d[k].item() if d[k].ndim == 0 else str(d[k])
+        for k in d.files if k not in ("coords", "p_real", "p_imag")
+    }
+    return coords, p_values, metadata, path
+
+
 def main():
     args = parse_args()
     TS = args.timestamp
@@ -269,40 +390,90 @@ def main():
     log("")
 
     # ─────────────────────────────────────────────────────────────
-    # STEP 1: Solve FEM standing-wave-only
+    # STEP 1: FEM standing-wave-only (solve or load from cache)
     # ─────────────────────────────────────────────────────────────
     log("─" * 72)
-    log("STEP 1: FEM standing-wave-only solve")
+    log("STEP 1: FEM standing-wave-only")
     log("─" * 72)
 
-    fem_overrides = {
-        **CORRECTED_PRESET,
-        "disk_velocity_amplitude": 0.0,   # vortex OFF
-        "elements_per_wavelength": ELEM,
-    }
-    cfg_standing = FarFieldConfig(**fem_overrides)
+    if args.load_standing:
+        # ── Load from cache ───────────────────────────────────────
+        log(f"  Loading standing wave from: {args.load_standing}")
+        coords_fem, pv_fem, meta_cache, cache_path = _load_standing_wave(
+            args.load_standing)
+        ELEM_LOADED = int(meta_cache.get("elements_per_wavelength", ELEM))
+        log(f"  Loaded {cache_path.name}")
+        log(f"  elem/λ (cached)   : {ELEM_LOADED}")
+        log(f"  DOFs (cached)     : {meta_cache.get('dofs', '?')}")
+        log(f"  Solve time (orig) : {meta_cache.get('solve_time_s', '?')}s")
+        log(f"  max|p_stand|      : {np.abs(pv_fem).max():.4f} Pa")
+        log(f"  coords shape      : {coords_fem.shape}")
+        # Build a FarFieldConfig for use later (e.g. H_total)
+        fem_overrides = {
+            **CORRECTED_PRESET,
+            "disk_velocity_amplitude": 0.0,
+            "elements_per_wavelength": ELEM_LOADED,
+        }
+        cfg_s = FarFieldConfig(**fem_overrides)
+        t_fem = 0.0
+    else:
+        # ── Fresh FEM solve ───────────────────────────────────────
+        fem_overrides = {
+            **CORRECTED_PRESET,
+            "disk_velocity_amplitude": 0.0,   # vortex OFF
+            "elements_per_wavelength": ELEM,
+        }
+        cfg_standing = FarFieldConfig(**fem_overrides)
 
-    log(f"  Domain: {cfg_standing.Lx*1e3:.1f} × {cfg_standing.Ly*1e3:.1f} × "
-        f"{cfg_standing.H_total*1e3:.2f} mm")
-    log(f"  Standing V: {cfg_standing.standing_velocity_amplitude*1e6:.1f} µm/s")
-    log(f"  Pattern: {cfg_standing.standing_phase_pattern}, "
-        f"axis: {cfg_standing.standing_axis}")
+        log(f"  Domain: {cfg_standing.Lx*1e3:.1f} × {cfg_standing.Ly*1e3:.1f} × "
+            f"{cfg_standing.H_total*1e3:.2f} mm")
+        log(f"  Mesh  : {cfg_standing.mesh_nx}×{cfg_standing.mesh_ny}×{cfg_standing.mesh_nz}")
+        log(f"  Standing V: {cfg_standing.standing_velocity_amplitude*1e6:.1f} µm/s")
+        log(f"  Pattern: {cfg_standing.standing_phase_pattern}, "
+            f"axis: {cfg_standing.standing_axis}")
 
-    t0 = time.time()
-    sol_stand = solve_helmholtz(cfg_standing, verbose=True,
-                                petsc_options=PETSC_MUMPS)
-    t_fem = time.time() - t0
-    log(f"  FEM solve time: {t_fem:.1f}s")
-    log(f"  max|p_stand| = {sol_stand.max_pressure:.2f} Pa")
-    log(f"  DOFs = {sol_stand.dofs}")
+        t0 = time.time()
+        # Always set MUMPS icntl_14 (memory relaxation) to 500%
+        # because DOLFINx's LinearProblem prefix mechanism doesn't
+        # propagate mat_mumps_* to the MUMPS library by default.
+        # The solve_pressure module now handles icntl injection directly.
+        petsc_opts = dict(PETSC_MUMPS)
+        petsc_opts["mat_mumps_icntl_14"] = "500"   # 500% memory relaxation
+        sol_stand = solve_helmholtz(cfg_standing, verbose=True,
+                                    petsc_options=petsc_opts)
+        t_fem = time.time() - t0
+        log(f"  FEM solve time: {t_fem:.1f}s")
+        log(f"  max|p_stand| = {sol_stand.max_pressure:.2f} Pa")
+        log(f"  DOFs = {sol_stand.dofs}")
 
-    # Extract arrays and free FEniCSx memory
-    coords_fem = sol_stand.coords.copy()
-    pv_fem = sol_stand.p_values.copy()
-    cfg_s = sol_stand.cfg
-    del sol_stand
-    gc.collect()
+        # Extract arrays and free FEniCSx memory
+        coords_fem = sol_stand.coords.copy()
+        pv_fem = sol_stand.p_values.copy()
+        cfg_s = sol_stand.cfg
+
+        # ── Save standing wave to cache ───────────────────────────
+        saved_path = _save_standing_wave(
+            coords_fem, pv_fem, cfg_s, ELEM, t_fem, sol_stand.dofs)
+        log(f"  ✓ Standing wave saved to: {saved_path}")
+        log(f"    (reuse with: --load-standing {saved_path})")
+        log(f"    (or:         --load-standing latest)")
+
+        del sol_stand
+        gc.collect()
+
     log("")
+
+    # ── Early exit for --save-standing-only mode ──────────────────
+    if args.save_standing_only:
+        t_total = time.time() - t_start
+        log("=" * 72)
+        log("SAVE-STANDING-ONLY MODE — done.")
+        log("=" * 72)
+        log(f"  Total time: {t_total:.1f}s")
+        log(f"  To overlay vortices later, run:")
+        log(f"    python {Path(__file__).name} --load-standing latest")
+        (BASE / "console_log.txt").write_text("\n".join(report_lines))
+        return
 
     # ─────────────────────────────────────────────────────────────
     # STEP 2: Build ASM vortex volume
@@ -395,26 +566,30 @@ def main():
     log(f"  Grid: {NGRID_LOCAL}×{NGRID_LOCAL}")
 
     # ── FEM standing → local grid ─────────────────────────────────
-    # LinearNDInterpolator for smooth results; fall back to nearest
-    # for any extrapolation NaN at domain boundaries.
-    log("  Interpolating FEM → local grid (LinearNDInterpolator) ...")
-    lin_re = LinearNDInterpolator(coords_fem, np.real(pv_fem))
-    lin_im = LinearNDInterpolator(coords_fem, np.imag(pv_fem))
-    nn_re  = NearestNDInterpolator(coords_fem, np.real(pv_fem))
-    nn_im  = NearestNDInterpolator(coords_fem, np.imag(pv_fem))
-    pts_3d = np.column_stack([
-        XX_loc.ravel(), YY_loc.ravel(),
-        np.full(XX_loc.size, Z_STAR)
-    ])
-    re_vals = lin_re(pts_3d)
-    im_vals = lin_im(pts_3d)
+    # OPTIMISED: instead of building a 3-D Delaunay on all 762K DOFs
+    # (O(n²) – hours!), extract a thin slab around z=Z_STAR and do a
+    # fast 2-D Delaunay in the (x, y) plane.
+    h_elem = LAM / max(ELEM if not args.load_standing else ELEM_LOADED, 4)
+    z_tol = 3.0 * h_elem          # ~3 element layers → plenty of points
+    z_mask = np.abs(coords_fem[:, 2] - Z_STAR) < z_tol
+    coords_slab = coords_fem[z_mask, :2]   # (x, y) only
+    pv_slab = pv_fem[z_mask]
+    log(f"  Interpolating FEM → local grid (2-D LinearNDInterpolator) ...")
+    log(f"    z-slab: |z - z*| < {z_tol*1e3:.3f} mm → {coords_slab.shape[0]} / {len(pv_fem)} DOFs")
+    lin_re = LinearNDInterpolator(coords_slab, np.real(pv_slab))
+    lin_im = LinearNDInterpolator(coords_slab, np.imag(pv_slab))
+    nn_re  = NearestNDInterpolator(coords_slab, np.real(pv_slab))
+    nn_im  = NearestNDInterpolator(coords_slab, np.imag(pv_slab))
+    pts_2d_fem = np.column_stack([XX_loc.ravel(), YY_loc.ravel()])
+    re_vals = lin_re(pts_2d_fem)
+    im_vals = lin_im(pts_2d_fem)
     nan_mask = np.isnan(re_vals)
     if nan_mask.any():
-        re_vals[nan_mask] = nn_re(pts_3d[nan_mask])
-        im_vals[nan_mask] = nn_im(pts_3d[nan_mask])
+        re_vals[nan_mask] = nn_re(pts_2d_fem[nan_mask])
+        im_vals[nan_mask] = nn_im(pts_2d_fem[nan_mask])
         log(f"    (filled {nan_mask.sum()} boundary NaN with nearest)")
     p_stand_local = (re_vals + 1j * im_vals).reshape(XX_loc.shape)
-    del lin_re, lin_im, nn_re, nn_im
+    del lin_re, lin_im, nn_re, nn_im, coords_slab, pv_slab
 
     log(f"  |p_stand| on local grid: max={np.abs(p_stand_local).max():.4f} Pa")
 
@@ -520,30 +695,32 @@ def main():
     log("─" * 72)
 
     # FEM standing XZ slice at y = Ly/2
-    log("  Interpolating FEM → XZ slice (LinearNDInterpolator) ...")
-    lin_re_xz = LinearNDInterpolator(coords_fem, np.real(pv_fem))
-    lin_im_xz = LinearNDInterpolator(coords_fem, np.imag(pv_fem))
-    nn_re_xz  = NearestNDInterpolator(coords_fem, np.real(pv_fem))
-    nn_im_xz  = NearestNDInterpolator(coords_fem, np.imag(pv_fem))
+    # OPTIMISED: thin y-slab → 2-D Delaunay in (x, z) instead of 3-D.
+    y_tol = 3.0 * h_elem
+    y_mask = np.abs(coords_fem[:, 1] - CY) < y_tol
+    coords_yslab = coords_fem[y_mask][:, [0, 2]]   # (x, z)
+    pv_yslab = pv_fem[y_mask]
+    log(f"  Interpolating FEM → XZ slice (2-D LinearNDInterpolator) ...")
+    log(f"    y-slab: |y - CY| < {y_tol*1e3:.3f} mm → {coords_yslab.shape[0]} / {len(pv_fem)} DOFs")
+    lin_re_xz = LinearNDInterpolator(coords_yslab, np.real(pv_yslab))
+    lin_im_xz = LinearNDInterpolator(coords_yslab, np.imag(pv_yslab))
+    nn_re_xz  = NearestNDInterpolator(coords_yslab, np.real(pv_yslab))
+    nn_im_xz  = NearestNDInterpolator(coords_yslab, np.imag(pv_yslab))
 
     # z range: from just above bottom to top of domain
     zg_xz = np.linspace(H_UNDER * 0.5, cfg_s.H_total, NZ_MERID)
     xg_xz = np.linspace(x_lo, x_hi, NGRID_XZ)
     XX_xz, ZZ_xz = np.meshgrid(xg_xz, zg_xz)
-    pts_xz = np.column_stack([
-        XX_xz.ravel(),
-        np.full(XX_xz.size, CY),
-        ZZ_xz.ravel()
-    ])
-    re_xz = lin_re_xz(pts_xz)
-    im_xz = lin_im_xz(pts_xz)
+    pts_xz_2d = np.column_stack([XX_xz.ravel(), ZZ_xz.ravel()])
+    re_xz = lin_re_xz(pts_xz_2d)
+    im_xz = lin_im_xz(pts_xz_2d)
     nan_xz = np.isnan(re_xz)
     if nan_xz.any():
-        re_xz[nan_xz] = nn_re_xz(pts_xz[nan_xz])
-        im_xz[nan_xz] = nn_im_xz(pts_xz[nan_xz])
+        re_xz[nan_xz] = nn_re_xz(pts_xz_2d[nan_xz])
+        im_xz[nan_xz] = nn_im_xz(pts_xz_2d[nan_xz])
         log(f"    (filled {nan_xz.sum()} boundary NaN with nearest)")
     p_stand_xz = (re_xz + 1j * im_xz).reshape(XX_xz.shape)
-    del lin_re_xz, lin_im_xz, nn_re_xz, nn_im_xz
+    del lin_re_xz, lin_im_xz, nn_re_xz, nn_im_xz, coords_yslab, pv_yslab
 
     # ASM vortex XZ slice — propagate to each z-plane
     log(f"  Propagating vortex to {NZ_MERID} z-planes for XZ slice...")
@@ -810,6 +987,8 @@ def main():
             "elements_per_wavelength": ELEM,
             "domain_Lx_m": LX,
             "domain_Ly_m": LY,
+            "source": str(args.load_standing) if args.load_standing else "fresh_solve",
+            "solve_time_s": t_fem,
         },
         "validation": {
             "measured_trap_spacing_m": float(trap_sp_meas) if not np.isnan(trap_sp_meas) else None,
