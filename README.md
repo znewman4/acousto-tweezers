@@ -622,14 +622,54 @@ that the PML + water column geometry dominates the physics — by the time acous
 energy reaches the top face, it has already been absorbed or spread laterally.
 The top BC choice is cosmetic at the current domain depth (3 mm underbath).
 
-### 9.8  Memory Notes
+### 9.8  Memory Notes and Machine Limits
 
-At 2 MHz (λ = 0.742 mm) the mesh is dense.  On a 7.5 GB machine:
+At 2 MHz (λ = 0.742 mm) the mesh is dense.  MUMPS direct LU factorisation has
+high peak RAM because it stores the full factor matrix.  Representative figures
+for the `farfield_petri_cuboid` domain (6×6×5 mm):
 
-- **5 elem/λ** (348K DOFs): OOM-kills MUMPS.  Use GMRES(200)+ILU if attempted.
-- **3 elem/λ** (79K DOFs): Works with MUMPS direct.  This is the default for
-  all deliverable scripts (they auto-fallback from 5 → 3 if OOM).
-- The driver scripts explicitly free memory with `gc.collect()` between cases.
+| elem/λ | DOFs (P2) | Effective pts/λ | Peak RAM | Works on |
+|--------|-----------|-----------------|----------|---------|
+| 3 | 79K | 6 | ~2 GB | All machines |
+| 4 | 232K | 8 | ~4–6 GB | All machines |
+| 5 | 440K | 10 | ~8 GB | 16+ GB machines |
+| 6 | 762K | 12 | ~18 GB | Lab machine (30 GB) |
+| 7+ | 1.2M+ | 14+ | >28 GB | Not feasible on lab machine |
+
+**Laptop (8 GB RAM, WSL Ubuntu):**
+
+The FEM solve at 6 elem/λ was run once on the Linux lab machine and the
+result saved as `results/fem_standing_wave_cache/standing_wave_epl6.npz`
+(15 MB, committed to git).  On the laptop, skip the FEM entirely:
+
+```bash
+# Laptop workflow — no FEM solve, uses cached data
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --load-standing latest
+# Completes in ~18 s; only needs ~0.5 GB RAM
+```
+
+If you need to re-solve FEM on the laptop (e.g. to test a different geometry),
+use 4 elem/λ (fits in 8 GB):
+
+```bash
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --elem-per-lam 4
+```
+
+**Lab machine (30 GB RAM, Rocky Linux 8.10, 28 cores):**
+
+```bash
+# Generate and cache a high-res standing wave (takes ~150 s; saves for reuse)
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --save-standing-only
+
+# Full study using the cached wave
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --load-standing latest
+```
+
+> **MUMPS icntl fix (2026-03-04):** DOLFINx's `LinearProblem` prefix mechanism
+> silently discarded `mat_mumps_icntl_14` (memory relaxation).  This has been
+> fixed in `solve_pressure.py` — MUMPS now correctly receives the 500% workspace
+> relaxation setting required for meshes above ~440K DOFs.
+> See CHANGELOG 2026-03-04 for full details.
 
 ### 9.9  Lens Presets
 
@@ -684,6 +724,52 @@ Results: `results/fixed_gallery_<timestamp>/`
 
 **Current best results (2026-02-24):** standing max|p| = 59.9 Pa,
 vortex max|p| = 1.3 Pa, combined max|p| = 59.7 Pa — all in the physical domain.
+
+### 9.12  3×3 Standing-Wave Grid + ASM Vortex Overlay (2026-03-04)
+
+The primary deliverable script for the trap-selection study:
+
+```bash
+# --- Laptop (8 GB WSL/Ubuntu) — load cached FEM data, run overlay ---
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --load-standing latest
+
+# --- Lab machine — re-generate FEM cache then run overlay ---
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --save-standing-only   # 150 s
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --load-standing latest  # 18 s
+```
+
+The script (`scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py`) runs
+nine steps:
+
+1. **FEM standing wave** — MUMPS solve or load from `.npz` cache
+2. **ASM vortex propagation** — plastic lens (ℓ=2, R=5 mm, f=4 mm) via FFT
+3. **Interpolation to local 3×3 grid** — 2-D slab Delaunay (fast)
+4. **Validation** — trap spacing, vortex waist measurement
+5. **Superposition** — p_total = p_stand + α·p_vortex (α ∈ {0.05, 0.1, 0.2})
+6. **XZ meridional slice** — hourglass vortex envelope
+7. **Figures** — 7 publication-quality PNGs
+8. **Data** — `local_fields.npz`, `xz_fields.npz`, `metadata.json`
+9. **Report** — `REPORT.md`
+
+**Physical parameters:**
+
+| Parameter | Value |
+|-----------|-------|
+| Frequency | 2 MHz |
+| λ | 0.742 mm |
+| Trap spacing (λ/2) | 0.371 mm |
+| z\* (trap plane) | 4.19 mm |
+| Vortex ℓ | 2 |
+| Vortex R | 5.0 mm |
+| Vortex f | 4.0 mm |
+| FEM resolution | 6 elem/λ (P2 → 12 pts/λ effective) |
+
+**Key findings:**
+- At α = 0.1: vortex perturbs exactly **1 trap** — single-trap selection demonstrated
+- Vortex waist diameter = 5.97λ (wide beam; adjustable via focal length)
+- Cached standing wave (15 MB): `results/fem_standing_wave_cache/standing_wave_epl6.npz`
+
+Outputs: `results/fem_standing_plus_asm_vortex_local_3x3_<timestamp>/`
 
 ---
 

@@ -1,5 +1,128 @@
 # Changelog
 
+## 2026-03-04 — 3×3 Standing-Wave Cache + MUMPS Fix + Interpolation Optimisation
+
+### Summary
+Firstrun of the 3×3 grid standing-wave + ASM vortex overlay study on the Linux
+lab machine (30 GB RAM, 28 cores, Rocky Linux 8.10).  Discovered and fixed two
+critical bugs; generated the reusable standing-wave cache at 6 elem/λ; produced
+the complete overlay study in 18 seconds.
+
+### Bug 1 — MUMPS icntl Options Never Reached MUMPS (Critical Solver Fix)
+
+**Symptom:** FEM solves at ≥ 6 elem/λ (762K DOFs) returned MUMPS
+`REASON = -11` (PCSETUP_FAILED) with `max|p| = inf`, even though
+`mat_mumps_icntl_14 = 500` (500% memory relaxation) was requested.
+
+**Root cause:** `DOLFINx.fem.petsc.LinearProblem` creates its PETSc options
+under a unique per-instance prefix `dolfinx_solve_{id(self)}`.  Any option
+set via the `petsc_options` dict must be prefixed with that string.  Options
+like `mat_mumps_icntl_14` (no prefix) were silently ignored by the PETSc
+options database — MUMPS used its default 20% workspace overhead, which became
+fatal at 762K DOFs when it needed to allocate > 28 GB.
+
+**Fix** (`src/acoustweezers/experiments/farfield_petri_cuboid/solve_pressure.py`):
+- Extract all `mat_mumps_icntl_*` keys from petsc_options into a separate dict.
+- Pass the remaining options to `LinearProblem` as usual.
+- After `problem.A` is assembled manually (mirroring `LinearProblem.solve()`
+  internals), call `pc.setUp()`, obtain the factored matrix via
+  `pc.getFactorMatrix()`, and set each icntl directly via
+  `F.setMumpsIcntl(idx, val)`.
+- New imports: `assemble_matrix_mat`, `assemble_vector`, `apply_lifting`
+  from `dolfinx.fem.petsc`.
+
+**RAM feasibility on this machine (30 GB):**
+
+| elem/λ | DOFs | Peak RAM | Outcome |
+|--------|------|----------|---------|
+| 4 | 232K | ~4 GB | ✅ OK |
+| 5 | 440K | ~8 GB | ✅ OK |
+| 6 | 762K | ~18 GB | ✅ OK (after fix) |
+| 7 | 1.2M | >28 GB | ❌ OOM |
+| 8+ | 1.8M+ | >40 GB | ❌ OOM |
+
+> **Laptop note (8 GB RAM / WSL Ubuntu):** MUMPS direct LU is not feasible
+> above ~3 elem/λ (232K DOFs ≈ 4–6 GB peak).  On the laptop, use
+> `--load-standing latest` to skip the FEM solve entirely (loads the
+> pre-cached `standing_wave_epl6.npz` from git) — the overlay + figures
+> then run in ~18 s with no FEM work at all.  If you do need to re-solve,
+> set `elem_per_lam = 4` (232K DOFs, ~4 GB) which fits in 8 GB.
+
+### Bug 2 — 3D LinearNDInterpolator on 762K DOFs (Catastrophically Slow)
+
+**Symptom:** STEP 3 (interpolate FEM → local 600×600 grid) was still running
+after 26 minutes with no output produced.
+
+**Root cause:** `LinearNDInterpolator` with 762K 3-D points builds a full 3-D
+QHull Delaunay triangulation (O(n²) in 3D).  This takes hours.
+
+**Fix** (`scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py`):
+- For the **XY plane at z\*** (STEP 3): filter to a thin z-slab
+  `|z − z*| < 3·h_elem` (~112K points), then do a 2-D Delaunay in (x, y).
+- For the **XZ plane at y = CY** (STEP 6): filter to a thin y-slab
+  `|y − CY| < 3·h_elem` (~86K points), then do a 2-D Delaunay in (x, z).
+
+Both operations complete in < 2 seconds.  Total study runtime dropped from
+unbounded to **18 seconds**.
+
+### Standing-Wave Cache
+
+A FEM solve at 6 elem/λ was run once on the lab machine (151 s) and the
+result saved to `results/fem_standing_wave_cache/standing_wave_epl6.npz`
+(15 MB, force-committed to git despite the `results/` gitignore).
+
+The cache contains: DOF coordinates (762129×3), complex pressure (real+imag),
+and metadata (config, DOF count, solve time, max|p|).
+
+To reuse on any machine (including laptop):
+
+```bash
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --load-standing latest
+```
+
+To generate fresh (Linux lab machine only, needs ≥ 20 GB free RAM):
+
+```bash
+python scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py --save-standing-only
+```
+
+### New CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--save-standing-only` | Run FEM solve, save cache, then exit (no overlay) |
+| `--load-standing PATH\|latest` | Load from cache file or auto-detect latest |
+| `--elem-per-lam N` | Elements per wavelength (default 6; use 4 on laptop) |
+
+### Overlay Study Results
+
+Full study ran in 18.3 s using cached standing wave data:
+
+| α | Vortex/Standing | Traps significantly perturbed |
+|---|-----------------|-------------------------------|
+| 0.05 | 5% | 0 / 14 |
+| 0.10 | 10% | 1 / 14 |
+| 0.20 | 20% | 2 / 14 |
+
+Conclusion: single-trap selection is achievable at α = 0.1.
+
+### Files Modified
+
+- `src/acoustweezers/experiments/farfield_petri_cuboid/solve_pressure.py` —
+  MUMPS icntl injection fix (manual matrix assembly + `setMumpsIcntl`)
+- `scripts/dev/fem_standing_plus_asm_vortex_local_3x3.py` —
+  `--save-standing-only` / `--load-standing` CLI; 2D slab interpolation;
+  `_save_standing_wave()` / `_load_standing_wave()` helpers
+
+### Files Created (committed to git with `-f`)
+
+- `results/fem_standing_wave_cache/standing_wave_epl6.npz` — 15 MB cache
+- `results/fem_standing_wave_cache/standing_wave_epl6_INFO.txt` — sidecar
+- `results/fem_standing_plus_asm_vortex_local_3x3_20260304_110236/` — full
+  overlay study output (7 figures, 3 data files, REPORT.md)
+
+---
+
 ## 2026-02-24 — Lateral PML Z-Filter Fix (Critical Physics Bug)
 
 ### Problem
