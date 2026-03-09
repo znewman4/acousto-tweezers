@@ -61,23 +61,37 @@ def export_pressure_fields(
     V = sol.V
     p_complex = sol.p_function.x.array.copy()  # complex128
 
-    # Create a REAL function space for the exported fields
-    # We map to the same mesh but store real-valued scalars
-    V_real = fem.functionspace(domain, ("Lagrange", 2))
+    # dolfinx 0.9.0 XDMFFile.write_function requires the function degree to
+    # equal the mesh geometry degree (1 for linear tets from create_box).
+    # We therefore export at P1 (vertex values only) for XDMF / ParaView.
+    # The full P2 DOF accuracy is preserved in the .npz DOF-scatter cache.
+    V_real_p2 = fem.functionspace(domain, ("Lagrange", 2))  # source: P2
+    V_real_p1 = fem.functionspace(domain, ("Lagrange", 1))  # target: P1 (XDMF)
 
     def _write_field(name: str, values: np.ndarray):
-        """Write a real-valued field to XDMF + HDF5."""
-        func = fem.Function(V_real)
-        func.name = name
-        func.x.array[:] = values.astype(np.float64)
+        """Write a real-valued P1 field to XDMF + HDF5 (ParaView-friendly).
+
+        The values array comes from P2 DOF extraction.  We build a P2
+        Function and interpolate it down to P1 so dolfinx can write it
+        to XDMF (which requires function degree == mesh-geometry degree).
+        """
+        # Build P2 function with the DOF values
+        func_p2 = fem.Function(V_real_p2)
+        func_p2.name = name
+        func_p2.x.array[:] = values.astype(np.float64)
+
+        # Interpolate to P1 for XDMF compatibility
+        func_p1 = fem.Function(V_real_p1)
+        func_p1.name = name
+        func_p1.interpolate(func_p2)
 
         xdmf_path = export_dir / f"{name}.xdmf"
         with XDMFFile(domain.comm, str(xdmf_path), "w") as xf:
             xf.write_mesh(domain)
-            xf.write_function(func)
+            xf.write_function(func_p1)
 
         if verbose:
-            print(f"    Wrote {xdmf_path}")
+            print(f"    Wrote {xdmf_path}  (P1 interpolation for XDMF)")
 
     # Mesh-only XDMF
     mesh_path = export_dir / "mesh.xdmf"
@@ -101,10 +115,12 @@ def export_pressure_fields(
     manifest = {
         "fields": ["p_real", "p_imag", "p_mag", "p_phase"],
         "mesh": "mesh.xdmf",
-        "dofs": int(V.dofmap.index_map.size_global * V.dofmap.index_map_bs),
-        "element_order": 2,
-        "notes": "All fields are P2 Lagrange on the same mesh. "
-                 "Complex pressure p = p_real + i*p_imag.",
+        "dofs_p2": int(V.dofmap.index_map.size_global * V.dofmap.index_map_bs),
+        "element_order_source": 2,
+        "element_order_xdmf": 1,
+        "notes": "XDMF fields are P1 interpolations (for ParaView). "
+                 "Full P2 accuracy is preserved in the .npz DOF-scatter cache. "
+                 "Reload path: mesh.xdmf + .npz DOF arrays -> P2 Function -> eval().",
     }
     with open(export_dir / "fields_manifest.json", "w") as f:
         json.dump(manifest, f, indent=2)
