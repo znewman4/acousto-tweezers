@@ -47,8 +47,8 @@ OMEGA   = 2.0 * np.pi * F_HZ
 RHO0    = 997.0
 
 LX = LY   = 6.0e-3
-H_UNDER   = 3.0e-3
-H_TOP     = 2.0085e-3
+H_UNDER   = 5.0e-3
+H_TOP     = 2.0e-3
 CX = CY   = LX / 2.0
 Z_STAR    = H_UNDER + H_TOP / 2.0 + 0.25 * LAM
 
@@ -62,10 +62,10 @@ F1      = 1.0 - KAPPA_P / KAPPA0
 F2      = 2.0 * (RHO_P - RHO0) / (2.0 * RHO_P + RHO0)
 
 DZ_GRAD  = LAM / 15.0   # ~49.5 µm
-K_IDW    = 16
 
 ROI_HALF = 1.1 * LAM
 STANDING_CACHE_DIR = PROJECT_ROOT / "results" / "fem_standing_wave_cache"
+CHECKPOINT_DIR = STANDING_CACHE_DIR / "checkpoint_epl5_depth7mm_20260309_113007"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -81,44 +81,117 @@ def log(msg=""):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# FEM I/O and interpolation
+# FEM checkpoint reload + true FEM evaluation
 # ═══════════════════════════════════════════════════════════════════
 
-def load_fem_cache(path: Path):
-    d = np.load(path, allow_pickle=True)
-    keys = list(d.keys())
-    coords = d["coords"]
-    if "p_real" in keys and "p_imag" in keys:
-        p = d["p_real"].astype(np.float64) + 1j * d["p_imag"].astype(np.float64)
-    elif "p" in keys:
-        p = d["p"].astype(np.complex128)
-    else:
-        raise KeyError(f"Cannot find pressure (keys: {keys})")
-    return coords, p
+class FEMEvaluator:
+    """
+    Reload a DOLFINx mesh from an XDMF checkpoint and reconstruct the
+    P2 pressure field from the .npz DOF cache.  Provides eval_points()
+    which uses native FEM basis-function interpolation (no IDW).
+    """
+
+    def __init__(self, ckpt_dir: Path):
+        from mpi4py import MPI
+        from dolfinx.io import XDMFFile
+        from dolfinx import fem
+        from dolfinx.geometry import (
+            bb_tree, compute_collisions_points, compute_colliding_cells,
+        )
+        from scipy.spatial import KDTree
+
+        self._bb_tree_fn = bb_tree
+        self._collisions_fn = compute_collisions_points
+        self._colliding_fn = compute_colliding_cells
+
+        ckpt_dir = Path(ckpt_dir)
+        log(f"  Loading mesh from {ckpt_dir / 'mesh.xdmf'} ...")
+        t0 = time.time()
+        with XDMFFile(MPI.COMM_WORLD, str(ckpt_dir / "mesh.xdmf"), "r") as xf:
+            self.domain = xf.read_mesh(name="mesh")
+        log(f"  Mesh reload: {time.time() - t0:.2f}s")
+
+        # P2 function space
+        self.V = fem.functionspace(self.domain, ("Lagrange", 2))
+        dof_coords_new = self.V.tabulate_dof_coordinates()
+        self.n_dofs = len(dof_coords_new)
+        log(f"  P2 DOFs: {self.n_dofs}")
+
+        # Load .npz DOF arrays
+        npz_files = sorted(ckpt_dir.glob("*.npz"))
+        if not npz_files:
+            raise FileNotFoundError(f"No .npz in {ckpt_dir}")
+        npz_path = npz_files[-1]
+        d = np.load(npz_path, allow_pickle=True)
+        coords_orig = d["coords"]
+        if "p_real" in d and "p_imag" in d:
+            p_complex = d["p_real"].astype(np.float64) + 1j * d["p_imag"].astype(np.float64)
+        else:
+            p_complex = d["p"].astype(np.complex128)
+        log(f"  Loaded {npz_path.name}: {len(p_complex)} DOFs")
+
+        if len(p_complex) != self.n_dofs:
+            raise ValueError(f"DOF count mismatch: npz={len(p_complex)}, mesh={self.n_dofs}")
+
+        # Match DOF ordering
+        max_shift = float(np.max(np.linalg.norm(dof_coords_new - coords_orig, axis=1)))
+        if max_shift < 1e-12:
+            p_r_arr = np.real(p_complex)
+            p_i_arr = np.imag(p_complex)
+            log("  DOF ordering: identical (direct assignment)")
+        else:
+            log(f"  DOF ordering differs (max shift {max_shift:.2e}m) — KD-tree matching ...")
+            tree_orig = KDTree(coords_orig)
+            dists, indices = tree_orig.query(dof_coords_new, k=1, workers=-1)
+            if float(np.max(dists)) > 1e-9:
+                raise ValueError(f"KD-tree max dist = {np.max(dists):.2e} > 1e-9")
+            p_r_arr = np.real(p_complex[indices])
+            p_i_arr = np.imag(p_complex[indices])
+            log(f"  KD-tree match OK (max dist {np.max(dists):.2e}m)")
+
+        self.p_real_func = fem.Function(self.V)
+        self.p_real_func.x.array[:] = p_r_arr
+        self.p_imag_func = fem.Function(self.V)
+        self.p_imag_func.x.array[:] = p_i_arr
+
+        max_mag = float(np.max(np.sqrt(p_r_arr**2 + p_i_arr**2)))
+        log(f"  max|p| = {max_mag:.4f} Pa")
+
+        # Build bounding-box tree once
+        self.tree = self._bb_tree_fn(self.domain, self.domain.topology.dim)
+        log("  BoundingBoxTree built")
+
+    def eval_points(self, pts: np.ndarray) -> np.ndarray:
+        """
+        Evaluate complex pressure at an (N, 3) array of 3D points using
+        true FEM basis-function interpolation.
+
+        Returns complex128 array of shape (N,).
+        """
+        pts = np.ascontiguousarray(pts, dtype=np.float64)
+        n = len(pts)
+        result = np.zeros(n, dtype=np.complex128)
+
+        cands = self._collisions_fn(self.tree, pts)
+        cells = self._colliding_fn(self.domain, cands, pts)
+
+        for i in range(n):
+            links = cells.links(i)
+            if len(links) == 0:
+                result[i] = np.nan
+                continue
+            pr = float(self.p_real_func.eval(pts[i], links[0])[0])
+            pi = float(self.p_imag_func.eval(pts[i], links[0])[0])
+            result[i] = pr + 1j * pi
+
+        return result
 
 
-def find_latest_cache(d: Path) -> Path:
-    fs = sorted(d.glob("*.npz"), key=lambda p: p.stat().st_mtime)
-    if not fs:
-        raise FileNotFoundError(f"No .npz in {d}")
-    return fs[-1]
-
-
-def sample_idw(tree, p, pts, k=16, power=2.0, eps=1e-12):
-    if k == 1:
-        d, i = tree.query(pts, k=1)
-        return p[i]
-    d, i = tree.query(pts, k=k)
-    w = 1.0 / (d**power + eps)
-    w /= w.sum(axis=1, keepdims=True)
-    return (p[i] * w).sum(axis=1)
-
-
-def interpolate_fem_to_grid(tree, p_fem, xg, yg, z_val):
+def interpolate_fem_to_grid(fem_eval: FEMEvaluator, xg, yg, z_val):
     XX, YY = np.meshgrid(xg, yg)
     pts_3d = np.column_stack([XX.ravel(), YY.ravel(),
                               np.full(XX.size, z_val)])
-    p_flat = sample_idw(tree, p_fem, pts_3d, k=K_IDW)
+    p_flat = fem_eval.eval_points(pts_3d)
     return p_flat.reshape(XX.shape)
 
 
@@ -249,7 +322,7 @@ def compute_local_depth(U, xg, yg, iy, ix, search_radius_pts=15):
 # Full pipeline with stage-by-stage attrition reporting
 # ═══════════════════════════════════════════════════════════════════
 
-def run_pipeline_with_attrition(tree, p_fem, xg, yg, z_val, label="",
+def run_pipeline_with_attrition(fem_eval, xg, yg, z_val, label="",
                                  force_thresholds=(0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.0)):
     """
     Run the full trap detection pipeline, logging every filtering stage.
@@ -265,9 +338,9 @@ def run_pipeline_with_attrition(tree, p_fem, xg, yg, z_val, label="",
     ngrid = len(xg)
 
     # ── Interpolate ──
-    p_grid = interpolate_fem_to_grid(tree, p_fem, xg, yg, z_val)
-    p_zp = interpolate_fem_to_grid(tree, p_fem, xg, yg, z_val + DZ_GRAD)
-    p_zm = interpolate_fem_to_grid(tree, p_fem, xg, yg, z_val - DZ_GRAD)
+    p_grid = interpolate_fem_to_grid(fem_eval, xg, yg, z_val)
+    p_zp = interpolate_fem_to_grid(fem_eval, xg, yg, z_val + DZ_GRAD)
+    p_zm = interpolate_fem_to_grid(fem_eval, xg, yg, z_val - DZ_GRAD)
 
     # ── Gor'kov and force ──
     U, Fx, Fy, grad_p_mag2 = gorkov_and_force_on_grid(
@@ -493,7 +566,7 @@ def run_pipeline_with_attrition(tree, p_fem, xg, yg, z_val, label="",
 # Test 1: Z-plane dense sweep
 # ═══════════════════════════════════════════════════════════════════
 
-def run_zplane_dense_sweep(tree, p_fem, ngrid, roi_half,
+def run_zplane_dense_sweep(fem_eval, ngrid, roi_half,
                             dz_fracs=None):
     """
     Dense z-plane sweep from -0.12λ to +0.12λ in 0.01λ steps.
@@ -509,7 +582,7 @@ def run_zplane_dense_sweep(tree, p_fem, ngrid, roi_half,
     for dz_frac in dz_fracs:
         z_val = Z_STAR + dz_frac * LAM
         r = run_pipeline_with_attrition(
-            tree, p_fem, xg, yg, z_val,
+            fem_eval, xg, yg, z_val,
             label=f"z={dz_frac:+.2f}λ")
         results.append({
             "dz_frac": float(dz_frac),
@@ -541,14 +614,14 @@ def run_zplane_dense_sweep(tree, p_fem, ngrid, roi_half,
 # Test 2: Resolution convergence with robust matching
 # ═══════════════════════════════════════════════════════════════════
 
-def run_resolution_convergence(tree, p_fem, z_val, roi_half,
+def run_resolution_convergence(fem_eval, z_val, roi_half,
                                 ngrids=(100, 150, 200, 300, 400, 600, 800)):
     """Run pipeline at many resolutions, cross-match traps."""
     results = []
     for ngrid in ngrids:
         xg = np.linspace(CX - roi_half, CX + roi_half, ngrid)
         yg = np.linspace(CY - roi_half, CY + roi_half, ngrid)
-        r = run_pipeline_with_attrition(tree, p_fem, xg, yg, z_val,
+        r = run_pipeline_with_attrition(fem_eval, xg, yg, z_val,
                                          label=f"N={ngrid}")
         results.append(r)
         log(f"  N={ngrid}: dx={r['dx_um']:.1f}µm, "
@@ -560,7 +633,7 @@ def run_resolution_convergence(tree, p_fem, z_val, roi_half,
 # Test 3: DZ_GRAD sensitivity
 # ═══════════════════════════════════════════════════════════════════
 
-def run_dz_grad_sensitivity(tree, p_fem, ngrid, roi_half, z_val):
+def run_dz_grad_sensitivity(fem_eval, ngrid, roi_half, z_val):
     """
     Test how DZ_GRAD (z-gradient offset) affects trap detection.
     Sweep DZ_GRAD from λ/50 to λ/5.
@@ -570,14 +643,14 @@ def run_dz_grad_sensitivity(tree, p_fem, ngrid, roi_half, z_val):
     dx = xg[1] - xg[0]
     dy = yg[1] - yg[0]
 
-    p_grid = interpolate_fem_to_grid(tree, p_fem, xg, yg, z_val)
+    p_grid = interpolate_fem_to_grid(fem_eval, xg, yg, z_val)
     dz_fracs = [1/50, 1/30, 1/20, 1/15, 1/10, 1/7, 1/5]
 
     results = []
     for dz_frac in dz_fracs:
         dz = dz_frac * LAM
-        p_zp = interpolate_fem_to_grid(tree, p_fem, xg, yg, z_val + dz)
-        p_zm = interpolate_fem_to_grid(tree, p_fem, xg, yg, z_val - dz)
+        p_zp = interpolate_fem_to_grid(fem_eval, xg, yg, z_val + dz)
+        p_zm = interpolate_fem_to_grid(fem_eval, xg, yg, z_val - dz)
         U, Fx, Fy, gpm2 = gorkov_and_force_on_grid(p_grid, dx, dy,
                                                      p_zp=p_zp, p_zm=p_zm, dz=dz)
         F_mag = np.sqrt(Fx**2 + Fy**2)
@@ -1024,7 +1097,7 @@ def plot_dz_grad_sensitivity(dz_results, fig_dir):
     plt.close(fig)
 
 
-def plot_zplane_anomaly_detail(tree, p_fem, fig_dir, ngrid=400, roi_half=None):
+def plot_zplane_anomaly_detail(fem_eval, fig_dir, ngrid=400, roi_half=None):
     """
     Figure 6: Detailed comparison of z-planes near the anomaly (+0.05λ).
     Show the U field, candidates, and force field for -0.01, 0.0, +0.04,
@@ -1040,7 +1113,7 @@ def plot_zplane_anomaly_detail(tree, p_fem, fig_dir, ngrid=400, roi_half=None):
 
     for col, dz_frac in enumerate(offsets):
         z_val = Z_STAR + dz_frac * LAM
-        r = run_pipeline_with_attrition(tree, p_fem, xg, yg, z_val,
+        r = run_pipeline_with_attrition(fem_eval, xg, yg, z_val,
                                          label=f"z={dz_frac:+.2f}λ")
         ext = np.array([xg[0], xg[-1], yg[0], yg[-1]]) * 1e3
 
@@ -1395,19 +1468,18 @@ def main():
     log(f"Trap Localisation Debug Study — Standing Wave Only — {timestamp}")
     log(f"Output: {out_dir}")
 
-    # Load FEM cache
-    cache_path = find_latest_cache(STANDING_CACHE_DIR)
-    coords, p_fem = load_fem_cache(cache_path)
-    tree = cKDTree(coords)
-    n_dofs = len(p_fem)
-    log(f"FEM cache: {cache_path.name}  ({n_dofs} DOFs)")
+    # Load FEM checkpoint (mesh + P2 fields)
+    log(f"Loading FEM checkpoint: {CHECKPOINT_DIR}")
+    fem_eval = FEMEvaluator(CHECKPOINT_DIR)
+    n_dofs = fem_eval.n_dofs
     log(f"z* = {Z_STAR * 1e3:.4f} mm")
     log(f"λ = {LAM * 1e3:.4f} mm, λ/2 = {TRAP_SP * 1e3:.4f} mm")
     log(f"DZ_GRAD = {DZ_GRAD * 1e6:.1f} µm = λ/{LAM/DZ_GRAD:.0f}")
 
     config = {
         "timestamp": timestamp,
-        "cache_path": str(cache_path),
+        "checkpoint_dir": str(CHECKPOINT_DIR),
+        "interpolation": "FEM_P2_eval",
         "n_dofs": n_dofs,
         "z_star_mm": Z_STAR * 1e3,
         "lambda_mm": LAM * 1e3,
@@ -1424,7 +1496,7 @@ def main():
     log("\n═══ Test 1: Baseline attrition (N=400) ═══")
     xg_400 = np.linspace(CX - ROI_HALF, CX + ROI_HALF, 400)
     yg_400 = np.linspace(CY - ROI_HALF, CY + ROI_HALF, 400)
-    baseline = run_pipeline_with_attrition(tree, p_fem, xg_400, yg_400,
+    baseline = run_pipeline_with_attrition(fem_eval, xg_400, yg_400,
                                             Z_STAR, label="baseline_N400")
     log(f"Baseline: {len(baseline['accepted'])} accepted, "
         f"{len(baseline['rejected'])} rejected")
@@ -1441,7 +1513,7 @@ def main():
     # Test 2: Z-plane dense sweep
     # ══════════════════════════════════════════════════════════════
     log("\n═══ Test 2: Z-plane dense sweep ═══")
-    zplane_results = run_zplane_dense_sweep(tree, p_fem, 400, ROI_HALF)
+    zplane_results = run_zplane_dense_sweep(fem_eval, 400, ROI_HALF)
 
     # Write z-plane CSV
     zp_fields = ["dz_frac", "z_mm", "n_raw", "n_after_boundary",
@@ -1458,7 +1530,7 @@ def main():
     # ══════════════════════════════════════════════════════════════
     log("\n═══ Test 3: Resolution convergence ═══")
     res_results = run_resolution_convergence(
-        tree, p_fem, Z_STAR, ROI_HALF,
+        fem_eval, Z_STAR, ROI_HALF,
         ngrids=(100, 150, 200, 300, 400, 600, 800))
 
     # Write convergence CSV
@@ -1475,7 +1547,7 @@ def main():
     # Test 4: DZ_GRAD sensitivity
     # ══════════════════════════════════════════════════════════════
     log("\n═══ Test 4: DZ_GRAD sensitivity ═══")
-    dz_results = run_dz_grad_sensitivity(tree, p_fem, 400, ROI_HALF, Z_STAR)
+    dz_results = run_dz_grad_sensitivity(fem_eval, 400, ROI_HALF, Z_STAR)
 
     # ══════════════════════════════════════════════════════════════
     # Test 5: Force criterion analysis
@@ -1517,7 +1589,7 @@ def main():
     plot_u_comparison_with_without_z(baseline, fig_dir, prefix="baseline")
     log("  u_with_vs_without_z_baseline.png")
 
-    plot_zplane_anomaly_detail(tree, p_fem, fig_dir)
+    plot_zplane_anomaly_detail(fem_eval, fig_dir)
     log("  zplane_anomaly_detail.png")
 
     # ══════════════════════════════════════════════════════════════
