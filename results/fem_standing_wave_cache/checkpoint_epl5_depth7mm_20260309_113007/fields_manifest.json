@@ -1,0 +1,13 @@
+{
+  "fields": [
+    "p_real",
+    "p_imag",
+    "p_mag",
+    "p_phase"
+  ],
+  "mesh": "mesh.xdmf",
+  "dofs_p2": 623295,
+  "element_order_source": 2,
+  "element_order_xdmf": 1,
+  "notes": "XDMF fields are P1 interpolations (for ParaView). Full P2 accuracy is preserved in the .npz DOF-scatter cache. Reload path: mesh.xdmf + .npz DOF arrays -> P2 Function -> eval()."
+}

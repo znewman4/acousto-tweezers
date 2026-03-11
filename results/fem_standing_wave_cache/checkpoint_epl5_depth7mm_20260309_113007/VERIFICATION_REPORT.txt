@@ -1,0 +1,94 @@
+========================================================================
+FEM STANDING WAVE CHECKPOINT — Stage B (epl=5)
+========================================================================
+Timestamp  : 20260309_113007
+Output dir : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl5_depth7mm_20260309_113007
+λ          : 0.7420 mm
+
+z*         : 6.186 mm
+H_under    : 5.0000 mm
+H_top      : 2.0000 mm
+H_total    : 7.0000 mm
+
+Domain      : 6.0 × 6.0 × 7.0000 mm
+Standing V  : 10.0 µm/s, pattern=antiphase, axis=both
+Disk V      : 0.0 m/s  [OFF]
+Mesh (hex)  : 40 × 40 × 47
+Est. DOFs   : 623,295
+
+────────────────────────────────────────────────────────────────────────
+STEP 1  FEM solve + XDMF export
+────────────────────────────────────────────────────────────────────────
+  DOFs          : 623,295
+  Mesh time     : 0.7s
+  Solve time    : 95.5s
+  Total wall    : 96.9s  (mesh + solve + export)
+  max|p|        : 74.0108 Pa
+  KSP reason    : 4
+  KSP residual  : 0.00e+00
+
+  Checkpoint files: all 11 expected files present
+
+────────────────────────────────────────────────────────────────────────
+STEP 2  .npz DOF scatter cache
+────────────────────────────────────────────────────────────────────────
+  Saved: /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl5_depth7mm_20260309_113007/standing_wave_epl5.npz
+  Saved INFO: /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl5_depth7mm_20260309_113007/standing_wave_epl5_INFO.txt
+
+  Config JSON    : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl5_depth7mm_20260309_113007/config.json
+  Solver report  : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl5_depth7mm_20260309_113007/solver_report.json
+
+────────────────────────────────────────────────────────────────────────
+STEP 3  Slice figure
+────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────
+STEP 4  Reload + eval verification
+────────────────────────────────────────────────────────────────────────
+
+VERIFICATION
+────────────────────────────────────────────────────────────
+  Strategy: mesh.xdmf → P2 FunctionSpace + .npz DOF arrays → eval()
+  Mesh reload OK  (topology_dim=3, t=0.91s)
+  P2 DOFs after reload: 623295
+  Checking DOF coordinate ordering …
+  Max coordinate shift (orig → reload): 0.00e+00 m
+  DOF ordering: identical ✓  (direct assignment)
+  max|p_real| (reloaded) = 71.1080 Pa
+  max|p_imag| (reloaded) = 69.8817 Pa
+  max|p|      (reloaded) = 74.0108 Pa
+  NaN check: PASSED
+
+    x(mm)   y(mm)   z(mm)     |p|(Pa)   Re(p)(Pa)  status
+     3.00    3.00    6.19      0.7807     -0.4048  OK
+     0.50    0.50    6.19     17.6866     13.0403  OK
+     3.00    3.00    6.00      0.9346     -0.4025  OK
+     1.00    1.00    4.50     12.6212    -12.4984  OK
+     3.00    3.00    2.50      1.0418      0.6579  OK
+
+  DOF cross-check: eval(DOF_coord) vs original solve value
+   DOF_idx    |p|_orig    |p|_eval    rel_err  status
+     55629    1.104816    1.104816   4.02e-16  OK
+    482402   30.141036   30.141036   3.18e-15  OK
+    407991   16.257785   16.257785   1.31e-15  OK
+    273550    6.562503    6.562503   2.71e-16  OK
+    269896    8.855468    8.855468   1.81e-15  OK
+    535159    0.002793    0.002793   1.44e-12  OK
+     53569    1.705419    1.705419   4.56e-15  OK
+    434666    7.207278    7.207278   4.19e-15  OK
+    125574   12.529041   12.529041   1.56e-15  OK
+     58700    0.495587    0.495587   2.35e-15  OK
+
+  Verification: PASSED
+
+════════════════════════════════════════════════════════════════════════
+STAGE A RESULT SUMMARY
+════════════════════════════════════════════════════════════════════════
+  epl                : 5
+  DOFs               : 623,295
+  Solve time         : 95.5s
+  Total wall time    : 96.9s
+  max|p|             : 74.0108 Pa
+  Checkpoint dir     : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl5_depth7mm_20260309_113007
+  Verification       : PASSED ✓
+  Ready for epl=6    : YES

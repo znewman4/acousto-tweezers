@@ -1,0 +1,16 @@
+{
+  "stage": "B",
+  "elements_per_wavelength": 5,
+  "dofs": 623295,
+  "mesh_nx": 40,
+  "mesh_ny": 40,
+  "mesh_nz": 47,
+  "mesh_time_s": 0.6893548965454102,
+  "solver_time_s": 95.4632499217987,
+  "total_wall_time_s": 96.90475296974182,
+  "max_pressure_Pa": 74.01080245114464,
+  "ksp_converged_reason": 4,
+  "ksp_iterations": 1,
+  "ksp_residual_norm": 0.0,
+  "timestamp": "20260309_113007"
+}

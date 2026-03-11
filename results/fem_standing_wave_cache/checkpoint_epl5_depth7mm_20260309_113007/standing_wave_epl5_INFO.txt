@@ -1,0 +1,9 @@
+FEM Standing-Wave Cache
+========================
+Created       : 20260309_113007
+elem/λ        : 5
+DOFs          : 623295
+Solve time    : 95.5s
+Total time    : 96.9s
+max|p|        : 74.0108 Pa
+Checkpoint dir: /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl5_depth7mm_20260309_113007

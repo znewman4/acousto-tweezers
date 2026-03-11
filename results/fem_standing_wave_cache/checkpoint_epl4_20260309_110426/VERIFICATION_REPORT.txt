@@ -1,0 +1,90 @@
+========================================================================
+FEM STANDING WAVE CHECKPOINT — Stage A (epl=4)
+========================================================================
+Timestamp  : 20260309_110426
+Output dir : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl4_20260309_110426
+λ          : 0.7420 mm
+z*         : 4.190 mm
+
+Domain      : 6.0 × 6.0 × 5.0085 mm
+Standing V  : 10.0 µm/s, pattern=antiphase, axis=both
+Disk V      : 0.0 m/s  [OFF]
+Mesh (hex)  : 32 × 32 × 27
+Est. DOFs   : 232,375
+
+────────────────────────────────────────────────────────────────────────
+STEP 1  FEM solve + XDMF export
+────────────────────────────────────────────────────────────────────────
+  DOFs          : 232,375
+  Mesh time     : 0.2s
+  Solve time    : 18.0s
+  Total wall    : 18.6s  (mesh + solve + export)
+  max|p|        : 59.8676 Pa
+  KSP reason    : 4
+  KSP residual  : 0.00e+00
+
+  Checkpoint files: all 11 expected files present
+
+────────────────────────────────────────────────────────────────────────
+STEP 2  .npz DOF scatter cache
+────────────────────────────────────────────────────────────────────────
+  Saved: /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl4_20260309_110426/standing_wave_epl4.npz
+  Saved INFO: /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl4_20260309_110426/standing_wave_epl4_INFO.txt
+
+  Config JSON    : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl4_20260309_110426/config.json
+  Solver report  : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl4_20260309_110426/solver_report.json
+
+────────────────────────────────────────────────────────────────────────
+STEP 3  Slice figure
+────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────
+STEP 4  Reload + eval verification
+────────────────────────────────────────────────────────────────────────
+
+VERIFICATION
+────────────────────────────────────────────────────────────
+  Strategy: mesh.xdmf → P2 FunctionSpace + .npz DOF arrays → eval()
+  Mesh reload OK  (topology_dim=3, t=0.27s)
+  P2 DOFs after reload: 232375
+  Checking DOF coordinate ordering …
+  Max coordinate shift (orig → reload): 0.00e+00 m
+  DOF ordering: identical ✓  (direct assignment)
+  max|p_real| (reloaded) = 45.9419 Pa
+  max|p_imag| (reloaded) = 59.0954 Pa
+  max|p|      (reloaded) = 59.8676 Pa
+  NaN check: PASSED
+
+    x(mm)   y(mm)   z(mm)     |p|(Pa)   Re(p)(Pa)  status
+     3.00    3.00    4.19      1.3937     -0.7981  OK
+     0.50    0.50    4.19     28.3085      7.3795  OK
+     3.00    3.00    4.00      2.1436     -1.9885  OK
+     1.00    1.00    3.50     39.1515     14.9315  OK
+     3.00    3.00    1.50      3.9069      3.7136  OK
+
+  DOF cross-check: eval(DOF_coord) vs original solve value
+   DOF_idx    |p|_orig    |p|_eval    rel_err  status
+     20739   16.023291   16.023291   6.65e-16  OK
+    179848    1.934828    1.934828   4.36e-15  OK
+    152106   27.323162   27.323162   9.62e-15  OK
+    101984   24.707461   24.707461   1.44e-16  OK
+    100621   18.768927   18.768927   5.11e-15  OK
+    199516    6.821084    6.821084   0.00e+00  OK
+     19971    1.275027    1.275027   6.97e-16  OK
+    162050   14.019693   14.019693   4.31e-15  OK
+     46816   12.031874   12.031874   7.38e-16  OK
+     21884    0.964066    0.964066   3.69e-14  OK
+
+  Verification: PASSED
+
+════════════════════════════════════════════════════════════════════════
+STAGE A RESULT SUMMARY
+════════════════════════════════════════════════════════════════════════
+  epl                : 4
+  DOFs               : 232,375
+  Solve time         : 18.0s
+  Total wall time    : 18.6s
+  max|p|             : 59.8676 Pa
+  Checkpoint dir     : /home/js23252/Desktop/acousto-tweezers/results/fem_standing_wave_cache/checkpoint_epl4_20260309_110426
+  Verification       : PASSED ✓
+  Ready for epl=6    : YES
