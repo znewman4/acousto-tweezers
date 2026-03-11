@@ -7,6 +7,7 @@ __pycache__/
 
 # Data / results (heavy outputs live in OneDrive, not the repo)
 results/
+Deliverables/
 *.npz
 *.csv
 
