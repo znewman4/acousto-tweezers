@@ -32,6 +32,7 @@ Outputs → results/c_shape_transport_refinement_study_<TS>/
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import itertools
 import json
@@ -103,7 +104,8 @@ T_RAMP_DOWN = 0.200       # 200 ms
 T_SETTLE    = 0.300       # 300 ms
 T_TOTAL     = T_RAMP_UP + T_HOLD + T_RAMP_DOWN + T_SETTLE
 DT          = 1.0e-4      # 0.1 ms
-N_FRAMES    = 150
+N_FRAMES    = 240
+GIF_DURATION_MS = 60
 
 CAPTURE_RADIUS = 0.30 * TRAP_SP
 TRAP_TOLERANCE = 0.50 * TRAP_SP
@@ -125,32 +127,96 @@ WINDOW_LABELS = ["medium_0.60", "wider_1.00", "full_lens"]
 TRANSLATION_MODES = ["static"]
 
 # Part C: minimum SW scaling
-BETA_SW_MIN_VALUES = [0.0, 0.2, 0.3, 0.4, 0.5, 0.6]
+BETA_SW_MIN_VALUES = [0.20, 0.25, 0.28, 0.30, 0.32, 0.35, 0.38, 0.40]
 
-# Part extra: alpha boost for windowed variants
-ALPHA_BY_WINDOW = {
-    "medium_0.60": 12.0,
-    "wider_1.00": 6.0,
-    "full_lens": 5.0,
+# Part extra: alpha sweep per field family
+ALPHA_OPTIONS_BY_WINDOW = {
+    "medium_0.60": [12.0],
+    "wider_1.00": [6.0],
+    "full_lens": [4.5, 4.6, 4.7, 4.8, 4.9, 5.0],
+}
+
+TRANSLATION_MODES_BY_WINDOW = {
+    "medium_0.60": ["static", "moving"],
+    "wider_1.00": ["static", "moving"],
+    "full_lens": ["static"],
 }
 
 # Part D-extra: ramp time variants
-# The baseline uses 200ms ramps — we also test slower
+# The best previous protocol was the fast schedule; keep the sweep tight.
 RAMP_VARIANTS = [
     {"label": "fast", "ramp_up": 0.200, "hold": 0.100, "ramp_down": 0.200, "settle": 0.300},
-    {"label": "slow", "ramp_up": 0.400, "hold": 0.100, "ramp_down": 0.400, "settle": 0.300},
 ]
 
 # ═══════════════════════════════════════════════════════════════════
 # Output
 # ═══════════════════════════════════════════════════════════════════
 TS = datetime.now().strftime("%Y%m%d_%H%M%S")
-OUT_DIR = PROJECT_ROOT / "results" / f"c_shape_transport_refinement_study_{TS}"
+RUN_STEM = "c_shape_transport_refinement_study"
+OUT_DIR = PROJECT_ROOT / "results" / f"{RUN_STEM}_{TS}"
 FIG_DIR = OUT_DIR / "figures"
 NPZ_DIR = OUT_DIR / "npz"
 GIF_DIR = OUT_DIR / "gif"
-for d in [OUT_DIR, FIG_DIR, NPZ_DIR, GIF_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
+
+
+def _configure_output_dirs(output_dir: Path | None = None) -> None:
+    global OUT_DIR, FIG_DIR, NPZ_DIR, GIF_DIR
+    if output_dir is None:
+        OUT_DIR = PROJECT_ROOT / "results" / f"{RUN_STEM}_{TS}"
+    else:
+        OUT_DIR = Path(output_dir)
+    FIG_DIR = OUT_DIR / "figures"
+    NPZ_DIR = OUT_DIR / "npz"
+    GIF_DIR = OUT_DIR / "gif"
+    for d in [OUT_DIR, FIG_DIR, NPZ_DIR, GIF_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+
+
+_configure_output_dirs()
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the C-shape transport refinement search.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Optional fixed output directory for reproducible reruns.",
+    )
+    parser.add_argument(
+        "--n-frames",
+        type=int,
+        default=N_FRAMES,
+        help="Number of stored/rendered frames for the best and baseline GIFs.",
+    )
+    parser.add_argument(
+        "--gif-duration-ms",
+        type=int,
+        default=GIF_DURATION_MS,
+        help="GIF frame duration in milliseconds.",
+    )
+    return parser.parse_args()
+
+
+def _rank_key(result: dict) -> tuple:
+    metrics = result["metrics"]
+    classification = str(metrics["classification"])
+    if classification == "successful_merge":
+        class_rank = 0
+    elif bool(metrics["A_in_capture_region"]) and bool(metrics["B_stayed_in_trap"]):
+        class_rank = 1
+    elif bool(metrics["A_in_capture_region"]):
+        class_rank = 2
+    elif classification == "partial_success":
+        class_rank = 3
+    else:
+        class_rank = 4
+    return (
+        class_rank,
+        bool(metrics.get("any_neighbour_escaped", False)),
+        float(metrics["max_neighbour_disp_um"]),
+        float(metrics["d_AB_final_um"]),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -531,15 +597,15 @@ def simulate_particles(p_sw, p_lens_roi, xg, yg, traps_m,
                     if t < t_active and b2 > 0:
                         blo = basis_cache[idx_lo]
                         bhi = basis_cache[idx_hi]
-                        U = (b1**2 * (w_lo*blo[6]+w_hi*bhi[6])
-                             + b2**2 * (w_lo*blo[7]+w_hi*bhi[7])
-                             + 2*b1*b2 * (w_lo*blo[8]+w_hi*bhi[8]))
-                        Fx = (b1**2 * (w_lo*blo[0]+w_hi*bhi[0])
-                              + b2**2 * (w_lo*blo[2]+w_hi*bhi[2])
-                              + 2*b1*b2 * (w_lo*blo[4]+w_hi*bhi[4]))
-                        Fy = (b1**2 * (w_lo*blo[1]+w_hi*bhi[1])
-                              + b2**2 * (w_lo*blo[3]+w_hi*bhi[3])
-                              + 2*b1*b2 * (w_lo*blo[5]+w_hi*bhi[5]))
+                        U = (b1**2 * (w_lo * blo[6] + w_hi * bhi[6])
+                             + b2**2 * (w_lo * blo[7] + w_hi * bhi[7])
+                             + 2 * b1 * b2 * (w_lo * blo[8] + w_hi * bhi[8]))
+                        Fx = (b1**2 * (w_lo * blo[0] + w_hi * bhi[0])
+                              + b2**2 * (w_lo * blo[2] + w_hi * bhi[2])
+                              + 2 * b1 * b2 * (w_lo * blo[4] + w_hi * bhi[4]))
+                        Fy = (b1**2 * (w_lo * blo[1] + w_hi * bhi[1])
+                              + b2**2 * (w_lo * blo[3] + w_hi * bhi[3])
+                              + 2 * b1 * b2 * (w_lo * blo[5] + w_hi * bhi[5]))
                     else:
                         U = basis_cache[0][6]
                         Fx = basis_cache[0][0]
@@ -985,88 +1051,265 @@ def plot_heatmap(all_results):
             print(f"[save] heatmap_{tm}_{rl}.png")
 
 
-def render_gif(sim, xg, yg, traps_m, idx_A, idx_B, filename):
-    """Render GIF for a simulation result (requires stored fields)."""
-    traj = sim["trajectories"]
-    times_ms = sim["times"] * 1e3
-    alphas = sim["alphas"]
-    U_frames = sim["U_frames"]
-    Fx_frames = sim["Fx_frames"]
-    Fy_frames = sim["Fy_frames"]
+def _cshape_phase_label(t_ms: float) -> str:
+    t = float(t_ms)
+    t_up = T_RAMP_UP * 1e3
+    t_hold = (T_RAMP_UP + T_HOLD) * 1e3
+    t_down = (T_RAMP_UP + T_HOLD + T_RAMP_DOWN) * 1e3
+    if t < t_up:
+        return "1) lens ramp-on"
+    if t < t_hold:
+        return "2) lens hold"
+    if t < t_down:
+        return "3) lens ramp-off"
+    return "4) standing-wave settle"
 
-    if U_frames is None or len(U_frames) == 0:
-        print(f"[gif] No stored fields for {filename}, skipping")
+
+def _cshape_pressure_components(p_sw, p_lens_roi, xg, yg,
+                                beta_sw, beta_lens, centre_xy,
+                                window_sigma):
+    if window_sigma is not None:
+        p_lens_eff, _ = apply_spatial_window(p_lens_roi, xg, yg,
+                                             np.asarray(centre_xy, dtype=float),
+                                             float(window_sigma))
+    else:
+        p_lens_eff = p_lens_roi
+    p_lens_eff = np.exp(1j * PSI) * p_lens_eff
+    p_total = float(beta_sw) * p_sw + float(beta_lens) * p_lens_eff
+    return np.abs(p_total), np.abs(p_total - p_sw)
+
+
+def _cshape_pressure_limits(p_sw, p_lens_roi, xg, yg,
+                            betas_sw, alphas, centres,
+                            window_sigma, sample_count=18):
+    n = int(len(alphas))
+    if n == 0:
+        return 0.0, 1.0, 1.0
+
+    if n <= sample_count:
+        idx = np.arange(n, dtype=int)
+    else:
+        idx = np.unique(np.linspace(0, n - 1, sample_count).astype(int))
+
+    abs_vmin = float("inf")
+    abs_vmax = 0.0
+    delta_vmax = 0.0
+
+    for k in idx:
+        total_abs, delta_abs = _cshape_pressure_components(
+            p_sw,
+            p_lens_roi,
+            xg,
+            yg,
+            betas_sw[k],
+            alphas[k],
+            centres[k],
+            window_sigma,
+        )
+        abs_vmin = min(abs_vmin, float(np.percentile(total_abs, 1.0)))
+        abs_vmax = max(abs_vmax, float(np.percentile(total_abs, 99.5)))
+        delta_vmax = max(delta_vmax, float(np.percentile(delta_abs, 99.5)))
+
+    if not np.isfinite(abs_vmin):
+        abs_vmin = float(np.percentile(np.abs(p_sw), 1.0))
+    if abs_vmax <= abs_vmin:
+        abs_vmax = abs_vmin + 1.0
+    if delta_vmax <= 0.0:
+        delta_vmax = 1.0
+    return abs_vmin, abs_vmax, delta_vmax
+
+
+def render_gif(sim, p_sw, p_lens_roi, xg, yg, traps_m,
+               idx_A, idx_B, window_sigma, filename):
+    """Render C-shape GIF using the same two-panel pressure style as vortex deliverables."""
+    traj = np.asarray(sim["trajectories"], dtype=float)
+    times_ms = np.asarray(sim["times"], dtype=float) * 1e3
+    alphas = np.asarray(sim["alphas"], dtype=float)
+    betas_sw = np.asarray(sim["betas_sw"], dtype=float)
+    centres = np.asarray(sim["centres"], dtype=float)
+
+    n_frames = min(len(traj), len(times_ms), len(alphas), len(betas_sw), len(centres))
+    if n_frames == 0:
+        print(f"[gif] No frames for {filename}, skipping")
         return None
 
-    n_frames = len(U_frames)
     print(f"\n[gif] Rendering {n_frames} frames for {filename}...")
 
-    U_all_min = min(U.min() for U in U_frames)
-    U_all_max = max(U.max() for U in U_frames)
+    abs_vmin, abs_vmax, delta_vmax = _cshape_pressure_limits(
+        p_sw,
+        p_lens_roi,
+        xg,
+        yg,
+        betas_sw[:n_frames],
+        alphas[:n_frames],
+        centres[:n_frames],
+        window_sigma,
+    )
 
     frames_images = []
-    xg_mm = xg * 1e3
-    yg_mm = yg * 1e3
-    ext = [xg_mm[0], xg_mm[-1], yg_mm[0], yg_mm[-1]]
+    diag_rows = []
+
+    ext = [xg[0] * 1e3, xg[-1] * 1e3, yg[0] * 1e3, yg[-1] * 1e3]
+    midpoint = 0.5 * (traps_m[idx_A] + traps_m[idx_B])
+    neigh_idx = np.array([i for i in range(len(traps_m))
+                          if i not in (idx_A, idx_B)], dtype=int)
+    A0 = traps_m[idx_A]
+    B0 = traps_m[idx_B]
+    window_radius_mm = float(window_sigma * 1e3) if window_sigma is not None else 0.0
+
+    prev_total = None
+    prev_delta = None
 
     for fi in range(n_frames):
-        fig, ax = plt.subplots(1, 1, figsize=(7, 6))
+        total_abs, delta_abs = _cshape_pressure_components(
+            p_sw,
+            p_lens_roi,
+            xg,
+            yg,
+            betas_sw[fi],
+            alphas[fi],
+            centres[fi],
+            window_sigma,
+        )
 
-        im = ax.imshow(U_frames[fi], origin="lower", extent=ext,
-                       cmap="RdBu_r", aspect="equal",
-                       vmin=U_all_min, vmax=U_all_max)
+        cur = traj[fi]
+        A_path = traj[:fi + 1, idx_A, :]
+        B_path = traj[:fi + 1, idx_B, :]
 
-        for i, t in enumerate(traps_m):
-            ax.plot(t[0]*1e3, t[1]*1e3, "+", color="0.6", ms=5,
-                    mew=0.5, zorder=3)
+        if fi == 0:
+            dA_step_um = 0.0
+            dB_step_um = 0.0
+            dcentre_step_um = 0.0
+            dtotal_mean = 0.0
+            ddelta_mean = 0.0
+        else:
+            dA_step_um = float(np.linalg.norm(traj[fi, idx_A] - traj[fi - 1, idx_A]) * 1e6)
+            dB_step_um = float(np.linalg.norm(traj[fi, idx_B] - traj[fi - 1, idx_B]) * 1e6)
+            dcentre_step_um = float(np.linalg.norm(centres[fi] - centres[fi - 1]) * 1e6)
+            dtotal_mean = float(np.mean(np.abs(total_abs - prev_total)))
+            ddelta_mean = float(np.mean(np.abs(delta_abs - prev_delta)))
 
-        if fi > 0:
-            tA = traj[:fi+1, idx_A, :] * 1e3
-            ax.plot(tA[:, 0], tA[:, 1], "-", color="red", lw=1.0,
-                    alpha=0.5, zorder=6)
-            tB = traj[:fi+1, idx_B, :] * 1e3
-            ax.plot(tB[:, 0], tB[:, 1], "-", color="blue", lw=0.8,
-                    alpha=0.5, zorder=6)
+        diag_rows.append({
+            "frame": fi,
+            "time_ms": float(times_ms[fi]),
+            "phase": _cshape_phase_label(times_ms[fi]),
+            "beta_sw": float(betas_sw[fi]),
+            "beta_lens": float(alphas[fi]),
+            "A_step_um": dA_step_um,
+            "B_step_um": dB_step_um,
+            "centre_step_um": dcentre_step_um,
+            "mean_abs_p_change_Pa": dtotal_mean,
+            "mean_delta_p_change_Pa": ddelta_mean,
+        })
 
-        positions = traj[fi]
-        for ip in range(len(positions)):
-            x_mm, y_mm = positions[ip] * 1e3
-            if ip == idx_A:
-                ax.plot(x_mm, y_mm, "o", color="red", ms=8, mew=1.5,
-                        mfc="red", mec="white", zorder=10)
-                ax.annotate("A", (x_mm, y_mm), fontsize=9, color="red",
-                            fontweight="bold", ha="center", va="bottom",
-                            xytext=(0, 6), textcoords="offset points",
-                            zorder=11)
-            elif ip == idx_B:
-                ax.plot(x_mm, y_mm, "s", color="blue", ms=8, mew=1.5,
-                        mfc="blue", mec="white", zorder=10)
-                ax.annotate("B", (x_mm, y_mm), fontsize=9, color="blue",
-                            fontweight="bold", ha="center", va="bottom",
-                            xytext=(0, 6), textcoords="offset points",
-                            zorder=11)
+        prev_total = total_abs
+        prev_delta = delta_abs
+
+        fig, axes = plt.subplots(1, 2, figsize=(13.6, 5.9))
+
+        for panel_i, ax in enumerate(axes):
+            if panel_i == 0:
+                im = ax.imshow(total_abs, origin="lower", extent=ext,
+                               cmap="viridis", aspect="equal",
+                               vmin=abs_vmin, vmax=abs_vmax)
+                _cbar(ax, im, "|p_total| (Pa)")
+                ax.set_title("ROI |p_total|")
             else:
-                ax.plot(x_mm, y_mm, "o", color="lime", ms=5, mec="white",
-                        mew=0.5, zorder=8)
+                im = ax.imshow(delta_abs, origin="lower", extent=ext,
+                               cmap="magma", aspect="equal",
+                               vmin=0.0, vmax=delta_vmax)
+                _cbar(ax, im, "|p_total - p_sw| (Pa)")
+                ax.set_title("ROI |p_total - p_sw|")
 
-        skip = 25
-        Fx_sub = Fx_frames[fi][::skip, ::skip]
-        Fy_sub = Fy_frames[fi][::skip, ::skip]
-        mag = np.sqrt(Fx_sub**2 + Fy_sub**2)
-        mag_max = mag.max()
-        if mag_max > 0:
-            ax.quiver(xg_mm[::skip], yg_mm[::skip],
-                      Fx_sub / mag_max, Fy_sub / mag_max,
-                      color="white", alpha=0.25, scale=30,
-                      width=0.003, zorder=4)
+            ax.scatter(traps_m[:, 0] * 1e3, traps_m[:, 1] * 1e3,
+                       s=8, c="w", alpha=0.12)
 
-        _cbar(ax, im, "U_gor (J)")
-        ax.set_xlabel("x (mm)")
-        ax.set_ylabel("y (mm)")
-        bsw = sim["betas_sw"][fi] if fi < len(sim["betas_sw"]) else 1.0
-        ax.set_title(
-            f"t = {times_ms[fi]:.1f} ms  |  β_sw = {bsw:.2f}  "
-            f"β_lens = {alphas[fi]:.2f}")
+            for j in range(len(traps_m)):
+                ax.plot([traps_m[j, 0] * 1e3, cur[j, 0] * 1e3],
+                        [traps_m[j, 1] * 1e3, cur[j, 1] * 1e3],
+                        color="white", linewidth=0.32, alpha=0.22, zorder=2)
+            ax.scatter(cur[:, 0] * 1e3, cur[:, 1] * 1e3, s=6,
+                       c="white", alpha=0.52, linewidths=0.0, zorder=3,
+                       label="all particle current" if panel_i == 0 else None)
+
+            nn = traps_m[neigh_idx]
+            ncur = cur[neigh_idx]
+            ax.scatter(nn[:, 0] * 1e3, nn[:, 1] * 1e3,
+                       s=28, marker="s", facecolors="none",
+                       edgecolors="cyan", linewidths=0.7,
+                       label="neighbour homes" if panel_i == 0 else None)
+            for j in range(len(nn)):
+                ax.plot([nn[j, 0] * 1e3, ncur[j, 0] * 1e3],
+                        [nn[j, 1] * 1e3, ncur[j, 1] * 1e3],
+                        color="white", linewidth=0.7, alpha=0.65, zorder=3)
+                if fi > 1:
+                    ax.plot(traj[:fi + 1, neigh_idx[j], 0] * 1e3,
+                            traj[:fi + 1, neigh_idx[j], 1] * 1e3,
+                            color="white", linewidth=0.55, alpha=0.30)
+            ax.scatter(ncur[:, 0] * 1e3, ncur[:, 1] * 1e3,
+                       s=14, c="white", edgecolors="0.3", linewidths=0.35,
+                       label="neighbour current" if panel_i == 0 else None)
+
+            ax.plot(centres[:fi + 1, 0] * 1e3, centres[:fi + 1, 1] * 1e3,
+                    "m--", linewidth=1.5,
+                    label="window centre path" if panel_i == 0 else None)
+            ax.scatter(centres[fi, 0] * 1e3, centres[fi, 1] * 1e3,
+                       s=80, c="magenta", marker="D", edgecolors="k",
+                       linewidths=0.7,
+                       label="window centre" if panel_i == 0 else None)
+
+            if window_radius_mm > 0:
+                th = np.linspace(0.0, 2.0 * np.pi, 160)
+                cx_mm = centres[fi, 0] * 1e3
+                cy_mm = centres[fi, 1] * 1e3
+                ax.plot(cx_mm + window_radius_mm * np.cos(th),
+                        cy_mm + window_radius_mm * np.sin(th),
+                        "m-", linewidth=1.2, alpha=0.85,
+                        label="window radius" if panel_i == 0 else None)
+
+            ax.scatter(A0[0] * 1e3, A0[1] * 1e3, s=124, c="tomato",
+                       edgecolors="k", linewidths=0.8,
+                       label="A home" if panel_i == 0 else None)
+            ax.scatter(B0[0] * 1e3, B0[1] * 1e3, s=124, c="deepskyblue",
+                       edgecolors="k", linewidths=0.8,
+                       label="B home" if panel_i == 0 else None)
+            ax.plot([A0[0] * 1e3, B0[0] * 1e3],
+                    [A0[1] * 1e3, B0[1] * 1e3],
+                    "w--", linewidth=1.1)
+
+            ax.plot(A_path[:, 0] * 1e3, A_path[:, 1] * 1e3,
+                    color="tomato", linewidth=1.4, alpha=0.9)
+            ax.plot(B_path[:, 0] * 1e3, B_path[:, 1] * 1e3,
+                    color="deepskyblue", linewidth=1.4, alpha=0.9)
+            ax.scatter(A_path[-1, 0] * 1e3, A_path[-1, 1] * 1e3,
+                       s=120, c="gold", edgecolors="k", linewidths=0.7,
+                       label="A current" if panel_i == 0 else None)
+            ax.scatter(B_path[-1, 0] * 1e3, B_path[-1, 1] * 1e3,
+                       s=120, c="orange", edgecolors="k", linewidths=0.7,
+                       label="B current" if panel_i == 0 else None)
+
+            disp_n_um = np.linalg.norm(ncur - nn, axis=1) * 1e6
+            ax.text(0.02, 0.03,
+                    f"N disp mean={float(np.mean(disp_n_um)):.1f} um | max={float(np.max(disp_n_um)):.1f} um",
+                    transform=ax.transAxes, fontsize=7, color="white",
+                    bbox={"boxstyle": "round,pad=0.20", "fc": "black", "ec": "none", "alpha": 0.45})
+            disp_all_um = np.linalg.norm(cur - traj[0], axis=1) * 1e6
+            ax.text(0.02, 0.11,
+                    f"All disp mean={float(np.mean(disp_all_um)):.1f} um | max={float(np.max(disp_all_um)):.1f} um",
+                    transform=ax.transAxes, fontsize=7, color="white",
+                    bbox={"boxstyle": "round,pad=0.20", "fc": "black", "ec": "none", "alpha": 0.45})
+
+            ax.set_xlim((midpoint[0] - 1.20e-3) * 1e3, (midpoint[0] + 1.20e-3) * 1e3)
+            ax.set_ylim((midpoint[1] - 1.20e-3) * 1e3, (midpoint[1] + 1.20e-3) * 1e3)
+            ax.set_xlabel("x [mm]")
+            ax.set_ylabel("y [mm]")
+
+        phase_txt = _cshape_phase_label(times_ms[fi])
+        fig.suptitle(
+            f"{phase_txt} | t={times_ms[fi]:.1f} ms | β_sw={betas_sw[fi]:.2f} | β_lens={alphas[fi]:.2f} | frame {fi + 1}/{n_frames}",
+            fontsize=12,
+        )
+        axes[0].legend(loc="upper right", fontsize=7)
         fig.tight_layout()
 
         fig.canvas.draw()
@@ -1077,15 +1320,24 @@ def render_gif(sim, xg, yg, traps_m, idx_A, idx_B, filename):
         plt.close(fig)
 
         if (fi + 1) % 30 == 0:
-            print(f"  rendered {fi+1}/{n_frames}")
+            print(f"  rendered {fi + 1}/{n_frames}")
 
     from PIL import Image
     pil_frames = [Image.fromarray(f) for f in frames_images]
     gif_path = GIF_DIR / filename
     pil_frames[0].save(
         gif_path, save_all=True, append_images=pil_frames[1:],
-        duration=80, loop=0, optimize=False)
+        duration=GIF_DURATION_MS, loop=0, optimize=False)
+
+    stem = Path(filename).stem
+    diag_path = GIF_DIR / f"{stem}_frame_diagnostics.csv"
+    with open(diag_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(diag_rows[0].keys()))
+        w.writeheader()
+        w.writerows(diag_rows)
+
     print(f"[save] {gif_path.name} ({len(pil_frames)} frames)")
+    print(f"[save] {diag_path.name}")
     return gif_path
 
 
@@ -1096,11 +1348,13 @@ def render_gif(sim, xg, yg, traps_m, idx_A, idx_B, filename):
 def save_config(all_results):
     cfg = {
         "timestamp": TS,
+        "output_dir": str(OUT_DIR),
         "overlay_npz": str(OVERLAY_NPZ),
         "model": ("windowed crossfade: p = beta_sw*p_sw "
                    "+ beta_lens*exp(i*psi)*W(x,y;c(t))*p_lens"),
         "alpha_target": ALPHA_TARGET,
-        "alpha_by_window": ALPHA_BY_WINDOW,
+        "alpha_options_by_window": ALPHA_OPTIONS_BY_WINDOW,
+        "translation_modes_by_window": TRANSLATION_MODES_BY_WINDOW,
         "psi_over_pi": PSI / np.pi,
         "T_ramp_up_ms": T_RAMP_UP * 1e3,
         "T_hold_ms": T_HOLD * 1e3,
@@ -1108,10 +1362,11 @@ def save_config(all_results):
         "T_settle_ms": T_SETTLE * 1e3,
         "T_total_ms": T_TOTAL * 1e3,
         "dt_us": DT * 1e6,
+        "n_frames_target": N_FRAMES,
+        "gif_duration_ms": GIF_DURATION_MS,
         "P_SCALE": P_SCALE,
         "window_radii_rel": [r if r else "full" for r in WINDOW_RADII_REL],
         "beta_sw_min_values": BETA_SW_MIN_VALUES,
-        "translation_modes": TRANSLATION_MODES,
         "n_candidates": len(all_results),
         "capture_radius_um": CAPTURE_RADIUS * 1e6,
         "trap_tolerance_um": TRAP_TOLERANCE * 1e6,
@@ -1182,8 +1437,9 @@ def write_index(all_results, baseline_metrics, best_result):
     for r_rel, label in zip(WINDOW_RADII_REL, WINDOW_LABELS):
         desc = ("Full lens, no windowing" if r_rel is None
                 else f"Gaussian window σ = {r_rel:.2f} × d_AB")
-        a = ALPHA_BY_WINDOW.get(label, ALPHA_TARGET)
-        lines.append(f"| {label} | {r_rel if r_rel else '∞'} | {a:.0f} | {desc} |")
+        alpha_values = ALPHA_OPTIONS_BY_WINDOW.get(label, [ALPHA_TARGET])
+        alpha_display = ", ".join(f"{a:.2f}" for a in alpha_values)
+        lines.append(f"| {label} | {r_rel if r_rel else '∞'} | {alpha_display} | {desc} |")
 
     lines += [
         "",
@@ -1230,14 +1486,11 @@ def write_index(all_results, baseline_metrics, best_result):
     ]
 
     # Top candidates ranked by: merged first, then lowest max_neighbour
-    ranked = sorted(all_results,
-                    key=lambda r: (
-                        not r["metrics"]["A_in_capture_region"],
-                        r["metrics"]["max_neighbour_disp_um"]))
+    ranked = sorted(all_results, key=_rank_key)
 
     lines += [
         "",
-        "### All Candidates Ranked (merged first, then lowest max neighbour)",
+        "### All Candidates Ranked (full success first, then neighbour-safe merged cases)",
         "",
         ("| Rank | Window | α | β_sw_min | Ramp | Trans | d_AB (µm) | A moved | "
          "max_N (µm) | mean_N (µm) | Class |"),
@@ -1247,8 +1500,8 @@ def write_index(all_results, baseline_metrics, best_result):
     for i, r in enumerate(ranked):
         m = r["metrics"]
         lines.append(
-            f"| {i+1} | {r['window_label']} | {r.get('alpha', ALPHA_TARGET):.0f} "
-            f"| {r['beta_sw_min']:.1f} "
+            f"| {i+1} | {r['window_label']} | {r.get('alpha', ALPHA_TARGET):.2f} "
+            f"| {r['beta_sw_min']:.2f} "
             f"| {r.get('ramp_label', 'fast')} "
             f"| {r['translation']} | {m['d_AB_final_um']:.0f} "
             f"| {m['d_A_moved_um']:.0f} "
@@ -1336,7 +1589,7 @@ def write_index(all_results, baseline_metrics, best_result):
         "### 2. Does translation help?",
         "",
     ]
-    for tm in TRANSLATION_MODES:
+    for tm in sorted({r["translation"] for r in all_results}):
         sub = [r for r in merged_results if r["translation"] == tm]
         lines.append(f"- {tm}: {len(sub)} merges out of "
                      f"{sum(1 for r in all_results if r['translation'] == tm)}")
@@ -1364,6 +1617,7 @@ def write_index(all_results, baseline_metrics, best_result):
         "## Files",
         "",
         "- `gif/` — animations of best candidate(s)",
+        "- `gif/*_frame_diagnostics.csv` — per-frame motion and field-change diagnostics",
         "- `figures/footprint_comparison.png` — window variant footprints",
         "- `figures/footprint_1d_profiles.png` — 1D profiles along A→B",
         "- `figures/heatmap_*.png` — parameter sweep results",
@@ -1387,6 +1641,12 @@ def write_index(all_results, baseline_metrics, best_result):
 # ═══════════════════════════════════════════════════════════════════
 
 def main():
+    args = _parse_args()
+    global N_FRAMES, GIF_DURATION_MS
+    N_FRAMES = max(60, int(args.n_frames))
+    GIF_DURATION_MS = max(20, int(args.gif_duration_ms))
+    _configure_output_dirs(args.output_dir)
+
     t_start = time.time()
 
     # 1. Load data
@@ -1395,14 +1655,21 @@ def main():
     trap_A = traps_m[idx_A]
     trap_B = traps_m[idx_B]
 
+    baseline_alpha = max(ALPHA_OPTIONS_BY_WINDOW["full_lens"])
+
     print(f"\n{'='*60}")
     print(f"  C-SHAPE TRANSPORT REFINEMENT STUDY")
-    n_cand = (len(WINDOW_RADII_REL) * len(BETA_SW_MIN_VALUES)
-              * len(TRANSLATION_MODES) * len(RAMP_VARIANTS))
+    n_cand = sum(
+        len(ALPHA_OPTIONS_BY_WINDOW[w_label])
+        * len(BETA_SW_MIN_VALUES)
+        * len(TRANSLATION_MODES_BY_WINDOW[w_label])
+        * len(RAMP_VARIANTS)
+        for w_label in WINDOW_LABELS
+    )
     print(f"  Sweep: {len(WINDOW_RADII_REL)} windows × "
-          f"{len(BETA_SW_MIN_VALUES)} β_sw_min × "
+          f"window-specific α × {len(BETA_SW_MIN_VALUES)} β_sw_min × "
           f"{len(RAMP_VARIANTS)} ramp × "
-          f"{len(TRANSLATION_MODES)} trans = {n_cand} candidates")
+          f"window-specific translation = {n_cand} candidates")
     print(f"{'='*60}\n")
 
     # 2. Part A — Footprint diagnostics
@@ -1415,8 +1682,8 @@ def main():
     # 3. Part D — Schedule plots (representative examples)
     print("\n=== Part D: Schedule Plots ===\n")
     for rv in RAMP_VARIANTS:
-        for bsw_min in [0.0, 0.4]:
-            for tm in TRANSLATION_MODES:
+        for bsw_min in [0.20, 0.30, 0.40]:
+            for tm in sorted({m for modes in TRANSLATION_MODES_BY_WINDOW.values() for m in modes}):
                 sched, ttot = make_schedule(
                     bsw_min, tm, trap_A, trap_B, d_AB,
                     ramp_up=rv["ramp_up"], hold=rv["hold"],
@@ -1425,71 +1692,78 @@ def main():
                               f"β_sw={bsw_min:.1f}, {rv['label']}, {tm}",
                               f"schedule_bsw{bsw_min:.1f}_{rv['label']}_{tm}.png")
 
-    # 4. Part E — Sweep
+    # 4. Baseline — actual lens reference protocol for comparison
+    print("\n=== Baseline Reference ===\n")
+    sched_base_ref, ttot_base_ref = make_schedule(
+        0.0, "static", trap_A, trap_B, d_AB, alpha=baseline_alpha,
+        ramp_up=RAMP_VARIANTS[0]["ramp_up"], hold=RAMP_VARIANTS[0]["hold"],
+        ramp_down=RAMP_VARIANTS[0]["ramp_down"], settle=RAMP_VARIANTS[0]["settle"])
+    sim_base_ref = simulate_particles(
+        p_sw, p_lens_roi, xg, yg, traps_m,
+        idx_A, idx_B, d_AB,
+        window_sigma=None,
+        schedule_fn=sched_base_ref, t_total=ttot_base_ref,
+        store_fields=False)
+    baseline_metrics = analyse_success(sim_base_ref, traps_m, idx_A, idx_B)
+
+    # 5. Part E — Sweep
     print("\n=== Part E: Parameter Sweep ===\n")
     all_results = []
-    baseline_metrics = None
     run_idx = 0
 
     for r_rel, w_label in zip(WINDOW_RADII_REL, WINDOW_LABELS):
-        for bsw_min in BETA_SW_MIN_VALUES:
-            for rv in RAMP_VARIANTS:
-                for tm in TRANSLATION_MODES:
-                    run_idx += 1
-                    tag = (f"{w_label}_bsw{bsw_min:.1f}"
-                           f"_{rv['label']}_{tm}")
-                    print(f"\n--- [{run_idx}/{n_cand}] {tag} ---")
+        sigma = r_rel * d_AB if r_rel is not None else None
+        for alpha_w in ALPHA_OPTIONS_BY_WINDOW[w_label]:
+            for bsw_min in BETA_SW_MIN_VALUES:
+                for rv in RAMP_VARIANTS:
+                    for tm in TRANSLATION_MODES_BY_WINDOW[w_label]:
+                        run_idx += 1
+                        tag = (f"{w_label}_a{alpha_w:.2f}_bsw{bsw_min:.2f}"
+                               f"_{rv['label']}_{tm}")
+                        print(f"\n--- [{run_idx}/{n_cand}] {tag} ---")
 
-                    sigma = r_rel * d_AB if r_rel is not None else None
-                    alpha_w = ALPHA_BY_WINDOW.get(w_label, ALPHA_TARGET)
-                    sched, ttot = make_schedule(
-                        bsw_min, tm, trap_A, trap_B, d_AB,
-                        alpha=alpha_w,
-                        ramp_up=rv["ramp_up"], hold=rv["hold"],
-                        ramp_down=rv["ramp_down"], settle=rv["settle"])
+                        sched, ttot = make_schedule(
+                            bsw_min, tm, trap_A, trap_B, d_AB,
+                            alpha=alpha_w,
+                            ramp_up=rv["ramp_up"], hold=rv["hold"],
+                            ramp_down=rv["ramp_down"], settle=rv["settle"])
 
-                    sim = simulate_particles(
-                        p_sw, p_lens_roi, xg, yg, traps_m,
-                        idx_A, idx_B, d_AB,
-                        window_sigma=sigma,
-                        schedule_fn=sched, t_total=ttot,
-                        store_fields=False)
+                        sim = simulate_particles(
+                            p_sw, p_lens_roi, xg, yg, traps_m,
+                            idx_A, idx_B, d_AB,
+                            window_sigma=sigma,
+                            schedule_fn=sched, t_total=ttot,
+                            store_fields=False)
 
-                    metrics = analyse_success(sim, traps_m, idx_A, idx_B)
+                        metrics = analyse_success(sim, traps_m, idx_A, idx_B)
 
-                    result = {
-                        "window_label": w_label,
-                        "window_sigma_rel": r_rel,
-                        "beta_sw_min": bsw_min,
-                        "ramp_label": rv["label"],
-                        "ramp_up": rv["ramp_up"],
-                        "ramp_down": rv["ramp_down"],
-                        "translation": tm,
-                        "alpha": alpha_w,
-                        "metrics": metrics,
-                        "tag": tag,
-                    }
-                    all_results.append(result)
+                        result = {
+                            "window_label": w_label,
+                            "window_sigma_rel": r_rel,
+                            "beta_sw_min": bsw_min,
+                            "ramp_label": rv["label"],
+                            "ramp_up": rv["ramp_up"],
+                            "ramp_down": rv["ramp_down"],
+                            "translation": tm,
+                            "alpha": alpha_w,
+                            "metrics": metrics,
+                            "tag": tag,
+                        }
+                        all_results.append(result)
 
-                    # Identify baseline: full lens, bsw_min=0, fast, static
-                    if (r_rel is None and bsw_min == 0.0
-                            and rv["label"] == "fast"
-                            and tm == "static"):
-                        baseline_metrics = metrics
+                        print(f"  class={metrics['classification']}, "
+                              f"d_AB={metrics['d_AB_final_um']:.0f}µm, "
+                              f"max_N={metrics['max_neighbour_disp_um']:.0f}µm")
 
-                    print(f"  class={metrics['classification']}, "
-                          f"d_AB={metrics['d_AB_final_um']:.0f}µm, "
-                          f"max_N={metrics['max_neighbour_disp_um']:.0f}µm")
-
-    # 5. Identify best
-    merged = [r for r in all_results
-              if r["metrics"]["A_in_capture_region"]]
-    if merged:
-        best = min(merged,
-                   key=lambda r: r["metrics"]["max_neighbour_disp_um"])
+    # 6. Identify best
+    full_success = [r for r in all_results if r["metrics"]["classification"] == "successful_merge"]
+    merged = [r for r in all_results if r["metrics"]["A_in_capture_region"]]
+    if full_success:
+        best = sorted(full_success, key=_rank_key)[0]
+    elif merged:
+        best = sorted(merged, key=_rank_key)[0]
     else:
-        best = max(all_results,
-                   key=lambda r: r["metrics"]["d_A_moved_um"])
+        best = sorted(all_results, key=_rank_key)[0]
 
     print(f"\n{'='*60}")
     print(f"  BEST: {best['tag']}")
@@ -1498,8 +1772,8 @@ def main():
     print(f"  max_N = {best['metrics']['max_neighbour_disp_um']:.1f} µm")
     print(f"{'='*60}\n")
 
-    # 6. Re-run best with field storage for GIF
-    print("=== Re-running best candidate with field storage ===\n")
+    # 7. Re-run best with full trajectories for GIF rendering
+    print("=== Re-running best candidate for GIF rendering ===\n")
     r_best = best["window_sigma_rel"]
     sigma_best = r_best * d_AB if r_best is not None else None
     alpha_best = best.get("alpha", ALPHA_TARGET)
@@ -1513,19 +1787,19 @@ def main():
         idx_A, idx_B, d_AB,
         window_sigma=sigma_best,
         schedule_fn=sched_best, t_total=ttot_best,
-        store_fields=True)
+        store_fields=False)
 
-    # Also re-run baseline with fields for comparison GIF
-    print("=== Re-running baseline with field storage ===\n")
-    sched_base, ttot_base = make_schedule(0.0, "static", trap_A, trap_B, d_AB)
+    # Also re-run baseline for comparison GIF
+    print("=== Re-running baseline for GIF rendering ===\n")
+    sched_base, ttot_base = make_schedule(0.0, "static", trap_A, trap_B, d_AB, alpha=baseline_alpha)
     sim_base = simulate_particles(
         p_sw, p_lens_roi, xg, yg, traps_m,
         idx_A, idx_B, d_AB,
         window_sigma=None,
         schedule_fn=sched_base, t_total=ttot_base,
-        store_fields=True)
+        store_fields=False)
 
-    # 7. Part G — Plots
+    # 8. Part G — Plots
     print("\n=== Part G: Visualisation ===\n")
 
     plot_trajectories(sim_best, xg, yg, traps_m, idx_A, idx_B,
@@ -1544,10 +1818,30 @@ def main():
     plot_heatmap(all_results)
 
     # GIF for best
-    gif_best = render_gif(sim_best, xg, yg, traps_m, idx_A, idx_B,
-                          "refined_merge.gif")
-    gif_base = render_gif(sim_base, xg, yg, traps_m, idx_A, idx_B,
-                          "baseline_merge.gif")
+    gif_best = render_gif(
+        sim_best,
+        p_sw,
+        p_lens_roi,
+        xg,
+        yg,
+        traps_m,
+        idx_A,
+        idx_B,
+        sigma_best,
+        "refined_merge.gif",
+    )
+    gif_base = render_gif(
+        sim_base,
+        p_sw,
+        p_lens_roi,
+        xg,
+        yg,
+        traps_m,
+        idx_A,
+        idx_B,
+        None,
+        "baseline_merge.gif",
+    )
 
     # 8. Save outputs
     print("\n=== Saving outputs ===\n")
