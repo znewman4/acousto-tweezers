@@ -397,22 +397,48 @@ def solve_helmholtz(
         for bc in problem.bcs:
             bc.set(problem._b.array_w)
 
-        # Step 2: Set up the PC + extract MUMPS matrix + set icntl
+        # Step 2: Set MUMPS icntl options via PETSc global options database
+        # BEFORE factorisation (pc.setUp()).
+        #
+        # MatMumpsSetIcntl only works on the factor matrix which doesn't exist
+        # until after pc.setUp(). The correct pre-factorisation path is the
+        # global PETSc options database: MUMPS reads mat_mumps_icntl_N via
+        # PetscOptionsGetInt with the MAT prefix (empty for matrices without
+        # an explicit prefix, as in dolfinx's LinearProblem).
+        from petsc4py import PETSc as _PETSc
+        _petsc_global = _PETSc.Options()
+        _set_keys = []
+        for idx, val in mumps_icntl.items():
+            key = f"mat_mumps_icntl_{idx}"
+            _petsc_global[key] = str(val)
+            _set_keys.append(key)
+            if verbose:
+                print(f"    set MUMPS icntl[{idx}] = {val}")
+
         ksp = problem.solver
         ksp.setOperators(problem._A)
         pc = ksp.getPC()
-        pc.setUp()
+        pc.setUp()   # MUMPS reads icntl from global PETSc options during setup
+
+        # Clean up global options to avoid polluting subsequent solves
+        for key in _set_keys:
+            try:
+                del _petsc_global[key]
+            except Exception:
+                pass
+
+        # Also attempt to set on the factor matrix (no-op if already done)
         try:
             F = pc.getFactorMatrix()
             for idx, val in mumps_icntl.items():
-                F.setMumpsIcntl(idx, val)
-                if verbose:
-                    print(f"    set MUMPS icntl[{idx}] = {val}")
-        except Exception as e:
-            if verbose:
-                print(f"  WARNING: Could not set MUMPS icntl: {e}")
+                try:
+                    F.setMumpsIcntl(idx, val)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-        # Step 3: Solve (KSP will re-do factorization with new icntl)
+        # Step 3: Solve
         ksp.solve(problem._b, problem._x)
         problem.u.x.scatter_forward()
         ph = problem.u

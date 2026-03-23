@@ -61,15 +61,21 @@ def export_pressure_fields(
     V = sol.V
     p_complex = sol.p_function.x.array.copy()  # complex128
 
-    # Create a REAL function space for the exported fields
-    # We map to the same mesh but store real-valued scalars
-    V_real = fem.functionspace(domain, ("Lagrange", 2))
+    # P2 function space (matches solver DOF ordering) — used for loading values
+    V_p2 = fem.functionspace(domain, ("Lagrange", 2))
+    # P1 function space — required for XDMFFile compatibility on linear meshes
+    # (dolfinx 0.9+: write_function requires function degree == mesh geometry degree)
+    V_p1 = fem.functionspace(domain, ("Lagrange", 1))
 
     def _write_field(name: str, values: np.ndarray):
-        """Write a real-valued field to XDMF + HDF5."""
-        func = fem.Function(V_real)
+        """Write a real-valued field to XDMF + HDF5 (P2→P1 interpolated)."""
+        # Load P2 DOF values (same ordering as solver output)
+        func_p2 = fem.Function(V_p2)
+        func_p2.x.array[:] = values.astype(np.float64)
+        # Interpolate to P1 for XDMFFile compatibility with linear mesh geometry
+        func = fem.Function(V_p1)
         func.name = name
-        func.x.array[:] = values.astype(np.float64)
+        func.interpolate(func_p2)
 
         xdmf_path = export_dir / f"{name}.xdmf"
         with XDMFFile(domain.comm, str(xdmf_path), "w") as xf:
