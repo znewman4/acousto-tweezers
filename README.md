@@ -323,7 +323,15 @@ micromamba run -n fenicsx python scripts/validation/diagnostics_interaction.py
 
 # Axicon Lens Demo — Bessel-beam vs plastic lens comparison
 micromamba run -n fenicsx python scripts/experiments/run_axicon_lens_demo.py
+
+# Canonical Replica C-shape Transport (full-domain, translated, alpha-tuned)
+micromamba run -n fenicsx python scripts/deliverables/replica_cshape_transport_run_all.py
 ```
+
+Canonical method references:
+- Study report: [docs/REPLICA_CSHAPE_FULLDOMAIN_STANDARD.md](docs/REPLICA_CSHAPE_FULLDOMAIN_STANDARD.md)
+- Preset: [configs/cases/replica_cshape_fullfield_transport_standard.json](configs/cases/replica_cshape_fullfield_transport_standard.json)
+- Core implementation: [scripts/deliverables/transport_side_by_side_replica_cshape.py](scripts/deliverables/transport_side_by_side_replica_cshape.py)
 
 ### 7.4  Experiment Sweeps
 
@@ -391,6 +399,34 @@ from acoustweezers.experiments.shallow_square_dish.config import PHASE0_PRESETS
 cfg = PHASE0_PRESETS["L10_D03"]()
 ```
 
+### 7.7  Canonical Replica C-shape Method (Standard)
+
+The canonical method for replica-lens side-by-side transport studies is now the
+full-domain translated C-shape pipeline:
+
+1. Build replica lens phase via IASA.
+2. Convert wrapped phase to thickness profile.
+3. Convert thickness to transmitted aperture phase.
+4. Propagate with ASM on the lens/full basis.
+5. Resample once to the full transport grid.
+6. Translate this real propagated field during active transport phase.
+7. Auto-tune alpha until particle A movement threshold is met.
+8. Render ROI panels as direct crops from full-domain Gor'kov maps.
+
+Required run entrypoint:
+
+```bash
+micromamba run -n fenicsx python scripts/deliverables/replica_cshape_transport_run_all.py
+```
+
+Required output artifacts:
+- `results/deliverables/transport_side_by_side/transport_vortex_vs_cshape_gorkov_const_sw1_translated_replica_fullfield.gif`
+- `results/deliverables/transport_side_by_side/replica_cshape_full_domain_field.npz`
+- `results/deliverables/transport_side_by_side/replica_cshape_alpha_tuning.json`
+- `results/deliverables/transport_side_by_side/replica_cshape_method_manifest.json`
+
+Do not use ROI-only C-shape fields as production equivalents for this deliverable.
+
 ---
 
 ## 8  Repository Structure
@@ -401,10 +437,14 @@ acousto-tweezers/
 ├── README.md                 This file
 ├── pyproject.toml            Package metadata & dependencies
 ├── environment.yml           Conda environment (real-scalar fallback)
+├── configs/
+│   └── cases/
+│       └── replica_cshape_fullfield_transport_standard.json
 │
 ├── docs/
 │   ├── LINUX_SETUP.md            Linux setup guide (Bristol desktops)
 │   ├── COMSOL_RECREATION_SPEC.md
+│   ├── REPLICA_CSHAPE_FULLDOMAIN_STANDARD.md
 │   └── validation.md
 │
 ├── src/acoustweezers/
@@ -443,6 +483,10 @@ acousto-tweezers/
 │   │   ├── phase1_sweep.py               Phase 1 architecture sweep
 │   │   ├── impedance_sweep.py            Phase 2 impedance sweep
 │   │   └── ...                           Other experiment pipelines
+│   ├── deliverables/
+│   │   ├── replica_cshape_transport_run_all.py  Canonical full-domain runner
+│   │   ├── transport_side_by_side_replica_cshape.py  Core standard method
+│   │   └── ...                           Other deliverable scripts
 │   ├── maintenance/
 │   │   └── cleanup_repo.py               Archive old results + report
 │   └── analysis/                         Postprocessing, plotting
