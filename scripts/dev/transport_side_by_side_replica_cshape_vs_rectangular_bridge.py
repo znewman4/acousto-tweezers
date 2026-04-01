@@ -139,6 +139,7 @@ B_QUIET_RADIUS_M = float(os.getenv("B_QUIET_RADIUS_M", "6.0e-5"))
 
 # Optional symmetric-bridge variant (kept opt-in so baseline behaviour is unchanged)
 USE_SYMMETRIC_BRIDGE = _env_bool("USE_SYMMETRIC_BRIDGE", False)
+# Extra restoring Gaussian pocket baked into the SW baseline at B (symmetric-bridge mode only)
 SYMM_EXTRA_B_POCKET_PA = float(os.getenv("SYMM_EXTRA_B_POCKET_PA", "20.0"))
 SYMM_EXTRA_B_POCKET_SIGMA_M = float(os.getenv("SYMM_EXTRA_B_POCKET_SIGMA_M", "1.25e-4"))
 
@@ -434,38 +435,6 @@ def _crop_indices(
     return ix, iy
 
 
-def _gaussian_2d(
-    xx: np.ndarray,
-    yy: np.ndarray,
-    x0: float,
-    y0: float,
-    sigma_m: float,
-    amplitude: float,
-) -> np.ndarray:
-    rr2 = (xx - x0) ** 2 + (yy - y0) ** 2
-    s2 = max(float(sigma_m), 1.0e-12) ** 2
-    return float(amplitude) * np.exp(-0.5 * rr2 / s2)
-
-
-def _apply_symmetric_bridge_adjustments(
-    p_template: np.ndarray,
-    p_anchor: np.ndarray,
-    x_full: np.ndarray,
-    y_full: np.ndarray,
-    b_xy: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    yy, xx = np.meshgrid(y_full, x_full, indexing="ij")
-    bx = float(b_xy[0])
-    by = float(b_xy[1])
-    extra = (
-        _gaussian_2d(xx, yy, bx, by, SYMM_EXTRA_B_POCKET_SIGMA_M, SYMM_EXTRA_B_POCKET_PA)
-        + _gaussian_2d(xx, yy, -bx, by, SYMM_EXTRA_B_POCKET_SIGMA_M, SYMM_EXTRA_B_POCKET_PA)
-    ).astype(complex)
-
-    p_template_mod = p_template + extra
-    p_template_mod = 0.5 * (p_template_mod + np.fliplr(p_template_mod))
-    p_anchor_mod = 0.5 * (p_anchor + np.fliplr(p_anchor))
-    return p_template_mod, p_anchor_mod
 
 
 def _draw_panel(
@@ -825,12 +794,7 @@ def main() -> None:
     p_cshape_full_centered = replica["p_full"]
     print(f"Replica full-domain |p| peak: {replica['peak_full']:.3f} Pa")
 
-    print("\nBuilding fixed rectangular bridge perturbation field...")
-    p_bridge_template_full, p_bridge_b_anchor_full, bridge_frame, _, _, _ = build_corridor_bridge_field(
-        x=x_full,
-        y=y_full,
-        point_a=A_xy,
-        point_b=B_xy,
+    _bridge_corridor_kwargs = dict(
         width_m=CORRIDOR_WIDTH_M,
         pad_a_m=CORRIDOR_PAD_A_M,
         pad_b_m=CORRIDOR_PAD_B_M,
@@ -848,34 +812,75 @@ def main() -> None:
         corridor_decay_power=CORRIDOR_DECAY_POWER,
         corridor_transverse_sigma_ratio=CORRIDOR_TRANSVERSE_SIGMA_RATIO,
         b_quiet_radius_m=B_QUIET_RADIUS_M,
-        neighbour_positions_m=traps_m[neigh_idx],
     )
+
+    print("\nBuilding fixed rectangular bridge perturbation field...")
+    p_bridge_template_full, p_bridge_b_anchor_full, bridge_frame, _, _, _ = build_corridor_bridge_field(
+        x=x_full,
+        y=y_full,
+        point_a=A_xy,
+        point_b=B_xy,
+        neighbour_positions_m=traps_m[neigh_idx],
+        **_bridge_corridor_kwargs,
+    )
+
     if USE_SYMMETRIC_BRIDGE:
-        p_bridge_template_full, p_bridge_b_anchor_full = _apply_symmetric_bridge_adjustments(
-            p_template=p_bridge_template_full,
-            p_anchor=p_bridge_b_anchor_full,
-            x_full=x_full,
-            y_full=y_full,
-            b_xy=B_xy,
+        # Build a second corridor from mirror(A) to mirror(B) at full strength,
+        # then sum. This constructs a naturally y-axis-symmetric field without
+        # halving either corridor's amplitude.
+        mirror_A = np.array([-A_xy[0], A_xy[1]])
+        mirror_B = np.array([-B_xy[0], B_xy[1]])
+        mirror_neighbours = traps_m[neigh_idx].copy()
+        mirror_neighbours[:, 0] *= -1.0
+        p_bridge_template_mirror, p_bridge_b_anchor_mirror, _, _, _, _ = build_corridor_bridge_field(
+            x=x_full,
+            y=y_full,
+            point_a=mirror_A,
+            point_b=mirror_B,
+            neighbour_positions_m=mirror_neighbours,
+            **_bridge_corridor_kwargs,
         )
-        print(
-            "Applied symmetric bridge geometry: "
-            f"extra_b_pocket_pa={SYMM_EXTRA_B_POCKET_PA:.1f}, "
-            f"sigma={SYMM_EXTRA_B_POCKET_SIGMA_M * 1e6:.1f} um"
-        )
+        p_bridge_template_full = p_bridge_template_full + p_bridge_template_mirror
+        print("Built construct-symmetric bridge: two full-strength corridors (real + mirror)")
+
     print(
         "Bridge geometry: "
         f"width={CORRIDOR_WIDTH_M * 1e6:.1f} um, "
         f"AB={bridge_frame.d_ab * 1e6:.1f} um"
     )
 
+    # Phase-align anchor(s) to the local standing-wave phase at their location.
     ix_b_anchor = int(np.argmin(np.abs(x_full - B_xy[0])))
     iy_b_anchor = int(np.argmin(np.abs(y_full - B_xy[1])))
     phase_b_sw = float(np.angle(p_sw_full[iy_b_anchor, ix_b_anchor]))
     p_bridge_b_anchor_full = p_bridge_b_anchor_full * np.exp(1j * phase_b_sw)
 
-    # Original bridge flow: destination anchor is baked into the SW baseline.
+    if USE_SYMMETRIC_BRIDGE:
+        ix_mb = int(np.argmin(np.abs(x_full - (-B_xy[0]))))
+        iy_mb = int(np.argmin(np.abs(y_full - B_xy[1])))
+        phase_mb_sw = float(np.angle(p_sw_full[iy_mb, ix_mb]))
+        p_bridge_b_anchor_full = (
+            p_bridge_b_anchor_full
+            + p_bridge_b_anchor_mirror * np.exp(1j * phase_mb_sw)
+        )
+
+    # Destination anchor is baked into the SW baseline.
     p_sw_bridge_full = p_sw_full + p_bridge_b_anchor_full
+
+    if USE_SYMMETRIC_BRIDGE and SYMM_EXTRA_B_POCKET_PA > 0.0:
+        # Add a real Gaussian restoring pocket at B so the destination trap is
+        # reinforced – matches the field shown in bridge_pressure_field_standalone_scaled.
+        yy_full, xx_full = np.meshgrid(y_full, x_full, indexing="ij")
+        s2 = max(float(SYMM_EXTRA_B_POCKET_SIGMA_M), 1.0e-12) ** 2
+        pocket = SYMM_EXTRA_B_POCKET_PA * np.exp(
+            -0.5 * ((xx_full - B_xy[0]) ** 2 + (yy_full - B_xy[1]) ** 2) / s2
+        )
+        p_sw_bridge_full = p_sw_bridge_full + pocket.astype(complex)
+        print(
+            f"Added extra B-pocket to SW baseline: "
+            f"pa={SYMM_EXTRA_B_POCKET_PA:.1f} Pa, "
+            f"sigma={SYMM_EXTRA_B_POCKET_SIGMA_M*1e6:.0f} um"
+        )
 
     gen_cshape_full = VortexPerturbation(
         p_cshape_full_centered,

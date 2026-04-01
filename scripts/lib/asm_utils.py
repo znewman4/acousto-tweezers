@@ -163,6 +163,95 @@ def make_vortex_field(
 
 
 # ════════════════════════════════════════════════════════════════════
+# 2b. First-order Bessel vortex (finite-aperture, lens-consistent)
+# ════════════════════════════════════════════════════════════════════
+
+def make_bessel_vortex_field(
+    x: np.ndarray,
+    y: np.ndarray,
+    charge: int = 1,
+    aperture_radius: float = 4.0e-3,
+    k: float = K0,
+    center: Optional[Tuple[float, float]] = None,
+    apodization: str = "cosine_taper",
+    apod_width: float = 0.15,
+) -> np.ndarray:
+    r"""
+    Generate a first-order Bessel-like vortex source field.
+
+    Models the output of a spiral-phase plate / vortex lens on a
+    circular transducer of radius *aperture_radius*.  The source-plane
+    field is:
+
+        E(r, θ) = A(r) · exp(i ℓ θ)
+
+    with *uniform* amplitude inside the aperture, optionally tapered at
+    the edge.  After propagation via ASM this naturally produces a
+    Bessel-like vortex core whose ring radius is set by diffraction
+    (≈ 0.61 λ z / D for ℓ=1), **not** by a Gaussian waist parameter.
+
+    This is the standard acoustic vortex model: a finite piston with
+    azimuthal phase only (no radial amplitude shaping), consistent with
+    a single-element transducer + spiral phase plate or a plastic vortex
+    lens.
+
+    Parameters
+    ----------
+    x, y : ndarray
+        2-D meshgrid coordinate arrays [m].
+    charge : int
+        Topological charge ℓ.
+    aperture_radius : float
+        Physical transducer / lens radius [m].
+    k : float
+        Medium wavenumber [rad/m] (stored for metadata; not used in
+        source-plane formula).
+    center : (cx, cy) or None
+        Centre of the aperture.  Defaults to domain centre.
+    apodization : {"uniform", "cosine_taper"}
+        Edge apodization.  ``"cosine_taper"`` smooths the hard aperture
+        edge to reduce Gibbs ringing after ASM propagation.
+    apod_width : float
+        Fraction of the aperture radius over which the cosine taper
+        falls from 1 → 0.  Only used when ``apodization="cosine_taper"``.
+
+    Returns
+    -------
+    field : ndarray (complex128), same shape as x
+        Source-plane field, normalised so max|field| = 1.
+    """
+    if center is None:
+        cx = float(0.5 * (x.min() + x.max()))
+        cy = float(0.5 * (y.min() + y.max()))
+    else:
+        cx, cy = center
+
+    dx = x - cx
+    dy = y - cy
+    r = np.sqrt(dx ** 2 + dy ** 2)
+    theta = np.arctan2(dy, dx)
+
+    # Amplitude: uniform inside aperture
+    amp = np.ones_like(r)
+    amp[r > aperture_radius] = 0.0
+
+    # Optional cosine taper at the edge
+    if apodization == "cosine_taper" and apod_width > 0:
+        r_taper_start = aperture_radius * (1.0 - apod_width)
+        mask = (r > r_taper_start) & (r <= aperture_radius)
+        amp[mask] = 0.5 * (1.0 + np.cos(
+            np.pi * (r[mask] - r_taper_start) / (aperture_radius - r_taper_start)
+        ))
+
+    # Normalise
+    a_max = amp.max()
+    if a_max > 0:
+        amp /= a_max
+
+    return amp * np.exp(1j * charge * theta)
+
+
+# ════════════════════════════════════════════════════════════════════
 # 3. Lens phase generation (ideal / plastic / axicon)
 # ════════════════════════════════════════════════════════════════════
 

@@ -64,7 +64,7 @@ DESTINATION_REST_TRAP_PA = 0.0
 SOURCE_SIGMA_M = 1.0e-4
 DESTINATION_SIGMA_M = 1.0e-4
 DESTINATION_REST_SIGMA_M = 8.0e-5
-SOURCE_ABOVE_OFFSET_M = 9.0e-5
+SOURCE_ABOVE_OFFSET_M = 0.0  # 0 = hotspot centred on A (symmetric field)
 
 CORRIDOR_START_PA = 120.0
 CORRIDOR_END_PA = 20.0
@@ -72,8 +72,11 @@ CORRIDOR_DECAY_POWER = 1.25
 CORRIDOR_TRANSVERSE_SIGMA_RATIO = 0.32
 B_QUIET_RADIUS_M = 6.0e-5
 
-# Requested idealised-field adjustments
+# Construct-symmetric bridge: build two full-strength corridors instead of
+# averaging with a flipped copy (which would halve the corridor amplitude).
 SYMMETRISE_ABOUT_Y_AXIS = True
+
+# Extra restoring Gaussian pocket baked into the effective field at B
 EXTRA_B_POCKET_PA = 20.0
 EXTRA_B_POCKET_SIGMA_M = 1.25e-4
 
@@ -131,29 +134,6 @@ def _gaussian_2d(
     s2 = max(float(sigma_m), 1.0e-12) ** 2
     return float(amplitude) * np.exp(-0.5 * rr2 / s2)
 
-
-def _add_symmetric_b_pocket(
-    p_field: np.ndarray,
-    x_full: np.ndarray,
-    y_full: np.ndarray,
-    b_xy: np.ndarray,
-    amplitude_pa: float,
-    sigma_m: float,
-) -> np.ndarray:
-    if amplitude_pa == 0.0:
-        return p_field
-    yy, xx = np.meshgrid(y_full, x_full, indexing="ij")
-    bx = float(b_xy[0])
-    by = float(b_xy[1])
-    pocket = (
-        _gaussian_2d(xx, yy, bx, by, sigma_m, amplitude_pa)
-        + _gaussian_2d(xx, yy, -bx, by, sigma_m, amplitude_pa)
-    )
-    return p_field + pocket.astype(complex)
-
-
-def _symmetrise_about_y_axis(p_field: np.ndarray) -> np.ndarray:
-    return 0.5 * (p_field + np.fliplr(p_field))
 
 
 def _save_pressure_only_and_geometry_overlay(
@@ -372,13 +352,9 @@ def main() -> None:
     neigh_idx = np.array(sorted(set(range(len(traps_m))) - {idx_a, idx_b}), dtype=int)
 
     a_xy = traps_m[idx_a]
-    b_xy = traps_m[idx_b]
+    b_xy = np.array([a_xy[0], traps_m[idx_b][1]])  # same x as A → vertical corridor
 
-    p_bridge_template_full, p_bridge_b_anchor_full, frame, _, _, _ = build_corridor_bridge_field(
-        x=x_full,
-        y=y_full,
-        point_a=a_xy,
-        point_b=b_xy,
+    _corridor_kwargs = dict(
         width_m=CORRIDOR_WIDTH_M,
         pad_a_m=CORRIDOR_PAD_A_M,
         pad_b_m=CORRIDOR_PAD_B_M,
@@ -396,33 +372,64 @@ def main() -> None:
         corridor_decay_power=CORRIDOR_DECAY_POWER,
         corridor_transverse_sigma_ratio=CORRIDOR_TRANSVERSE_SIGMA_RATIO,
         b_quiet_radius_m=B_QUIET_RADIUS_M,
-        neighbour_positions_m=traps_m[neigh_idx],
     )
 
-    # Match anchor phase convention used in transport script.
-    ix_b = _nearest_index(x_full, float(b_xy[0]))
-    iy_b = _nearest_index(y_full, float(b_xy[1]))
-    phase_b_sw = float(np.angle(p_sw_full[iy_b, ix_b]))
-    p_bridge_b_anchor_full = p_bridge_b_anchor_full * np.exp(1j * phase_b_sw)
+    p_bridge_template_full, p_bridge_b_anchor_full, frame, _, _, _ = build_corridor_bridge_field(
+        x=x_full,
+        y=y_full,
+        point_a=a_xy,
+        point_b=b_xy,
+        neighbour_positions_m=traps_m[neigh_idx],
+        **_corridor_kwargs,
+    )
+
+    if SYMMETRISE_ABOUT_Y_AXIS:
+        # Build mirror corridor at full strength and sum — no fliplr averaging.
+        mirror_a = np.array([-a_xy[0], a_xy[1]])
+        mirror_b = np.array([-b_xy[0], b_xy[1]])
+        mirror_neighbours = traps_m[neigh_idx].copy()
+        mirror_neighbours[:, 0] *= -1.0
+        p_template_mirror, p_anchor_mirror, _, _, _, _ = build_corridor_bridge_field(
+            x=x_full,
+            y=y_full,
+            point_a=mirror_a,
+            point_b=mirror_b,
+            neighbour_positions_m=mirror_neighbours,
+            **_corridor_kwargs,
+        )
+        p_bridge_template_full = p_bridge_template_full + p_template_mirror
+
+        # Phase-align real anchor to SW at B, mirror anchor to SW at mirror(B).
+        ix_b = _nearest_index(x_full, float(b_xy[0]))
+        iy_b = _nearest_index(y_full, float(b_xy[1]))
+        p_bridge_b_anchor_full = p_bridge_b_anchor_full * np.exp(
+            1j * float(np.angle(p_sw_full[iy_b, ix_b]))
+        )
+        ix_mb = _nearest_index(x_full, float(-b_xy[0]))
+        iy_mb = _nearest_index(y_full, float(b_xy[1]))
+        p_bridge_b_anchor_full = p_bridge_b_anchor_full + p_anchor_mirror * np.exp(
+            1j * float(np.angle(p_sw_full[iy_mb, ix_mb]))
+        )
+    else:
+        # Match anchor phase convention used in transport script.
+        ix_b = _nearest_index(x_full, float(b_xy[0]))
+        iy_b = _nearest_index(y_full, float(b_xy[1]))
+        p_bridge_b_anchor_full = p_bridge_b_anchor_full * np.exp(
+            1j * float(np.angle(p_sw_full[iy_b, ix_b]))
+        )
 
     selected_alpha = _load_selected_alpha()
     p_bridge_scaled_only_full = selected_alpha * np.exp(1j * BRIDGE_PSI) * p_bridge_template_full
 
-    # Add a slightly larger destination pocket around B, mirrored about y-axis.
-    p_bridge_scaled_only_full = _add_symmetric_b_pocket(
-        p_bridge_scaled_only_full,
-        x_full=x_full,
-        y_full=y_full,
-        b_xy=b_xy,
-        amplitude_pa=float(EXTRA_B_POCKET_PA),
-        sigma_m=float(EXTRA_B_POCKET_SIGMA_M),
-    )
-
-    if SYMMETRISE_ABOUT_Y_AXIS:
-        p_bridge_scaled_only_full = _symmetrise_about_y_axis(p_bridge_scaled_only_full)
-        p_bridge_b_anchor_full = _symmetrise_about_y_axis(p_bridge_b_anchor_full)
-
     p_bridge_effective_full = p_bridge_scaled_only_full + p_bridge_b_anchor_full
+
+    if SYMMETRISE_ABOUT_Y_AXIS and EXTRA_B_POCKET_PA > 0.0:
+        yy_full, xx_full_g = np.meshgrid(y_full, x_full, indexing="ij")
+        s2 = max(float(EXTRA_B_POCKET_SIGMA_M), 1.0e-12) ** 2
+        pocket = EXTRA_B_POCKET_PA * np.exp(
+            -0.5 * ((xx_full_g - b_xy[0]) ** 2 + (yy_full - b_xy[1]) ** 2) / s2
+        )
+        p_bridge_effective_full = p_bridge_effective_full + pocket.astype(complex)
 
     ix_roi, iy_roi = _crop_indices(
         x_full,

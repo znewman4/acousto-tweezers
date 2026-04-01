@@ -183,6 +183,56 @@ def run_iasa(
     return lens_field
 
 
+def run_iasa_roi(
+    cfg: ReplicaConfig,
+    aperture_mask: np.ndarray,
+    target_amp: np.ndarray,
+    roi_mask: np.ndarray,
+    dx: float,
+    n_iter: int | None = None,
+    focal_distance_m: float | None = None,
+    outside_suppression: float = 1.0,
+) -> np.ndarray:
+    """ROI-constrained IASA: enforce target amplitude only inside *roi_mask*.
+
+    Parameters
+    ----------
+    cfg : ReplicaConfig
+    aperture_mask : (N, N) bool – lens aperture
+    target_amp : (N, N) float – desired amplitude (only used where roi_mask is True)
+    roi_mask : (N, N) bool – pixels where target enforcement is applied
+    dx : grid spacing [m]
+    n_iter : override cfg.n_iter if given
+    focal_distance_m : override cfg.focal_distance_m if given
+    outside_suppression : float in [0, 1]. Multiplier applied to amplitude outside
+        ROI each iteration. 1.0 = free evolution (no suppression).
+        0.0 = full suppression (force zeros outside ROI, like classic IASA).
+        Values like 0.5-0.9 gently push energy toward the ROI.
+    """
+    iters = n_iter if n_iter is not None else cfg.n_iter
+    z = focal_distance_m if focal_distance_m is not None else cfg.focal_distance_m
+    sup = float(np.clip(outside_suppression, 0.0, 1.0))
+    outside_roi = ~roi_mask
+
+    n = cfg.n_grid
+    lens_field = np.ones((n, n), dtype=complex)
+    lens_field[~aperture_mask] = 0.0
+
+    for _ in range(iters):
+        img_field = propagate_asm(lens_field, cfg.k_water, z, dx)
+        # Inside ROI: replace amplitude with target, keep phase
+        img_updated = img_field.copy()
+        img_updated[roi_mask] = target_amp[roi_mask] * np.exp(1j * np.angle(img_field[roi_mask]))
+        # Outside ROI: soft suppression (scale amplitude, keep phase)
+        if sup < 1.0:
+            img_updated[outside_roi] = sup * np.abs(img_field[outside_roi]) * np.exp(1j * np.angle(img_field[outside_roi]))
+        # Back-propagate and apply phase-only + aperture constraints
+        lens_field = np.exp(1j * np.angle(propagate_asm(img_updated, cfg.k_water, -z, dx)))
+        lens_field[~aperture_mask] = 0.0
+
+    return lens_field
+
+
 def ring_radius_diagnostics(
     p_mag: np.ndarray,
     r: np.ndarray,
@@ -349,11 +399,21 @@ def export_stl(
         thickness_s = thickness
 
     n = int(xg_s.shape[0])
+
+    # Downsample aperture mask to match the strided grid
+    aperture_mask_s = aperture_mask[np.ix_(idx, idx)] if s > 1 else aperture_mask
+
+    # Collapse outside-aperture points to z=0 so no floating flat cap is generated.
+    # Without this, the constant h_base thickness outside the aperture creates an
+    # infinitely thin disc sitting above the textured lens surface.
+    thickness_s_mesh = thickness_s.copy()
+    thickness_s_mesh[~aperture_mask_s] = 0.0
+
     x3 = np.repeat(xg_s[:, :, np.newaxis], 2, axis=2)
     y3 = np.repeat(yg_s[:, :, np.newaxis], 2, axis=2)
     z3 = np.zeros((n, n, 2), dtype=float)
     z3[:, :, 0] = 0.0
-    z3[:, :, 1] = thickness_s
+    z3[:, :, 1] = thickness_s_mesh
 
     _t = time.perf_counter()
     grid = pv.StructuredGrid(x3, y3, z3)
