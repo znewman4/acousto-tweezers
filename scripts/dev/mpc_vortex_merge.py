@@ -34,9 +34,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import matplotlib
 matplotlib.use("Agg")
 matplotlib.rcParams["figure.dpi"] = 72
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
+from scipy.interpolate import RegularGridInterpolator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -71,21 +73,19 @@ from scripts.lib.particle_dynamics_utils import (
     TRAP_SP,
     TransportResult,
     compute_metrics,
+    gorkov_normalised,
 )
-from scripts.lib.asm_utils import make_vortex_field, make_bessel_vortex_field, propagate_asm, LAM as ASM_LAM, K0 as ASM_K0
+from scripts.lib.overlay_utils import estimate_ring_radius
+from scripts.lib.asm_utils import make_vortex_field, propagate_asm, LAM as ASM_LAM, K0 as ASM_K0
 from scripts.lib.perturbation_vortex import VortexPerturbation
 
 PPAR = default_particle_params()
 
 # ── Data paths ────────────────────────────────────────────────────
 
-VORTEX_NPZ = (
+FIELD_NPZ = (
     PROJECT_ROOT / "results" / "deliverables" / "vortex_stage_transport"
     / "transport" / "transport_case_for_gif.npz"
-)
-OVERLAY_NPZ = (
-    PROJECT_ROOT / "results" / "c_shape_lens_15mm_overlay_study_20260310_170620"
-    / "npz" / "roi_fields.npz"
 )
 
 # ── Rendering constants ──────────────────────────────────────────
@@ -96,33 +96,58 @@ COL_B = "#3498db"
 COL_NEIGH = "#95a5a6"
 COL_HOME = "#2ecc71"
 COL_CTR = "#f39c12"
+COL_TRAP = "#95a5a6"
+COL_BARRIER = "#e67e22"
+COL_HOME_A = "#e74c3c"
+COL_HOME_B = "#3498db"
 GORKOV_CLIP_LO = 0.5
 GORKOV_CLIP_HI = 99.5
+PARTICLE_RADIUS_MM = 0.045
+VIEW_MARGIN_MM = 0.5
+BETA_FIXED = 1.0             # beta used for GIF display (SW always visible)
 
 # Settling-phase defaults
 T_SETTLE_DEFAULT = 3000          # 3000 steps × 0.1ms = 300ms for α→0 ramp + SW relaxation
 
 
-# ── Vortex design defaults ───────────────────────────────────────
+# ── Vortex design defaults (match vortex_entry_test) ────────────
 
 VORTEX_CHARGE = 1
-VORTEX_WAIST = 0.15e-3       # m  (LG fallback only)
-VORTEX_APERTURE = 0.8e-3     # m  (LG fallback only)
+VORTEX_WAIST = 0.15e-3           # m  (LG fallback only)
+VORTEX_APERTURE = 0.8e-3         # m  (LG fallback only)
 
-# Bessel vortex defaults (primary model)
-BESSEL_APERTURE_RADIUS = 2.0e-3  # m  (physical transducer radius, 2mm)
-BESSEL_PROP_DIST = 5.0e-3        # m  (source → measurement plane)
+# Focused Bessel vortex defaults (primary model, same as vortex_entry_test)
+BESSEL_APERTURE_MM_DEFAULT = 3.5   # mm — aperture radius
+BESSEL_PROP_DIST_MM_DEFAULT = 3.0  # mm — ASM propagation distance
+FOCUS_MM_DEFAULT = 3.0             # mm — lens focal length
+
+# ── Phase-sweep carry defaults (match vortex_entry_test) ─────────
+
+N_PSI_DEFAULT = 24
+N_VORTEX_STEPS_DEFAULT = 20
+N_DYN_STEPS_DEFAULT = 150
+N_BARRIER_SAMPLES = 50
+W_BARRIER_DEFAULT = 1.0
+W_PULL_DEFAULT = 1.0
+W_LATERAL_DEFAULT = 0.5
+W_RETAIN_DEFAULT = 1.0
+MAX_STEP_DEFAULT = 2e-6
+N_RING_THETA = 72
+OPENING_SECTOR_DEG = 60.0
+OPENING_THRESHOLD = 0.05
+GEOM_MARGIN = 1.5              # d(B, vortex_start) > GEOM_MARGIN * r_barrier
+N_INTRO_FRAMES = 15
+FRAMES_PER_VSTEP = 6
+N_NEIGH_RADIUS_DEFAULT = 3     # select neighbours within this many trap spacings of A-B midpoint
 
 # ── Remote particle / open-loop defaults ─────────────────────────
 
-REMOTE_DISTANCE_LAM = 3.0        # start A this many λ away from B
-MPC_ACTIVATION_RADIUS_LAM = 1.0  # activate MPC at this distance from B (in λ)  [>0.6λ ⇒ skip open-loop]
-OPEN_LOOP_SPEED = 5.0e-3          # m/s  (5 mm/s max cruise — tethered to particle A)
+MPC_ACTIVATION_RADIUS_LAM = 1.0
 
 # ── GIF settings ─────────────────────────────────────────────────
 
 N_GIF_FRAMES = 200
-GIF_DURATION_MS = 50
+GIF_DURATION_MS = 80
 
 
 # ════════════════════════════════════════════════════════════════
@@ -148,6 +173,373 @@ def gorkov_from_pressure(p: np.ndarray, dx: float, dy: float):
         p, dx, dy, OMEGA, RHO0, C_WATER,
         PPAR["a"], PPAR["f1"], PPAR["f2"],
     )
+
+
+# ════════════════════════════════════════════════════════════════
+# Data loading, trap selection, geometry validation (same as vortex_entry_test)
+# ════════════════════════════════════════════════════════════════
+
+def load_data(
+    aperture_m: float,
+    prop_dist_m: float,
+    focus_f_m: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float, float,
+           np.ndarray, "VortexPerturbation", float]:
+    """
+    Load full-domain standing wave + trap lattice from FIELD_NPZ,
+    build focused vortex, calibrate barrier radius.
+
+    Returns (p_sw, xg, yg, dx, dy, traps_m, vortex_gen, r_barrier).
+    """
+    print("Loading full-domain standing-wave and trap lattice...")
+    fd = np.load(FIELD_NPZ)
+    xg      = fd["xg"].astype(float)
+    yg      = fd["yg"].astype(float)
+    p_sw    = fd["p_sw"].astype(complex)
+    traps_m = fd["traps_m"].astype(float)
+    p_sw_peak = float(np.max(np.abs(p_sw)))
+
+    dx = float(xg[1] - xg[0])
+    dy = float(yg[1] - yg[0])
+
+    print(f"  Grid: {len(xg)}x{len(yg)}, "
+          f"domain [{xg[0]*1e3:.2f}, {xg[-1]*1e3:.2f}] x "
+          f"[{yg[0]*1e3:.2f}, {yg[-1]*1e3:.2f}] mm, "
+          f"dx={dx*1e6:.1f} um")
+    print(f"  p_sw max amplitude: {p_sw_peak:.4f}")
+    print(f"  Trap lattice: {len(traps_m)} traps")
+
+    grid_cx = 0.5 * (float(xg[0]) + float(xg[-1]))
+    grid_cy = 0.5 * (float(yg[0]) + float(yg[-1]))
+    XX, YY = np.meshgrid(xg, yg)
+
+    print(f"  Generating focused vortex (R={aperture_m*1e3:.2f} mm, "
+          f"f={focus_f_m*1e3:.2f} mm, z={prop_dist_m*1e3:.2f} mm)...")
+    p_source = _make_focused_vortex_source(
+        XX, YY,
+        charge=VORTEX_CHARGE,
+        aperture_radius=aperture_m,
+        k=ASM_K0,
+        focal_length=focus_f_m,
+        center=(grid_cx, grid_cy),
+        apodization="cosine_taper",
+    )
+    p_vortex_raw = propagate_asm(p_source, dx, dy, wavelength=ASM_LAM, z=prop_dist_m)
+
+    p_vortex_peak = float(np.max(np.abs(p_vortex_raw)))
+    if p_vortex_peak > 0:
+        p_vortex_raw = p_vortex_raw * (p_sw_peak / p_vortex_peak)
+
+    mag = np.abs(p_vortex_raw)
+    center_xy = np.array([grid_cx, grid_cy])
+    ring_info = estimate_ring_radius(
+        mag, xg, yg, center=center_xy,
+        r_min=0.05e-3, r_max=1.0e-3, n_bins=300,
+    )
+    r_barrier = float(ring_info["ring_radius_m"])
+    ring_peak  = float(ring_info["ring_peak"])
+
+    r_theory = 0.42 * ASM_LAM * focus_f_m / (2.0 * aperture_m)
+    print(f"\n  --- Focused Vortex Calibration ---")
+    print(f"  Aperture radius:      {aperture_m*1e3:.2f} mm")
+    print(f"  Focal length:         {focus_f_m*1e3:.2f} mm")
+    print(f"  Propagation distance: {prop_dist_m*1e3:.2f} mm  "
+          f"({'at focus' if abs(prop_dist_m - focus_f_m) < 0.05e-3 else 'off-focus'})")
+    print(f"  Pressure ring radius: {r_barrier*1e6:.1f} um ({r_barrier/LAM:.2f} lam)")
+    print(f"  Ring peak amplitude:  {ring_peak:.4f}")
+    print(f"  Theory (focal-plane): {r_theory*1e6:.1f} um  [0.42*lam*f/(2R)]")
+
+    vortex_gen = VortexPerturbation(p_vortex_raw, xg, yg, out_xg=xg, out_yg=yg)
+    return p_sw, xg, yg, dx, dy, traps_m, vortex_gen, r_barrier
+
+
+def select_trap_pair(
+    traps_m: np.ndarray,
+    r_barrier: float,
+    xg: np.ndarray,
+    yg: np.ndarray,
+    idx_B_override: Optional[int] = None,
+    min_sep_factor: float = GEOM_MARGIN,
+) -> Tuple[int, int]:
+    """
+    Choose B (central trap) and A (farthest trap satisfying geometry).
+    Identical to vortex_entry_test.select_trap_pair.
+    """
+    grid_cx = 0.5 * (float(xg[0]) + float(xg[-1]))
+    grid_cy = 0.5 * (float(yg[0]) + float(yg[-1]))
+    center = np.array([grid_cx, grid_cy])
+
+    if idx_B_override is not None:
+        idx_B = idx_B_override
+    else:
+        dists_to_center = np.linalg.norm(traps_m - center, axis=1)
+        idx_B = int(np.argmin(dists_to_center))
+
+    B_xy = traps_m[idx_B]
+    threshold = min_sep_factor * r_barrier
+    dists_to_B = np.linalg.norm(traps_m - B_xy, axis=1)
+    valid_mask = dists_to_B > threshold
+    valid_mask[idx_B] = False
+
+    print(f"\n  --- Trap Pair Selection ---")
+    print(f"  B: trap [{idx_B}] at ({B_xy[0]*1e3:.3f}, {B_xy[1]*1e3:.3f}) mm")
+    print(f"  Geometry constraint: d(A, B) > {min_sep_factor:.1f} * "
+          f"{r_barrier*1e6:.1f} um = {threshold*1e6:.1f} um")
+    print(f"  Candidates: {int(valid_mask.sum())} of {len(traps_m)} traps pass constraint")
+
+    if not np.any(valid_mask):
+        print(f"\n  FATAL: No trap satisfies d(A, B) > {threshold*1e6:.1f} um.")
+        sys.exit(1)
+
+    dists_valid = dists_to_B.copy()
+    dists_valid[~valid_mask] = -np.inf
+    idx_A = int(np.argmax(dists_valid))
+    A_xy = traps_m[idx_A]
+    d_AB = float(dists_to_B[idx_A])
+
+    print(f"  A: trap [{idx_A}] at ({A_xy[0]*1e3:.3f}, {A_xy[1]*1e3:.3f}) mm  (farthest valid)")
+    print(f"  d(A, B) = {d_AB*1e6:.1f} um = {d_AB/LAM:.2f} lam")
+    print(f"  d(A, B) / r_barrier = {d_AB/r_barrier:.2f}  (>{min_sep_factor:.1f}  OK)")
+    return idx_A, idx_B
+
+
+def validate_geometry(
+    traps_m: np.ndarray,
+    idx_A: int,
+    idx_B: int,
+    r_barrier: float,
+) -> str:
+    """Check B starts outside the barrier ring. Returns status string."""
+    d_B_vc = float(np.linalg.norm(traps_m[idx_B] - traps_m[idx_A]))
+    ratio = d_B_vc / r_barrier if r_barrier > 0 else float("inf")
+
+    if ratio > 1.1:
+        status = "OUTSIDE"
+    elif ratio > 0.9:
+        status = "ON"
+    else:
+        status = "INSIDE"
+
+    print(f"\n  --- Geometry Validation ---")
+    print(f"  d(B, vortex_start) = {d_B_vc*1e6:.1f} um")
+    print(f"  r_barrier          = {r_barrier*1e6:.1f} um")
+    print(f"  ratio              = {ratio:.2f}")
+    print(f"  B status:          {status}")
+    if status != "OUTSIDE":
+        print(f"  WARNING: B is NOT safely outside the barrier ring!")
+    else:
+        print(f"  OK: B starts {(d_B_vc - r_barrier)*1e6:.1f} um outside the barrier.")
+    return status
+
+
+# ════════════════════════════════════════════════════════════════
+# Focused vortex source (same as vortex_entry_test)
+# ════════════════════════════════════════════════════════════════
+
+def _make_focused_vortex_source(
+    XX: np.ndarray,
+    YY: np.ndarray,
+    charge: int,
+    aperture_radius: float,
+    k: float,
+    focal_length: float,
+    center: Tuple[float, float],
+    apodization: str = "cosine_taper",
+    apod_width: float = 0.15,
+) -> np.ndarray:
+    """Phase-only focused vortex: spiral phase + converging thin-lens phase."""
+    cx, cy = center
+    rx = XX - cx
+    ry = YY - cy
+    r = np.sqrt(rx ** 2 + ry ** 2)
+    theta = np.arctan2(ry, rx)
+
+    amp = np.ones_like(r)
+    amp[r > aperture_radius] = 0.0
+
+    if apodization == "cosine_taper" and apod_width > 0:
+        r0 = aperture_radius * (1.0 - apod_width)
+        mask = (r > r0) & (r <= aperture_radius)
+        amp[mask] = 0.5 * (1.0 + np.cos(
+            np.pi * (r[mask] - r0) / (aperture_radius * apod_width)
+        ))
+
+    a_max = float(amp.max())
+    if a_max > 0:
+        amp = amp / a_max
+
+    phase = charge * theta - k * r ** 2 / (2.0 * focal_length)
+    return amp * np.exp(1j * phase)
+
+
+# ════════════════════════════════════════════════════════════════
+# Phase-sweep carry helpers (same as vortex_entry_test)
+# ════════════════════════════════════════════════════════════════
+
+def _make_interp(F: np.ndarray, xg: np.ndarray, yg: np.ndarray) -> RegularGridInterpolator:
+    return RegularGridInterpolator((yg, xg), F, bounds_error=False, fill_value=0.0)
+
+
+def _eval_at(interp: RegularGridInterpolator, pos_xy: np.ndarray) -> np.ndarray:
+    pts = np.column_stack([pos_xy[:, 1], pos_xy[:, 0]])
+    return interp(pts)
+
+
+def ring_barrier_test(
+    iU: RegularGridInterpolator,
+    vortex_center: np.ndarray,
+    pos_B: np.ndarray,
+    r_barrier: float,
+    n_theta: int = N_RING_THETA,
+    sector_half_deg: float = OPENING_SECTOR_DEG,
+    opening_threshold: float = OPENING_THRESHOLD,
+) -> dict:
+    """Sample Gorkov around barrier ring; detect directional opening vs basin merging."""
+    theta = np.linspace(0, 2 * np.pi, n_theta, endpoint=False)
+    ring_pts = np.zeros((n_theta, 2))
+    ring_pts[:, 0] = vortex_center[0] + r_barrier * np.cos(theta)
+    ring_pts[:, 1] = vortex_center[1] + r_barrier * np.sin(theta)
+    U_ring = _eval_at(iU, ring_pts)
+
+    dxy = pos_B - vortex_center
+    theta_B = float(np.arctan2(dxy[1], dxy[0]))
+    sector_half_rad = np.deg2rad(sector_half_deg)
+    ang_diff = np.abs(np.angle(np.exp(1j * (theta - theta_B))))
+    in_sector = ang_diff <= sector_half_rad
+
+    U_B_sector = float(np.mean(U_ring[in_sector])) if np.any(in_sector) else float("nan")
+    U_other = float(np.mean(U_ring[~in_sector])) if np.any(~in_sector) else float("nan")
+    denom = abs(U_other) if U_other != 0.0 else 1.0
+    delta_B = float((U_other - U_B_sector) / denom)
+
+    if delta_B > opening_threshold:
+        mechanism = "true_opening"
+    elif delta_B > 0.0:
+        mechanism = "weak_asymmetry"
+    else:
+        mechanism = "basin_merging"
+
+    return {
+        "theta": theta, "U_ring": U_ring, "theta_B": theta_B,
+        "U_B_sector": U_B_sector, "U_other": U_other,
+        "delta_B": delta_B, "mechanism": mechanism,
+    }
+
+
+def phase_sweep_carry(
+    p_sw: np.ndarray,
+    vortex_gen: "VortexPerturbation",
+    xg: np.ndarray,
+    yg: np.ndarray,
+    dx: float,
+    dy: float,
+    psi_values: np.ndarray,
+    alpha: float,
+    beta: float,
+    vortex_center: np.ndarray,
+    pos_A: np.ndarray,
+    pos_B: np.ndarray,
+    r_barrier: float,
+    w_barrier: float = W_BARRIER_DEFAULT,
+    w_pull: float = W_PULL_DEFAULT,
+    w_lateral: float = W_LATERAL_DEFAULT,
+    w_retain: float = W_RETAIN_DEFAULT,
+    opening_threshold: float = OPENING_THRESHOLD,
+) -> dict:
+    """
+    Phase sweep matching vortex_entry_test: select ψ that retains A and
+    minimises barrier score for B. Returns best-psi dict including interpolators.
+    """
+    e_B = vortex_center - pos_B
+    norm_B = np.linalg.norm(e_B)
+    e_B = e_B / norm_B if norm_B > 0 else np.array([0.0, 1.0])
+
+    e_A = vortex_center - pos_A
+    norm_A = np.linalg.norm(e_A)
+    e_A = e_A / norm_A if norm_A > 0 else np.array([0.0, 1.0])
+
+    t_samples = np.linspace(0.05, 0.95, N_BARRIER_SAMPLES)
+    line_pts = pos_B[None, :] + t_samples[:, None] * (vortex_center - pos_B)[None, :]
+
+    results = []
+    for psi in psi_values:
+        p_v = vortex_gen.get_field(vortex_center)
+        p_tot = beta * p_sw + alpha * np.exp(1j * psi) * p_v
+        U_n, Fx_n, Fy_n = gorkov_normalised(p_tot, dx, dy)
+
+        iU = _make_interp(U_n, xg, yg)
+        iFx = _make_interp(Fx_n, xg, yg)
+        iFy = _make_interp(Fy_n, xg, yg)
+
+        FA = np.array([float(_eval_at(iFx, pos_A[None, :])[0]),
+                       float(_eval_at(iFy, pos_A[None, :])[0])])
+        F_A_in = float(np.dot(FA, e_A))
+
+        FB = np.array([float(_eval_at(iFx, pos_B[None, :])[0]),
+                       float(_eval_at(iFy, pos_B[None, :])[0])])
+        F_in_B = float(np.dot(FB, e_B))
+        F_tang_B = FB - F_in_B * e_B
+        F_perp_B = float(np.linalg.norm(F_tang_B))
+
+        U_path = _eval_at(iU, line_pts)
+        U_B = float(_eval_at(iU, pos_B[None, :])[0])
+        DeltaU = float(np.max(U_path) - U_B)
+
+        score = (w_barrier * DeltaU
+                 - w_pull * F_in_B
+                 + w_lateral * F_perp_B
+                 - w_retain * F_A_in)
+
+        results.append({
+            "psi": psi, "F_A_in": F_A_in, "F_in_B": F_in_B,
+            "F_perp_B": F_perp_B, "DeltaU": DeltaU, "score": score,
+            "iU": iU, "iFx": iFx, "iFy": iFy,
+        })
+
+    best = min(results, key=lambda r: r["score"])
+    best["mechanism"] = ring_barrier_test(best["iU"], vortex_center, pos_B, r_barrier,
+                                          opening_threshold=opening_threshold)
+    return best
+
+
+def _ol_vortex_path(start: np.ndarray, end: np.ndarray, n_steps: int) -> np.ndarray:
+    """Linear vortex path from start to end in n_steps."""
+    t = np.linspace(0, 1, n_steps)
+    return start[None, :] + t[:, None] * (end - start)[None, :]
+
+
+def _b_status(pos_B: np.ndarray, vortex_center: np.ndarray, r_barrier: float) -> str:
+    d = float(np.linalg.norm(pos_B - vortex_center))
+    if d > r_barrier * 1.05:
+        return "OUTSIDE"
+    if d < r_barrier * 0.95:
+        return "INSIDE"
+    return "ON"
+
+
+def _compute_view(
+    traps_m: np.ndarray,
+    idx_A: int,
+    idx_B: int,
+    vortex_path: np.ndarray,
+    margin_mm: float = VIEW_MARGIN_MM,
+) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    """Fixed view covering A, B, vortex path, and nearby cluster traps."""
+    key_pts = np.vstack([
+        traps_m[idx_A][None, :],
+        traps_m[idx_B][None, :],
+        vortex_path,
+    ]) * 1e3  # mm
+    mid = 0.5 * (traps_m[idx_A] + traps_m[idx_B])
+    d_to_mid = np.linalg.norm(traps_m - mid, axis=1)
+    nearby = d_to_mid < 1.5e-3
+    if np.any(nearby):
+        key_pts = np.vstack([key_pts, traps_m[nearby] * 1e3])
+    view_xlim = (float(key_pts[:, 0].min()) - margin_mm,
+                 float(key_pts[:, 0].max()) + margin_mm)
+    view_ylim = (float(key_pts[:, 1].min()) - margin_mm,
+                 float(key_pts[:, 1].max()) + margin_mm)
+    return view_xlim, view_ylim
 
 
 # ════════════════════════════════════════════════════════════════
@@ -216,10 +608,131 @@ def gradient_check(
 # GIF rendering
 # ════════════════════════════════════════════════════════════════
 
+def _gif_frame(
+    ax,
+    p_sw: np.ndarray,
+    vortex_gen,
+    xg: np.ndarray,
+    yg: np.ndarray,
+    traps_m: np.ndarray,
+    idx_A: int,
+    idx_B: int,
+    neigh_idx: np.ndarray,
+    r_barrier: float,
+    view_xlim: Tuple[float, float],
+    view_ylim: Tuple[float, float],
+    extent,
+    dx: float,
+    dy: float,
+    r_barrier_mm: float,
+    traps_mm: np.ndarray,
+    psi: float,
+    alpha: float,
+    vc_m: np.ndarray,
+    pos_A_m: np.ndarray,
+    pos_B_m: np.ndarray,
+    neigh_pos_m: Optional[np.ndarray],
+    trail_mm: Optional[np.ndarray],
+    label: str,
+    d_AB_um: float,
+    b_stat: str,
+    fi: int,
+    n_frames_total: int,
+) -> None:
+    """Draw one GIF frame onto ax. Shared between carry and MPC phases."""
+    p_total = total_pressure(p_sw, vortex_gen, psi, alpha, BETA_FIXED, vc_m)
+    U, _, _ = gorkov_from_pressure(p_total, dx, dy)
+
+    ix_lo = int(np.searchsorted(xg, (view_xlim[0] - 0.1) * 1e-3))
+    ix_hi = int(np.searchsorted(xg, (view_xlim[1] + 0.1) * 1e-3))
+    iy_lo = int(np.searchsorted(yg, (view_ylim[0] - 0.1) * 1e-3))
+    iy_hi = int(np.searchsorted(yg, (view_ylim[1] + 0.1) * 1e-3))
+    U_roi = U[iy_lo:iy_hi, ix_lo:ix_hi]
+    lo = float(np.percentile(U_roi, GORKOV_CLIP_LO))
+    hi = float(np.percentile(U_roi, GORKOV_CLIP_HI))
+
+    ax.imshow(U, origin="lower", extent=extent, cmap=CMAP,
+              vmin=lo, vmax=hi, aspect="equal", interpolation="bicubic")
+
+    vc_mm = vc_m * 1e3
+    pos_A_mm = pos_A_m * 1e3
+    pos_B_mm = pos_B_m * 1e3
+
+    # Trap markers (only those inside view)
+    in_view = (
+        (traps_mm[:, 0] >= view_xlim[0]) & (traps_mm[:, 0] <= view_xlim[1])
+        & (traps_mm[:, 1] >= view_ylim[0]) & (traps_mm[:, 1] <= view_ylim[1])
+    )
+    if np.any(in_view):
+        ax.scatter(traps_mm[in_view, 0], traps_mm[in_view, 1],
+                   marker="x", c=COL_TRAP, s=28, linewidths=0.8,
+                   zorder=4, alpha=0.5)
+
+    ax.annotate("A-home", traps_mm[idx_A], fontsize=6, color=COL_HOME_A,
+                alpha=0.8, ha="left", va="bottom",
+                xytext=(3, 3), textcoords="offset points")
+    ax.annotate("B-home", traps_mm[idx_B], fontsize=6, color=COL_HOME_B,
+                alpha=0.8, ha="left", va="bottom",
+                xytext=(3, 3), textcoords="offset points")
+
+    if trail_mm is not None and len(trail_mm) > 1:
+        ax.plot(trail_mm[:, 0], trail_mm[:, 1], color=COL_CTR,
+                lw=0.9, alpha=0.75, zorder=5)
+    ax.plot(vc_mm[0], vc_mm[1], marker="+", color=COL_CTR,
+            ms=12, mew=2.0, zorder=8)
+
+    ax.add_patch(mpatches.Circle(
+        (vc_mm[0], vc_mm[1]), r_barrier_mm,
+        fill=False, edgecolor=COL_BARRIER, linestyle="--",
+        linewidth=1.0, alpha=0.7, zorder=6))
+
+    if neigh_pos_m is not None:
+        for ni_pos in neigh_pos_m:
+            ax.add_patch(mpatches.Circle(
+                (ni_pos[0] * 1e3, ni_pos[1] * 1e3), PARTICLE_RADIUS_MM,
+                facecolor=COL_NEIGH, edgecolor="white", linewidth=0.6,
+                zorder=7, alpha=0.7))
+
+    ax.add_patch(mpatches.Circle(
+        (pos_A_mm[0], pos_A_mm[1]), PARTICLE_RADIUS_MM,
+        facecolor=COL_A, edgecolor="white", linewidth=0.6,
+        zorder=8, alpha=0.9))
+    ax.add_patch(mpatches.Circle(
+        (pos_B_mm[0], pos_B_mm[1]), PARTICLE_RADIUS_MM,
+        facecolor=COL_B, edgecolor="white", linewidth=0.6,
+        zorder=8, alpha=0.9))
+
+    ax.scatter([], [], c=COL_A, s=30, label="A (vortex)")
+    ax.scatter([], [], c=COL_B, s=30, label="B (SW trap)")
+
+    ax.set_xlim(*view_xlim)
+    ax.set_ylim(*view_ylim)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("x [mm]")
+    ax.set_ylabel("y [mm]")
+    ax.set_title(
+        f"[{label}] psi={psi:.2f} | alpha={alpha:.1f} | "
+        f"d(A,B)={d_AB_um:.0f} um | B: {b_stat}\n"
+        f"frame {fi + 1}/{n_frames_total}",
+        fontsize=9,
+    )
+    ax.legend(loc="upper right", fontsize=7, framealpha=0.7)
+
+
+def _fig_to_pil(fig) -> "Image.Image":
+    fig.tight_layout()
+    fig.canvas.draw()
+    buf = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
+    w, h = fig.canvas.get_width_height()
+    img = Image.fromarray(buf.reshape(h, w, 4)).convert("RGB")
+    plt.close(fig)
+    return img
+
+
 def render_gif(
     result: MPCResult,
     p_sw: np.ndarray,
-    vortex_gen: VortexPerturbation,
+    vortex_gen: "VortexPerturbation",
     xg: np.ndarray,
     yg: np.ndarray,
     traps_m: np.ndarray,
@@ -227,145 +740,120 @@ def render_gif(
     idx_B: int,
     neigh_idx: np.ndarray,
     out_path: Path,
+    r_barrier: float,
+    view_xlim: Tuple[float, float],
+    view_ylim: Tuple[float, float],
     n_frames: int = N_GIF_FRAMES,
     duration_ms: int = GIF_DURATION_MS,
     open_loop_steps: int = 0,
+    T_mpc: int = 0,
+    carry_frames: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
-    """Render transport GIF matching the C-shape study style."""
+    """Render transport GIF matching vortex_entry_test visual style.
+
+    If carry_frames is provided, those frames are rendered first (identical
+    rendering to vortex_entry_test), then MPC+settle frames are uniformly
+    subsampled from result[open_loop_steps:].
+    """
     dx = float(xg[1] - xg[0])
     dy = float(yg[1] - yg[0])
     x_mm = xg * 1e3
     y_mm = yg * 1e3
     extent = [x_mm[0], x_mm[-1], y_mm[0], y_mm[-1]]
     traps_mm = traps_m * 1e3
+    r_barrier_mm = r_barrier * 1e3
 
-    # Adaptive view: fit all particle positions + some margin
-    all_pos_mm = np.array([p * 1e3 for p in result.positions])
-    pos_xmin = float(np.min(all_pos_mm[:, :, 0]))
-    pos_xmax = float(np.max(all_pos_mm[:, :, 0]))
-    pos_ymin = float(np.min(all_pos_mm[:, :, 1]))
-    pos_ymax = float(np.max(all_pos_mm[:, :, 1]))
-    margin_mm = 0.3
-    view_xlim = (pos_xmin - margin_mm, pos_xmax + margin_mm)
-    view_ylim = (pos_ymin - margin_mm, pos_ymax + margin_mm)
-
-    T_total = len(result.applied_controls)
-    frame_every = max(1, T_total // n_frames)
-    frame_indices = list(range(0, T_total, frame_every))
-    if frame_indices[-1] != T_total - 1:
-        frame_indices.append(T_total - 1)
-
+    # ── Part 1: carry frames (script-1 style, pre-captured dicts) ──
     frames: List[Image.Image] = []
-    print(f"  Rendering {len(frame_indices)} GIF frames...")
+    n_carry_frames = len(carry_frames) if carry_frames else 0
 
-    for fi, step in enumerate(frame_indices):
+    if carry_frames:
+        print(f"  Rendering {n_carry_frames} carry GIF frames...")
+        for fi, fdat in enumerate(carry_frames):
+            vc_m = fdat["vortex_center"]
+            trail = fdat.get("vortex_trail", [])
+            trail_mm = np.array(trail) * 1e3 if len(trail) > 1 else None
+            fig, ax = plt.subplots(1, 1, figsize=(6.0, 6.0))
+            _gif_frame(
+                ax, p_sw, vortex_gen, xg, yg, traps_m, idx_A, idx_B, neigh_idx,
+                r_barrier, view_xlim, view_ylim, extent, dx, dy, r_barrier_mm, traps_mm,
+                psi=float(fdat["psi"]),
+                alpha=float(fdat["alpha"]),
+                vc_m=vc_m,
+                pos_A_m=fdat["pos_A"],
+                pos_B_m=fdat["pos_B"],
+                neigh_pos_m=None,   # carry phase: only A and B shown (matches script 1)
+                trail_mm=trail_mm,
+                label=fdat.get("label", "CARRY"),
+                d_AB_um=float(fdat["d_AB"]) * 1e6,
+                b_stat=fdat.get("B_status", ""),
+                fi=fi,
+                n_frames_total=n_carry_frames,
+            )
+            frames.append(_fig_to_pil(fig))
+            if (fi + 1) % 50 == 0:
+                print(f"    {fi + 1}/{n_carry_frames}")
+
+    # ── Part 2: MPC + settle frames, subsampled from result ────────
+    T_mpc_settle = len(result.applied_controls) - open_loop_steps
+    n_mpc_frames = max(0, n_frames - n_carry_frames)
+    frame_every = max(1, T_mpc_settle // n_mpc_frames) if n_mpc_frames > 0 else 1
+    mpc_indices = list(range(open_loop_steps, len(result.applied_controls), frame_every))
+    if mpc_indices and mpc_indices[-1] != len(result.applied_controls) - 1:
+        mpc_indices.append(len(result.applied_controls) - 1)
+
+    n_total_frames = n_carry_frames + len(mpc_indices)
+    print(f"  Rendering {len(mpc_indices)} MPC/settle GIF frames...")
+
+    for mfi, step in enumerate(mpc_indices):
+        fi = n_carry_frames + mfi
         u = result.applied_controls[step]
         psi, xv, yv, alpha, beta = u
+        pos_all = result.positions[step]
+        vc_m = np.array([xv, yv])
 
-        p_total = total_pressure(
-            p_sw, vortex_gen, psi, alpha, beta, np.array([xv, yv]),
-        )
-        U, _, _ = gorkov_from_pressure(p_total, dx, dy)
+        # Full trail from control history
+        trail_mm = np.array(
+            [[c[I_XV], c[I_YV]] for c in result.applied_controls[:step + 1]]
+        ) * 1e3
 
-        # Clip colorscale within the visible 2mm×2mm window so SW traps are visible.
-        ix_lo = int(np.searchsorted(xg, (view_xlim[0] - 0.05) * 1e-3))
-        ix_hi = int(np.searchsorted(xg, (view_xlim[1] + 0.05) * 1e-3))
-        iy_lo = int(np.searchsorted(yg, (view_ylim[0] - 0.05) * 1e-3))
-        iy_hi = int(np.searchsorted(yg, (view_ylim[1] + 0.05) * 1e-3))
-        U_roi = U[iy_lo:iy_hi, ix_lo:ix_hi]
-        lo = float(np.percentile(U_roi, GORKOV_CLIP_LO))
-        hi = float(np.percentile(U_roi, GORKOV_CLIP_HI))
-
-        pos_mm = result.positions[step] * 1e3
-        t_ms = step * result.elapsed_s / max(T_total, 1) * 1e3 if result.elapsed_s > 0 else step * 0.1
-
-        # Vortex centre trail — only last 30 steps to avoid visual clutter
-        trail_start = max(0, step - 30)
-        centers = np.array([[c[I_XV], c[I_YV]] for c in result.applied_controls[trail_start:step + 1]]) * 1e3
-
-        fig, ax = plt.subplots(1, 1, figsize=(6.5, 6.0))
-        ax.imshow(
-            U, origin="lower", extent=extent, cmap=CMAP,
-            vmin=lo, vmax=hi, aspect="equal", interpolation="bicubic",
-        )
-
-        # Home positions
-        ax.scatter(traps_mm[:, 0], traps_mm[:, 1], marker="x", c=COL_HOME,
-                   s=28, linewidths=0.8, zorder=4)
-
-        # Neighbour tethers
-        for i in neigh_idx:
-            ax.plot([traps_mm[i, 0], pos_mm[i, 0]],
-                    [traps_mm[i, 1], pos_mm[i, 1]],
-                    color=COL_NEIGH, lw=0.8, alpha=0.65, zorder=3)
-
-        # A and B tethers
-        for i, col in [(idx_A, COL_A), (idx_B, COL_B)]:
-            ax.plot([traps_mm[i, 0], pos_mm[i, 0]],
-                    [traps_mm[i, 1], pos_mm[i, 1]],
-                    color=col, lw=1.2, alpha=0.9, zorder=3)
-
-        # Particles
-        ax.scatter(pos_mm[neigh_idx, 0], pos_mm[neigh_idx, 1],
-                   c=COL_NEIGH, s=28, zorder=6)
-        ax.scatter([pos_mm[idx_B, 0]], [pos_mm[idx_B, 1]],
-                   c=COL_B, s=44, zorder=7)
-        ax.scatter([pos_mm[idx_A, 0]], [pos_mm[idx_A, 1]],
-                   c=COL_A, s=44, zorder=7)
-
-        # Vortex centre trail
-        if len(centers) > 1:
-            ax.plot(centers[:, 0], centers[:, 1], color=COL_CTR,
-                    lw=0.9, alpha=0.75, zorder=5)
-        ax.plot(centers[-1, 0], centers[-1, 1], marker="+",
-                color=COL_CTR, ms=10, mew=1.5, zorder=8)
-
-        ax.set_xlim(*view_xlim)
-        ax.set_ylim(*view_ylim)
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_xlabel("x [mm]")
-        ax.set_ylabel("y [mm]")
-
-        d_AB = float(np.linalg.norm(
-            result.positions[step][idx_A] - result.positions[step][idx_B]
-        ) * 1e6)
-        # Phase label
-        if step < open_loop_steps:
-            phase_label = "OPEN-LOOP"
-        elif step < open_loop_steps + (cfg_T if 'cfg_T' in dir() else 500):
+        d_AB_um = float(np.linalg.norm(pos_all[idx_A] - pos_all[idx_B]) * 1e6)
+        b_stat = _b_status(pos_all[idx_B], vc_m, r_barrier)
+        if step < open_loop_steps + T_mpc:
             phase_label = "MPC"
         else:
             phase_label = "SETTLE"
-        # Determine phase from step count vs open_loop_steps
-        if step < open_loop_steps:
-            phase_label = "OPEN-LOOP"
-        else:
-            phase_label = "MPC+SETTLE"
-        ax.set_title(
-            f"{phase_label} — step {step}/{T_total} | "
-            f"d(A,B)={d_AB:.0f} µm\n"
-            f"α={alpha:.2f}  β={beta:.2f}  ψ={psi:.2f} rad",
-            fontsize=9,
+
+        fig, ax = plt.subplots(1, 1, figsize=(6.0, 6.0))
+        _gif_frame(
+            ax, p_sw, vortex_gen, xg, yg, traps_m, idx_A, idx_B, neigh_idx,
+            r_barrier, view_xlim, view_ylim, extent, dx, dy, r_barrier_mm, traps_mm,
+            psi=psi,
+            alpha=alpha,
+            vc_m=vc_m,
+            pos_A_m=pos_all[idx_A],
+            pos_B_m=pos_all[idx_B],
+            neigh_pos_m=pos_all[neigh_idx] if len(neigh_idx) > 0 else None,
+            trail_mm=trail_mm,
+            label=phase_label,
+            d_AB_um=d_AB_um,
+            b_stat=b_stat,
+            fi=fi,
+            n_frames_total=n_total_frames,
         )
+        frames.append(_fig_to_pil(fig))
+        if (mfi + 1) % 50 == 0:
+            print(f"    {mfi + 1}/{len(mpc_indices)}")
 
-        fig.tight_layout()
-        fig.canvas.draw()
-        buf = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
-        w, h = fig.canvas.get_width_height()
-        frames.append(Image.fromarray(buf.reshape(h, w, 4)).convert("RGB"))
-        plt.close(fig)
-
-        if (fi + 1) % 50 == 0:
-            print(f"    {fi + 1}/{len(frame_indices)}")
+    if not frames:
+        print("  WARNING: no frames to save")
+        return
 
     frames[0].save(
-        str(out_path),
-        save_all=True,
-        append_images=frames[1:],
-        duration=duration_ms,
-        loop=0,
+        str(out_path), save_all=True, append_images=frames[1:],
+        duration=duration_ms, loop=0,
     )
-    print(f"  Saved GIF: {out_path}")
+    print(f"  Saved GIF ({len(frames)} frames): {out_path}")
 
 
 # ════════════════════════════════════════════════════════════════
@@ -525,120 +1013,97 @@ def main() -> None:
     parser.add_argument("--n_particles", type=int, default=9, help="Number of particles (2-9); default all")
     parser.add_argument("--T_settle", type=int, default=T_SETTLE_DEFAULT,
                         help="Settling-phase steps (α→0 ramp-down after MPC)")
-    # ── New: vortex source selection ──
+    # ── Vortex beam (focused Bessel, same as vortex_entry_test) ──
     parser.add_argument("--vortex_source", type=str, default="bessel",
                         choices=["lg", "bessel"],
-                        help="Vortex field model: 'bessel' (Bessel from finite aperture, "
-                             "default) or 'lg' (Laguerre-Gaussian)")
-    parser.add_argument("--bessel_aperture", type=float, default=BESSEL_APERTURE_RADIUS * 1e3,
-                        help="Bessel transducer aperture radius [mm]")
-    parser.add_argument("--bessel_prop_dist", type=float, default=BESSEL_PROP_DIST * 1e3,
-                        help="Bessel propagation distance [mm]")
-    # ── New: remote particle + open-loop ──
-    parser.add_argument("--remote_distance", type=float, default=REMOTE_DISTANCE_LAM,
-                        help="Remote particle distance from cluster edge [λ]")
+                        help="Vortex field model: 'bessel' (focused Bessel, default) or 'lg'")
+    parser.add_argument("--bessel_aperture", type=float, default=BESSEL_APERTURE_MM_DEFAULT,
+                        help="Lens aperture radius [mm] (default %(default)s)")
+    parser.add_argument("--bessel_prop_dist", type=float, default=BESSEL_PROP_DIST_MM_DEFAULT,
+                        help="ASM propagation distance [mm] (default %(default)s)")
+    parser.add_argument("--focus_mm", type=float, default=FOCUS_MM_DEFAULT,
+                        help="Lens focal length [mm] (default %(default)s)")
+    # ── Phase-sweep carry (Phase I, same as vortex_entry_test) ───
+    parser.add_argument("--n_psi", type=int, default=N_PSI_DEFAULT,
+                        help="Number of phase-sweep values (default %(default)s)")
+    parser.add_argument("--n_vortex_steps", type=int, default=N_VORTEX_STEPS_DEFAULT,
+                        help="Vortex path steps in Phase I carry (default %(default)s)")
+    parser.add_argument("--n_dyn_steps", type=int, default=N_DYN_STEPS_DEFAULT,
+                        help="Dynamics steps per vortex position in Phase I (default %(default)s)")
+    parser.add_argument("--w_barrier", type=float, default=W_BARRIER_DEFAULT)
+    parser.add_argument("--w_pull", type=float, default=W_PULL_DEFAULT)
+    parser.add_argument("--w_lateral", type=float, default=W_LATERAL_DEFAULT)
+    parser.add_argument("--w_retain", type=float, default=W_RETAIN_DEFAULT,
+                        help="Weight on -F_A_in in phase sweep score (default %(default)s)")
+    parser.add_argument("--max_step", type=float, default=MAX_STEP_DEFAULT,
+                        help="Max particle displacement per dynamics step [m]")
+    # ── Trap selection ───────────────────────────────────────────
+    parser.add_argument("--idx_B", type=int, default=None,
+                        help="Override B trap index (default: nearest to grid centre)")
+    parser.add_argument("--min_sep_factor", type=float, default=GEOM_MARGIN,
+                        help="A must satisfy d(A,B) > factor * r_barrier (default %(default)s)")
+    parser.add_argument("--n_neigh_radius", type=float, default=N_NEIGH_RADIUS_DEFAULT,
+                        help="MPC neighbours: traps within this many trap-spacings of A-B midpoint")
+    # ── MPC activation ───────────────────────────────────────────
     parser.add_argument("--mpc_activation_radius", type=float, default=MPC_ACTIVATION_RADIUS_LAM,
-                        help="Distance from cluster at which MPC activates [λ]")
-    parser.add_argument("--open_loop_speed", type=float, default=OPEN_LOOP_SPEED * 1e3,
-                        help="Open-loop vortex cruise speed [mm/s]")
+                        help="Distance from B at which MPC activates [λ]")
     parser.add_argument("--ol_alpha", type=float, default=3.0,
-                        help="Vortex amplitude α during open-loop (strong capture)")
-    parser.add_argument("--ol_beta", type=float, default=1.0,
-                        help="Standing-wave amplitude β during open-loop (full SW visible)")
-    # ── New: per-step rate limits ──
+                        help="Vortex amplitude α during Phase I carry")
+    parser.add_argument("--ol_beta", type=float, default=BETA_FIXED,
+                        help="Standing-wave amplitude β during Phase I carry")
+    # ── MPC per-step rate limits ──────────────────────────────────
     parser.add_argument("--vxy_rate", type=float, default=0.5,
                         help="MPC vortex position rate limit [µm/step]")
     parser.add_argument("--psi_rate", type=float, default=2.0 * np.pi,
                         help="MPC ψ rate limit [rad/step] (default 2π = free)")
     args = parser.parse_args()
 
-    # ── Load data ─────────────────────────────────────────────────
-    print("Loading standing-wave and trap data...")
-    ov = np.load(OVERLAY_NPZ)
-    traps_m_all = ov["traps_m"].astype(float)
-    # Override: A = "top middle" (trap 8), B = "middle" (trap 4)
-    idx_A_orig = 8   # top centre
-    idx_B_orig = 4   # middle centre
+    # ── Load data (same source as vortex_entry_test) ─────────────
+    bessel_R = args.bessel_aperture * 1e-3
+    bessel_z = args.bessel_prop_dist * 1e-3
+    focus_f  = args.focus_mm * 1e-3
+    (p_sw, xg, yg, dx, dy,
+     traps_m_all, vortex_gen, r_barrier) = load_data(bessel_R, bessel_z, focus_f)
+    vortex_family = "focused_bessel_asm" if args.vortex_source == "bessel" else "LG"
 
-    vd = np.load(VORTEX_NPZ)
-    xg = vd["xg"].astype(float)
-    yg = vd["yg"].astype(float)
-    p_sw = vd["p_sw"].astype(complex)
-    p_sw_peak = float(np.max(np.abs(p_sw)))
-    print(f"  p_sw max amplitude: {p_sw_peak:.2f}")
+    # ── Select A/B trap pair (automatic, same as vortex_entry_test) ──
+    idx_A, idx_B = select_trap_pair(
+        traps_m_all, r_barrier, xg, yg,
+        idx_B_override=args.idx_B,
+        min_sep_factor=args.min_sep_factor,
+    )
+    validate_geometry(traps_m_all, idx_A, idx_B, r_barrier)
 
-    dx = float(xg[1] - xg[0])
-    dy = float(yg[1] - yg[0])
+    A_remote_xy = traps_m_all[idx_A].copy()
+    B_xy        = traps_m_all[idx_B].copy()
 
-    # ── Select particles (A = top-middle, B = middle) ─────────────
-    B_xy = traps_m_all[idx_B_orig]
-    A_orig_xy = traps_m_all[idx_A_orig]
+    # Target positions for MPC: A merges into B's trap, others stay home.
+    traps_m = traps_m_all.copy()
+    traps_m[idx_A] = B_xy.copy()
 
-    # All particles stay in the cluster; A starts at its actual trap.
-    traps_m_cluster = traps_m_all.copy()
-    init_pos = traps_m_cluster.copy()           # everyone at home
+    # Init positions: all particles at their home traps.
+    init_pos = traps_m_all.copy()
 
-    # Target positions: A merges into B's trap, others stay home.
-    traps_m = traps_m_cluster.copy()
-    traps_m[idx_A_orig] = B_xy.copy()
+    # Neighbours for MPC: only traps within n_neigh_radius trap-spacings of
+    # the A-B midpoint (avoids giving MPC 195 particles to track).
+    mid_AB  = 0.5 * (A_remote_xy + B_xy)
+    neigh_radius = args.n_neigh_radius * TRAP_SP
+    dists_to_mid = np.linalg.norm(traps_m_all - mid_AB, axis=1)
+    neigh_idx = np.array(
+        [i for i in range(len(traps_m_all))
+         if i not in (idx_A, idx_B) and dists_to_mid[i] < neigh_radius],
+        dtype=int,
+    )
 
-    idx_A = idx_A_orig
-    idx_B = idx_B_orig
-    A_remote_xy = A_orig_xy.copy()              # kept for open-loop start
-    neigh_idx = np.array([i for i in range(len(traps_m)) if i not in (idx_A, idx_B)], dtype=int)
-
-    print(f"Particles: {len(traps_m)} (A={idx_A} [top-middle], B={idx_B} [middle], "
-          f"neighbours={neigh_idx.tolist()})")
+    d_AB_init = np.linalg.norm(A_remote_xy - B_xy)
+    print(f"\nParticles: A={idx_A}, B={idx_B}, neighbours={len(neigh_idx)} "
+          f"(within {args.n_neigh_radius:.1f} trap spacings of midpoint)")
     print(f"  A (start):  {A_remote_xy*1e3} mm")
     print(f"  B (target): {B_xy*1e3} mm")
-    d_AB_init = np.linalg.norm(A_remote_xy - B_xy)
     print(f"  d(A,B) = {d_AB_init*1e6:.1f} µm = {d_AB_init/LAM:.1f} λ")
-
-    # ── Generate vortex field ─────────────────────────────────────
-    grid_cx = 0.5 * (float(xg[0]) + float(xg[-1]))
-    grid_cy = 0.5 * (float(yg[0]) + float(yg[-1]))
-    XX, YY = np.meshgrid(xg, yg)
-
-    if args.vortex_source == "bessel":
-        # First-order Bessel vortex: uniform source + spiral phase, ASM-propagated
-        bessel_R = args.bessel_aperture * 1e-3  # mm → m
-        bessel_z = args.bessel_prop_dist * 1e-3
-        p_source = make_bessel_vortex_field(
-            XX, YY,
-            charge=args.charge,
-            aperture_radius=bessel_R,
-            k=ASM_K0,
-            center=(grid_cx, grid_cy),
-            apodization="cosine_taper",
-        )
-        print(f"  Bessel source: R={bessel_R*1e3:.1f} mm, z_prop={bessel_z*1e3:.1f} mm")
-        p_vortex_raw = propagate_asm(p_source, dx, dy, wavelength=ASM_LAM, z=bessel_z)
-        vortex_family = "bessel_asm"
-    else:
-        # LG fallback
-        vortex_waist_m = args.waist * 1e-3
-        p_vortex_raw = make_vortex_field(
-            XX, YY,
-            charge=args.charge,
-            waist=vortex_waist_m,
-            center=(grid_cx, grid_cy),
-        )
-        vortex_family = "LG"
-
-    # Scale amplitude to match p_sw peak so α=1.0 gives comparable force.
-    p_vortex_peak = float(np.max(np.abs(p_vortex_raw)))
-    if p_vortex_peak > 0:
-        p_vortex_raw = p_vortex_raw * (p_sw_peak / p_vortex_peak)
-    print(f"  Vortex ({vortex_family}): charge={args.charge}, "
-          f"peak={float(np.max(np.abs(p_vortex_raw))):.2f} Pa")
-
-    vortex_gen = VortexPerturbation(
-        p_vortex_raw, xg, yg, out_xg=xg, out_yg=yg,
-    )
 
     # ── Configure MPC ─────────────────────────────────────────────
     corridor_margin = 2.0 * TRAP_SP
-    # Bounds span the full transport corridor: A_remote → B
     all_positions = np.vstack([A_remote_xy[np.newaxis, :], traps_m])
 
     cfg = MPCConfig(
@@ -703,94 +1168,110 @@ def main() -> None:
         return
 
     # ════════════════════════════════════════════════════════════════
-    #  Phase I — Open-loop pickup: move vortex from A_remote toward cluster
-    #  Tethered approach: vortex only advances when particle A follows.
+    #  Phase I — Phase-sweep carry: move vortex (with A inside) toward B
+    #  At each vortex step, sweep ψ to retain A and minimise barrier score.
+    #  Identical method to vortex_entry_test; MPC takes over near B.
     # ════════════════════════════════════════════════════════════════
-    open_loop_speed = args.open_loop_speed * 1e-3  # mm/s → m/s
     mpc_activation_dist = args.mpc_activation_radius * LAM
-    LEASH = 0.3 * LAM   # max distance between vortex centre and particle A
 
-    # Vector from A_remote toward B
+    # Build discrete vortex path from A's trap to mpc_activation_dist before B
     transport_vec = traps_m[idx_B] - A_remote_xy
     transport_dist = float(np.linalg.norm(transport_vec))
     transport_dir = transport_vec / max(transport_dist, 1e-12)
+    ol_travel_dist = max(0.0, transport_dist - mpc_activation_dist)
+    ol_end = A_remote_xy + transport_dir * ol_travel_dist
+    vortex_path_ol = _ol_vortex_path(A_remote_xy, ol_end, args.n_vortex_steps)
 
-    # Stop open-loop when vortex center is mpc_activation_dist from B
-    open_loop_travel = max(0.0, transport_dist - mpc_activation_dist)
-    max_ol_steps = int(open_loop_travel / (open_loop_speed * cfg.dt)) + 500  # safety margin
+    # Fixed view: computed once from vortex path + cluster traps
+    view_xlim, view_ylim = _compute_view(traps_m, idx_A, idx_B, vortex_path_ol)
+    print(f"  Render view: x=[{view_xlim[0]:.2f}, {view_xlim[1]:.2f}] "
+          f"y=[{view_ylim[0]:.2f}, {view_ylim[1]:.2f}] mm")
 
-    print(f"\n  Phase I — Open-loop pickup (tethered):")
-    print(f"    Travel: {open_loop_travel*1e3:.2f} mm at max {open_loop_speed*1e3:.1f} mm/s")
-    print(f"    Leash: {LEASH*1e6:.0f} µm ({LEASH/LAM:.2f} λ)")
-    print(f"    MPC activates at {mpc_activation_dist*1e3:.2f} mm from B")
-
-    # Tethered open-loop: vortex advances at max speed but waits for particle A.
+    psi_values = np.linspace(0, 2 * np.pi, args.n_psi, endpoint=False)
     step_scale = SCALE * cfg.dt
     pos = init_pos.copy()
     ol_positions = [pos.copy()]
     ol_controls = []
     ol_forces = []
 
-    vortex_pos = A_remote_xy.copy()
-    max_advance = open_loop_speed * cfg.dt  # max vortex displacement per step [m]
+    # Frame snapshot indices within each dyn sub-loop (matches vortex_entry_test)
+    snap_indices = set(
+        np.linspace(0, args.n_dyn_steps - 1, FRAMES_PER_VSTEP, dtype=int).tolist()
+    )
+    carry_frames: List[Dict[str, Any]] = []
+    vortex_trail: List[np.ndarray] = []
 
-    for k in range(max_ol_steps):
-        # Desired vortex position: advance toward B
-        desired = vortex_pos + transport_dir * max_advance
-        # Progress along transport axis
-        progress = float(np.dot(desired - A_remote_xy, transport_dir))
-        if progress >= open_loop_travel:
-            desired = A_remote_xy + transport_dir * open_loop_travel
-            at_target = True
-        else:
-            at_target = False
+    # ── Intro frames: standing wave only (α=0), before vortex activates ──
+    intro_vc = vortex_path_ol[0].copy()
+    b_stat_intro = _b_status(pos[idx_B], intro_vc, r_barrier)
+    for _ in range(N_INTRO_FRAMES):
+        carry_frames.append({
+            "pos_A": pos[idx_A].copy(),
+            "pos_B": pos[idx_B].copy(),
+            "vortex_center": intro_vc.copy(),
+            "vortex_trail": [intro_vc.copy()],
+            "psi": 0.0, "alpha": 0.0,
+            "d_AB": float(np.linalg.norm(pos[idx_A] - pos[idx_B])),
+            "label": "INTRO", "B_status": b_stat_intro,
+        })
 
-        # Leash: clamp vortex so it stays within LEASH of particle A
-        to_desired = desired - pos[idx_A]
-        d_leash = float(np.linalg.norm(to_desired))
-        if d_leash > LEASH:
-            # Don't advance — hold vortex at leash boundary from A
-            vortex_pos = pos[idx_A] + to_desired / d_leash * LEASH
-        else:
-            vortex_pos = desired.copy()
+    print(f"\n  Phase I — Phase-sweep carry ({args.n_vortex_steps} vortex steps × "
+          f"{args.n_dyn_steps} dyn steps):")
+    print(f"    Travel: {ol_travel_dist*1e3:.2f} mm, MPC activates at "
+          f"{mpc_activation_dist*1e3:.2f} mm from B")
 
-        u_ol = np.array([
-            0.0,                        # psi = 0  (open-loop)
-            vortex_pos[0],
-            vortex_pos[1],
-            args.ol_alpha,              # strong vortex for capture
-            args.ol_beta,               # weak SW to release from trap
-        ])
-        u_ol = np.clip(u_ol, cfg.u_lo, cfg.u_hi)
-        ol_controls.append(u_ol.copy())
+    for v_step in range(args.n_vortex_steps):
+        vortex_center = vortex_path_ol[v_step].copy()
+        vortex_trail.append(vortex_center.copy())
 
-        # Use fast spline-based force evaluation (no full-grid basis rebuild)
-        Fx, Fy = feval._fast_forces_at_pts(
-            pos, u_ol[1], u_ol[2], u_ol[3], u_ol[4], u_ol[0]
+        best = phase_sweep_carry(
+            p_sw, vortex_gen, xg, yg, dx, dy,
+            psi_values, args.ol_alpha, args.ol_beta,
+            vortex_center, pos[idx_A].copy(), pos[idx_B].copy(), r_barrier,
+            w_barrier=args.w_barrier, w_pull=args.w_pull, w_lateral=args.w_lateral,
+            w_retain=args.w_retain,
         )
-        ol_forces.append((Fx.copy(), Fy.copy()))
-        pos = pos.copy()
-        pos[:, 0] += step_scale * Fx
-        pos[:, 1] += step_scale * Fy
-        ol_positions.append(pos.copy())
+        psi_best = float(best["psi"])
+        mech = best["mechanism"]["mechanism"]
+        ret_s = "OK" if best["F_A_in"] > 0 else "FALLBACK"
+        print(f"    v_step {v_step+1:02d}/{args.n_vortex_steps} | "
+              f"psi={psi_best:.2f} | {mech} | A-retain: {ret_s}")
 
-        # Check completion: vortex reached activation zone
-        d_to_B = float(np.linalg.norm(vortex_pos - traps_m[idx_B]))
-        if at_target or d_to_B <= mpc_activation_dist:
-            break
+        u_ol = np.array([psi_best, vortex_center[0], vortex_center[1],
+                         args.ol_alpha, args.ol_beta])
+        u_ol = np.clip(u_ol, cfg.u_lo, cfg.u_hi)
+
+        for dyn_i in range(args.n_dyn_steps):
+            Fx, Fy = feval.forces(u_ol, pos)
+            ol_controls.append(u_ol.copy())
+            ol_forces.append((Fx.copy(), Fy.copy()))
+            pos = pos.copy()
+            pos[:, 0] += np.clip(step_scale * Fx, -args.max_step, args.max_step)
+            pos[:, 1] += np.clip(step_scale * Fy, -args.max_step, args.max_step)
+            pos[:, 0] = np.clip(pos[:, 0], xg[2], xg[-3])
+            pos[:, 1] = np.clip(pos[:, 1], yg[2], yg[-3])
+            ol_positions.append(pos.copy())
+
+            if dyn_i in snap_indices:
+                b_stat = _b_status(pos[idx_B], vortex_center, r_barrier)
+                carry_frames.append({
+                    "pos_A": pos[idx_A].copy(),
+                    "pos_B": pos[idx_B].copy(),
+                    "vortex_center": vortex_center.copy(),
+                    "vortex_trail": [v.copy() for v in vortex_trail],
+                    "psi": psi_best, "alpha": args.ol_alpha,
+                    "d_AB": float(np.linalg.norm(pos[idx_A] - pos[idx_B])),
+                    "label": "CARRY", "B_status": b_stat,
+                })
 
     open_loop_steps = len(ol_controls)
     open_loop_time = open_loop_steps * cfg.dt
 
-    # Position of vortex at end of open-loop
-    if open_loop_steps > 0:
-        vortex_handoff = ol_controls[-1][[I_XV, I_YV]]
-    else:
-        vortex_handoff = A_remote_xy.copy()
+    vortex_handoff = ol_controls[-1][[I_XV, I_YV]] if open_loop_steps > 0 else A_remote_xy.copy()
 
     d_AB_post_ol = float(np.linalg.norm(pos[idx_A] - pos[idx_B]) * 1e6)
-    print(f"    Completed in {open_loop_steps} steps ({open_loop_time*1e3:.1f} ms)")
-    print(f"    After open-loop: d(A,B) = {d_AB_post_ol:.1f} µm")
+    print(f"    Completed: {open_loop_steps} steps ({open_loop_time*1e3:.1f} ms)")
+    print(f"    After carry: d(A,B) = {d_AB_post_ol:.1f} µm")
 
     # ════════════════════════════════════════════════════════════════
     #  Phase II — MPC-controlled approach
@@ -875,8 +1356,13 @@ def main() -> None:
         combined_result, p_sw, vortex_gen, xg, yg, traps_m,
         idx_A, idx_B, neigh_idx,
         out_dir / "mpc_vortex_merge.gif",
+        r_barrier=r_barrier,
+        view_xlim=view_xlim,
+        view_ylim=view_ylim,
         n_frames=args.n_gif_frames,
         open_loop_steps=open_loop_steps,
+        T_mpc=cfg.T,
+        carry_frames=carry_frames,
     )
 
     # ── Manifest ──────────────────────────────────────────────────
@@ -908,21 +1394,26 @@ def main() -> None:
             "family": vortex_family,
             "bessel_aperture_mm": args.bessel_aperture if args.vortex_source == "bessel" else None,
             "bessel_prop_dist_mm": args.bessel_prop_dist if args.vortex_source == "bessel" else None,
+            "focus_mm": args.focus_mm if args.vortex_source == "bessel" else None,
             "waist_mm": args.waist if args.vortex_source == "lg" else None,
         },
         "scenario": {
-            "remote_distance_lam": args.remote_distance,
+            "data_source": "FIELD_NPZ",
             "mpc_activation_radius_lam": args.mpc_activation_radius,
-            "open_loop_speed_mm_s": args.open_loop_speed,
+            "carry_n_vortex_steps": args.n_vortex_steps,
+            "carry_n_dyn_steps": args.n_dyn_steps,
+            "carry_n_psi": args.n_psi,
+            "carry_w_retain": args.w_retain,
             "ol_alpha": args.ol_alpha,
             "ol_beta": args.ol_beta,
-            "open_loop_steps": open_loop_steps,
-            "open_loop_duration_ms": round(ol_duration * 1e3, 1),
+            "carry_steps": open_loop_steps,
+            "carry_duration_ms": round(ol_duration * 1e3, 1),
+            "r_barrier_um": round(r_barrier * 1e6, 1),
             "vxy_rate_um_per_step": args.vxy_rate,
             "psi_rate_rad_per_step": args.psi_rate,
         },
         "particles": {
-            "n_total": len(traps_m),
+            "n_total": len(traps_m_all),
             "idx_A": idx_A,
             "idx_B": idx_B,
             "n_neighbours": len(neigh_idx),
