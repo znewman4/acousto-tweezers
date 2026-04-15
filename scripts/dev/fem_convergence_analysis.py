@@ -10,6 +10,7 @@ Reads all .npz outputs from the convergence study driver
   2.  Domain-size sensitivity comparison
   3.  PML sensitivity comparison
   4.  Production acceptance argument
+Full post-processing and figure generation for the FEM standing-wave
 
 Generates:
   - Convergence error vs EPL / h plots

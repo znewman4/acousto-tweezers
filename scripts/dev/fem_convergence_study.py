@@ -68,6 +68,7 @@ import argparse
 import csv
 import gc
 import json
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -127,6 +128,16 @@ def parse_args() -> argparse.Namespace:
         "--epl", type=float, default=5.0,
         help="Elements per wavelength — accepts floats e.g. 3.5")
 
+    # ── batch mode ────────────────────────────────────────────────────────────
+    p.add_argument(
+        "--batch", action="store_true", default=False,
+        help="Run dense EPL sweep (finest first → reference). "
+             "Overrides --epl. Default list: 6.5,6.25,6.0,...,2.0")
+    p.add_argument(
+        "--epl-list", type=str, default=None,
+        help="Comma-separated EPL values for batch mode, e.g. '2,3,4,5'. "
+             "Sorted descending internally (finest first).")
+
     # ── domain geometry ───────────────────────────────────────────────────────
     p.add_argument(
         "--physical-size-mm", type=float, default=None,
@@ -148,6 +159,13 @@ def parse_args() -> argparse.Namespace:
         "--mumps-mem-mb", type=int, default=None,
         help="MUMPS working memory cap per process [MB] (icntl_23). "
              "0 or omitted = unlimited.")
+    p.add_argument(
+        "--mumps-blr", action="store_true", default=False,
+        help="Enable MUMPS Block Low-Rank compression (icntl_35=1, cntl_7=0.01)")
+    p.add_argument(
+        "--mumps-ordering", type=str, default=None,
+        choices=["auto", "amd", "amf", "scotch", "pord", "metis", "qamd"],
+        help="MUMPS fill-reducing ordering strategy (icntl_7)")
 
     # ── PML controls ──────────────────────────────────────────────────────────
     p.add_argument(
@@ -160,12 +178,18 @@ def parse_args() -> argparse.Namespace:
         "--pml-sigma-max-factor", type=float, default=None,
         help="PML sigma_max = factor * omega (default: from preset, 5.0)")
 
+    # ── domain height control ─────────────────────────────────────────────────
+    p.add_argument(
+        "--h-under-mm", type=float, default=None,
+        help="Override water-bath depth H_under [mm]. Default: 5.0 mm. "
+             "Reduce to 3 or 2 mm to save memory at high EPL.")
+
     # ── reference solution ────────────────────────────────────────────────────
     p.add_argument(
         "--reference-npz", type=str, default=None,
         help="Explicit path to reference .npz for error metrics. "
-             "If omitted, auto-searches for EPL=5 run with matching mode "
-             "and physical size.")
+             "If omitted, auto-searches for highest-EPL run with matching "
+             "mode and physical size.")
 
     # ── misc ──────────────────────────────────────────────────────────────────
     p.add_argument(
@@ -175,6 +199,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--no-verify", action="store_true", default=False,
         help="Skip XDMF reload verification (saves time in batch runs)")
+    p.add_argument(
+        "--skip-field-export", action="store_true", default=False,
+        help="Skip XDMF/H5 field export (saves disk in batch mode)."
+             " The .npz data file is still saved.")
 
     return p.parse_args()
 
@@ -183,9 +211,17 @@ def parse_args() -> argparse.Namespace:
 # Config builder
 # =============================================================================
 
-def build_config(args: argparse.Namespace) -> tuple[FarFieldConfig, str, float]:
+def build_config(args: argparse.Namespace, epl_override: float = None,
+                  h_under_override: float = None) -> tuple[FarFieldConfig, str, float]:
     """
     Build FarFieldConfig from CLI args.
+
+    Parameters
+    ----------
+    epl_override : float, optional
+        Override args.epl (used by batch mode / OOM retry).
+    h_under_override : float, optional
+        Override H_under in metres (used by OOM retry).
 
     Returns
     -------
@@ -200,10 +236,11 @@ def build_config(args: argparse.Namespace) -> tuple[FarFieldConfig, str, float]:
         default_grid_n  = 500
     else:
         mode_tag = "convergence"
-        default_phys_mm = 3.0
+        default_phys_mm = 4.0
         default_grid_n  = 300
 
     phys_mm = args.physical_size_mm if args.physical_size_mm is not None else default_phys_mm
+    epl = epl_override if epl_override is not None else args.epl
 
     # ── compute Lx from physical interior + 2×PML ──────────────────────────
     # Build a minimal config just to get wavelength at 2.15 MHz
@@ -218,18 +255,26 @@ def build_config(args: argparse.Namespace) -> tuple[FarFieldConfig, str, float]:
     Lx    = (phys_mm * 1e-3) + 2.0 * t_pml
     Ly    = Lx
 
+    # ── H_under: CLI override → OOM retry override → default 5 mm ───────────
+    if h_under_override is not None:
+        h_under = h_under_override
+    elif args.h_under_mm is not None:
+        h_under = args.h_under_mm * 1e-3
+    else:
+        h_under = 5e-3
+
     overrides = {
         **CORRECTED_PRESET,            # inherit BCs, solver, lens settings
         # updated frequency & geometry
         "frequency_hz"               : 2.15e6,
         "Lx"                         : Lx,
         "Ly"                         : Ly,
-        "H_under"                    : 5e-3,   # water-bath depth — unchanged
+        "H_under"                    : h_under,
         "H_top"                      : 2e-3,   # Petri water depth — unchanged
         # standing wave only
         "disk_velocity_amplitude"    : 0.0,
         # mesh resolution from CLI
-        "elements_per_wavelength"    : args.epl,
+        "elements_per_wavelength"    : epl,
         # PML — from CLI or defaults
         "pml_n_wavelengths_xy"       : pml_xy_nw,
         "pml_n_wavelengths_z"        : pml_z_nw,
@@ -244,19 +289,44 @@ def build_config(args: argparse.Namespace) -> tuple[FarFieldConfig, str, float]:
 # PETSc option builder
 # =============================================================================
 
-def build_petsc_options(args: argparse.Namespace) -> dict:
+def build_petsc_options(args: argparse.Namespace,
+                        force_ooc: bool = False,
+                        force_ordering: str = None,
+                        force_blr: bool = False) -> dict:
     """
-    Extend the base MUMPS preset with any out-of-core / memory options.
+    Extend the base MUMPS preset with out-of-core / memory / BLR / ordering.
+
+    Parameters
+    ----------
+    force_ooc : bool
+        Force out-of-core even if not on CLI (OOM retry).
+    force_ordering : str or None
+        Force ordering strategy name (OOM retry).
+    force_blr : bool
+        Force BLR compression even if not on CLI (OOM retry).
     """
+    _ORDERING_MAP = {
+        "amd": "0", "amf": "1", "scotch": "2", "pord": "3",
+        "metis": "4", "qamd": "5", "auto": "6",
+    }
+
     opts = dict(PETSC_MUMPS)   # shallow copy
 
-    if args.mumps_out_of_core:
-        # icntl_22 = 1 → MUMPS out-of-core factorisation
+    if args.mumps_out_of_core or force_ooc:
         opts["mat_mumps_icntl_22"] = "1"
 
     if args.mumps_mem_mb is not None:
-        # icntl_23 → per-process memory cap in MB (0 = unlimited)
         opts["mat_mumps_icntl_23"] = str(args.mumps_mem_mb)
+
+    # Ordering strategy
+    ordering = force_ordering or args.mumps_ordering
+    if ordering is not None:
+        opts["mat_mumps_icntl_7"] = _ORDERING_MAP[ordering]
+
+    # Block Low-Rank compression
+    if args.mumps_blr or force_blr:
+        opts["mat_mumps_icntl_35"] = "1"    # enable BLR
+        opts["mat_mumps_cntl_7"]  = "0.01"  # BLR dropping threshold
 
     return opts
 
@@ -803,16 +873,46 @@ def find_reference_npz(
     study_dir: Path,
     mode_tag: str,
     phys_size_mm: float,
-    ref_epl: float = 5.0,
+    ref_epl: float = None,
 ) -> Optional[Path]:
     """
-    Search study_dir for the most recent EPL=5 .npz matching mode and size.
-    Filename pattern: conv_epl5.0_{mode}_phys{size}mm_{timestamp}.npz
+    Search study_dir for the best reference .npz.
+
+    If ref_epl is given, look for that specific EPL.
+    Otherwise, auto-detect the highest-EPL .npz matching mode and size.
+
+    Filename pattern: conv_epl{N}_{mode}_phys{size}mm_{timestamp}.npz
     Returns Path or None if not found.
     """
-    pattern = f"conv_epl{ref_epl:.1f}_{mode_tag}_phys{phys_size_mm:.1f}mm_*.npz"
-    matches = sorted(study_dir.glob(pattern))
-    return matches[-1] if matches else None
+    import re as _re
+
+    if ref_epl is not None:
+        pattern = f"conv_epl{ref_epl:.1f}_{mode_tag}_phys{phys_size_mm:.1f}mm_*.npz"
+        matches = sorted(study_dir.glob(pattern))
+        return matches[-1] if matches else None
+
+    # Auto-detect: find all .npz matching mode and phys size, pick highest EPL
+    pattern = f"conv_epl*_{mode_tag}_phys{phys_size_mm:.1f}mm_*.npz"
+    matches = list(study_dir.glob(pattern))
+    if not matches:
+        return None
+
+    # Parse EPL from filename and pick the highest
+    best_epl = -1.0
+    best_path = None
+    epl_re = _re.compile(r"conv_epl([\d.]+)_")
+    for p in matches:
+        m = epl_re.search(p.name)
+        if m:
+            epl_val = float(m.group(1))
+            if epl_val > best_epl:
+                best_epl = epl_val
+                best_path = p
+            elif epl_val == best_epl and best_path is not None:
+                if p.name > best_path.name:
+                    best_path = p
+
+    return best_path
 
 
 # =============================================================================
@@ -949,19 +1049,47 @@ def update_convergence_csv(csv_path: Path, row: dict) -> None:
 # Main
 # =============================================================================
 
-def main() -> int:
-    args = parse_args()
-    TS  = args.timestamp
-    EPL = args.epl
+# Default dense EPL list for batch mode (finest first → becomes reference)
+DEFAULT_BATCH_EPLS = [
+    6.5, 6.25, 6.0, 5.75, 5.5, 5.25, 5.0,
+    4.75, 4.5, 4.25, 4.0, 3.5, 3.0, 2.0,
+]
 
-    # ── default to convergence mode if neither flag given ─────────────────────
-    if not args.production_mode and not args.convergence_mode:
-        args.convergence_mode = True
+# OOM fallback chain for batch mode.
+# Each entry is (label, dict of extra kwargs for _build_subprocess_cmd).
+# The chain is dynamically pruned: steps redundant with CLI flags are skipped.
+_OOM_FALLBACK_CHAIN = [
+    ("out-of-core",          dict(force_ooc=True)),
+    ("OOC+METIS ordering",   dict(force_ooc=True, force_ordering="metis")),
+    ("OOC+BLR compression",  dict(force_ooc=True, force_blr=True)),
+    ("OOC+BLR+H_under=3mm",  dict(force_ooc=True, force_blr=True, h_under_mm=3.0)),
+    ("OOC+BLR+H_under=2mm",  dict(force_ooc=True, force_blr=True, h_under_mm=2.0)),
+]
+
+
+def run_single_epl(
+    args: argparse.Namespace,
+    epl: float,
+    *,
+    force_ooc: bool = False,
+    force_ordering: str = None,
+    force_blr: bool = False,
+    h_under_override: float = None,
+    reference_npz_path: Path = None,
+    is_reference: bool = False,
+) -> Optional[Path]:
+    """
+    Execute a full convergence study run for one EPL value.
+
+    Returns the path to the saved .npz file on success, or None on failure.
+    """
+    TS = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ── build config ──────────────────────────────────────────────────────────
-    cfg, mode_tag, phys_size_mm = build_config(args)
+    cfg, mode_tag, phys_size_mm = build_config(
+        args, epl_override=epl, h_under_override=h_under_override)
 
-    # ── all geometry from cfg — never top-level constants ─────────────────────
+    # ── all geometry from cfg ─────────────────────────────────────────────────
     z_star     = cfg.H_under + cfg.H_top / 2.0 + 0.25 * cfg.wavelength
     phys_x_min = cfg.t_pml_xy
     phys_x_max = cfg.Lx - cfg.t_pml_xy
@@ -976,7 +1104,7 @@ def main() -> int:
 
     # ── output directories ────────────────────────────────────────────────────
     STUDY_DIR.mkdir(parents=True, exist_ok=True)
-    run_id  = f"conv_epl{EPL:.1f}_{mode_tag}_phys{phys_size_mm:.1f}mm_{TS}"
+    run_id  = f"conv_epl{epl:.2f}_{mode_tag}_phys{phys_size_mm:.1f}mm_{TS}"
     run_dir = STUDY_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     fig_dir = run_dir / "figures"
@@ -984,11 +1112,13 @@ def main() -> int:
 
     # ── header ────────────────────────────────────────────────────────────────
     print("=" * 72)
-    print(f"MESH CONVERGENCE STUDY — EPL = {EPL}  |  mode = {mode_tag}")
+    print(f"MESH CONVERGENCE STUDY — EPL = {epl}  |  mode = {mode_tag}")
     print("=" * 72)
     print(f"  Timestamp          : {TS}")
     print(f"  Run ID             : {run_id}")
     print(f"  Physical interior  : {phys_size_mm:.3f} × {phys_size_mm:.3f} mm")
+    print(f"  H_under            : {cfg.H_under*1e3:.1f} mm")
+    print(f"  H_top              : {cfg.H_top*1e3:.1f} mm")
     print(f"  Total box          : {cfg.Lx*1e3:.3f} mm  "
           f"(PML = {cfg.t_pml_xy*1e3:.3f} mm each side)")
     print(f"  Frequency          : {cfg.frequency_hz/1e6:.3f} MHz")
@@ -997,14 +1127,20 @@ def main() -> int:
     print(f"  z*                 : {z_star*1e3:.4f} mm")
     print(f"  Mesh (target)      : {cfg.mesh_nx} × {cfg.mesh_ny} × {cfg.mesh_nz}")
     print(f"  Cartesian grid     : {grid_n} × {grid_n}")
-    print(f"  MUMPS out-of-core  : {args.mumps_out_of_core}")
+    print(f"  MUMPS out-of-core  : {args.mumps_out_of_core or force_ooc}")
     if args.mumps_mem_mb:
         print(f"  MUMPS mem cap      : {args.mumps_mem_mb} MB")
+    if force_blr or args.mumps_blr:
+        print(f"  MUMPS BLR          : enabled")
+    if force_ordering or args.mumps_ordering:
+        print(f"  MUMPS ordering     : {force_ordering or args.mumps_ordering}")
     print(f"  Output dir         : {run_dir}")
     print()
 
     # ── PETSc options ─────────────────────────────────────────────────────────
-    petsc_opts = build_petsc_options(args)
+    petsc_opts = build_petsc_options(
+        args, force_ooc=force_ooc, force_ordering=force_ordering,
+        force_blr=force_blr)
 
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 1 — FEM solve
@@ -1013,13 +1149,14 @@ def main() -> int:
     print("STEP 1  FEM solve")
     print("─" * 72)
 
+    export = not args.skip_field_export
     t_wall0 = time.time()
     sol = solve_helmholtz(
         cfg,
         verbose=True,
         petsc_options=petsc_opts,
-        export_fields=True,
-        export_dir=str(run_dir),
+        export_fields=export,
+        export_dir=str(run_dir) if export else None,
     )
     t_wall_total = time.time() - t_wall0
 
@@ -1029,6 +1166,13 @@ def main() -> int:
     print(f"  Total wall    : {t_wall_total:.1f}s")
     print(f"  max|p|        : {sol.max_pressure:.4f} Pa")
     print(f"  KSP reason    : {sol.ksp_converged_reason}")
+
+    # Detect solver divergence (inf/nan pressure)
+    if not np.isfinite(sol.max_pressure) or sol.max_pressure <= 0:
+        print(f"\n  *** SOLVER DIVERGED (max|p| = {sol.max_pressure}) ***")
+        del sol
+        gc.collect()
+        return None
     print()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1081,7 +1225,7 @@ def main() -> int:
     # STEP 5 — Error metrics vs reference
     # ─────────────────────────────────────────────────────────────────────────
     print("─" * 72)
-    print("STEP 5  Error metrics vs EPL=5 reference")
+    print("STEP 5  Error metrics vs reference")
     print("─" * 72)
 
     nan_metrics = {
@@ -1099,38 +1243,52 @@ def main() -> int:
     }
     error_metrics = dict(nan_metrics)
 
-    ref_path = None
-    if args.reference_npz:
+    ref_path = reference_npz_path
+    if ref_path is None and args.reference_npz:
         ref_path = Path(args.reference_npz)
         if not ref_path.exists():
             print(f"  WARNING: --reference-npz path not found: {ref_path}")
             ref_path = None
 
-    if ref_path is None and EPL < 5.0:
-        ref_path = find_reference_npz(STUDY_DIR, mode_tag, phys_size_mm, ref_epl=5.0)
+    if ref_path is None and not is_reference:
+        # Auto-detect highest-EPL reference for this mode/size
+        ref_path = find_reference_npz(STUDY_DIR, mode_tag, phys_size_mm)
 
     if ref_path is not None and ref_path.exists():
-        print(f"  Reference  : {ref_path.name}")
-        ref_data     = dict(np.load(ref_path, allow_pickle=True))
-        error_metrics = compute_error_metrics(
-            p_cart, U_cart, trap_info, ref_data, trap_info["roi_mask"],
-            wavelength=cfg.wavelength)
-        print(f"  ε L2 full  : {error_metrics['eps_L2_full']:.4e}")
-        print(f"  ε L2 ROI   : {error_metrics['eps_L2_roi']:.4e}")
-        print(f"  ε Gor'kov  : {error_metrics['eps_gorkov_roi']:.4e}")
-        print(f"  spacing Δ  : {error_metrics['trap_spacing_err_pct']:.3f}%")
-        print(f"  Matched traps      : {error_metrics['n_matched_traps']}")
-        print(f"  Unmatched (cur/ref): {error_metrics['n_unmatched_current']} / "
-              f"{error_metrics['n_unmatched_reference']}")
-        if np.isfinite(error_metrics['mean_trap_error_m']):
-            print(f"  Mean trap err      : {error_metrics['mean_trap_error_m']*1e6:.2f} µm")
-            print(f"  Max  trap err      : {error_metrics['max_trap_error_m']*1e6:.2f} µm")
-    elif EPL >= 5.0:
-        print("  This run is the reference (EPL≥5) — error metrics not applicable.")
+        # Don't compare a run to itself
+        ref_data = dict(np.load(ref_path, allow_pickle=True))
+        ref_epl_val = 0.0
+        if "metadata" in ref_data:
+            try:
+                meta_obj = ref_data["metadata"].item()
+                ref_epl_val = float(meta_obj.get("requested_epl", 0))
+            except Exception:
+                pass
+        if abs(ref_epl_val - epl) < 0.01:
+            print("  This run matches the reference EPL — skipping error metrics.")
+        else:
+            print(f"  Reference  : {ref_path.name}")
+            try:
+                error_metrics = compute_error_metrics(
+                    p_cart, U_cart, trap_info, ref_data, trap_info["roi_mask"],
+                    wavelength=cfg.wavelength)
+                print(f"  ε L2 full  : {error_metrics['eps_L2_full']:.4e}")
+                print(f"  ε L2 ROI   : {error_metrics['eps_L2_roi']:.4e}")
+                print(f"  ε Gor'kov  : {error_metrics['eps_gorkov_roi']:.4e}")
+                print(f"  spacing Δ  : {error_metrics['trap_spacing_err_pct']:.3f}%")
+                print(f"  Matched traps      : {error_metrics['n_matched_traps']}")
+                print(f"  Unmatched (cur/ref): {error_metrics['n_unmatched_current']} / "
+                      f"{error_metrics['n_unmatched_reference']}")
+                if np.isfinite(error_metrics['mean_trap_error_m']):
+                    print(f"  Mean trap err      : {error_metrics['mean_trap_error_m']*1e6:.2f} µm")
+                    print(f"  Max  trap err      : {error_metrics['max_trap_error_m']*1e6:.2f} µm")
+            except ValueError as e:
+                print(f"  WARNING: Error metric computation failed: {e}")
+                print("  (Grid mismatch likely due to domain-reduction fallback.)")
+    elif is_reference:
+        print("  This is the reference run — error metrics not applicable.")
     else:
-        print("  No EPL=5 reference found. Run EPL=5 first to enable error metrics.")
-        print("  (Searching for: "
-              f"conv_epl5.0_{mode_tag}_phys{phys_size_mm:.1f}mm_*.npz)")
+        print("  No reference found. First run (highest EPL) will become reference.")
     print()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1147,7 +1305,7 @@ def main() -> int:
         "timestamp"                : TS,
         "mode"                     : mode_tag,
         "physical_size_mm"         : phys_size_mm,
-        "requested_epl"            : EPL,
+        "requested_epl"            : epl,
         "frequency_hz"             : cfg.frequency_hz,
         "wavelength_m"             : cfg.wavelength,
         "z_star_m"                 : z_star,
@@ -1163,7 +1321,7 @@ def main() -> int:
         "solve_time_s"             : sol.solver_time,
         "total_wall_time_s"        : t_wall_total,
         "max_pressure_Pa"          : sol.max_pressure,
-        "mumps_out_of_core"        : int(args.mumps_out_of_core),
+        "mumps_out_of_core"        : int(args.mumps_out_of_core or force_ooc),
         "mumps_mem_mb"             : args.mumps_mem_mb or 0,
         "grid_n"                   : grid_n,
         "particle_radius_m"        : PARTICLE_RADIUS_M,
@@ -1227,7 +1385,7 @@ def main() -> int:
         "timestamp"                : TS,
         "mode"                     : mode_tag,
         "physical_size_mm"         : phys_size_mm,
-        "requested_epl"            : EPL,
+        "requested_epl"            : epl,
         "mesh_nx"                  : cfg.mesh_nx,
         "mesh_ny"                  : cfg.mesh_ny,
         "mesh_nz"                  : cfg.mesh_nz,
@@ -1235,7 +1393,7 @@ def main() -> int:
         "mesh_time_s"              : round(sol.mesh_time, 2),
         "solve_time_s"             : round(sol.solver_time, 2),
         "total_wall_time_s"        : round(t_wall_total, 2),
-        "mumps_out_of_core"        : int(args.mumps_out_of_core),
+        "mumps_out_of_core"        : int(args.mumps_out_of_core or force_ooc),
         "mumps_mem_mb"             : args.mumps_mem_mb or 0,
         "max_p_Pa"                 : round(sol.max_pressure, 4),
         "z_star_mm"                : round(z_star * 1e3, 4),
@@ -1273,7 +1431,7 @@ def main() -> int:
     make_figures(
         p_cart, U_cart, trap_info,
         x_grid, y_grid, z_star,
-        cfg, EPL, mode_tag, fig_dir,
+        cfg, epl, mode_tag, fig_dir,
     )
     print()
 
@@ -1284,7 +1442,7 @@ def main() -> int:
     print("COMPLETE")
     print("=" * 72)
     print(f"  Run ID        : {run_id}")
-    print(f"  EPL           : {EPL}")
+    print(f"  EPL           : {epl}")
     print(f"  DOFs          : {sol.dofs:,}")
     print(f"  Solve time    : {sol.solver_time:.1f}s")
     print(f"  Total wall    : {t_wall_total:.1f}s")
@@ -1300,10 +1458,245 @@ def main() -> int:
     print(f"  CSV           : {csv_path.name}")
     print()
 
-    # Release FEM objects (not needed downstream)
+    # Release FEM objects
     del sol
     gc.collect()
-    return 0
+    return npz_path
+
+
+def _build_subprocess_cmd(
+    args: argparse.Namespace,
+    epl: float,
+    *,
+    force_ooc: bool = False,
+    force_ordering: str = None,
+    force_blr: bool = False,
+    h_under_mm: float = None,
+    reference_npz: Path = None,
+) -> list[str]:
+    """
+    Build the CLI command to run a single EPL in a child process.
+
+    Mirrors the current args into explicit flags so the child process
+    inherits the right settings, plus any OOM-fallback overrides.
+    """
+    cmd = [sys.executable, "-u", str(Path(__file__).resolve())]
+
+    # Mode
+    if args.convergence_mode:
+        cmd.append("--convergence-mode")
+    elif args.production_mode:
+        cmd.append("--production-mode")
+
+    cmd.extend(["--epl", str(epl)])
+
+    phys_mm = args.physical_size_mm or (5.4 if args.production_mode else 4.0)
+    cmd.extend(["--physical-size-mm", str(phys_mm)])
+
+    if args.grid_n is not None:
+        cmd.extend(["--grid-n", str(args.grid_n)])
+
+    # MUMPS
+    if args.mumps_out_of_core or force_ooc:
+        cmd.append("--mumps-out-of-core")
+    if args.mumps_mem_mb is not None:
+        cmd.extend(["--mumps-mem-mb", str(args.mumps_mem_mb)])
+    if args.mumps_blr or force_blr:
+        cmd.append("--mumps-blr")
+    ordering = force_ordering or args.mumps_ordering
+    if ordering:
+        cmd.extend(["--mumps-ordering", ordering])
+
+    # PML
+    if args.pml_n_wavelengths_xy is not None:
+        cmd.extend(["--pml-n-wavelengths-xy", str(args.pml_n_wavelengths_xy)])
+    if args.pml_n_wavelengths_z is not None:
+        cmd.extend(["--pml-n-wavelengths-z", str(args.pml_n_wavelengths_z)])
+    if args.pml_sigma_max_factor is not None:
+        cmd.extend(["--pml-sigma-max-factor", str(args.pml_sigma_max_factor)])
+
+    # H_under:  fallback override > CLI override
+    if h_under_mm is not None:
+        cmd.extend(["--h-under-mm", str(h_under_mm)])
+    elif args.h_under_mm is not None:
+        cmd.extend(["--h-under-mm", str(args.h_under_mm)])
+
+    # Reference
+    if reference_npz:
+        cmd.extend(["--reference-npz", str(reference_npz)])
+
+    cmd.append("--no-verify")
+    cmd.append("--skip-field-export")
+    return cmd
+
+
+def _find_newest_npz(epl: float, phys_mm: float, before: set[Path]) -> Optional[Path]:
+    """
+    Find the newest .npz for *epl* that wasn't in *before*.
+
+    Handles both .1f and .2f EPL formats in filenames.
+    """
+    import re as _re
+    current = set(STUDY_DIR.glob("*.npz")) if STUDY_DIR.exists() else set()
+    new_files = sorted(current - before, reverse=True)  # newest first
+    # Match conv_epl4.25_ or conv_epl4.2_ etc.
+    epl_pats = [_re.escape(f"{epl:.2f}"), _re.escape(f"{epl:.1f}")]
+    epl_re = _re.compile(r"conv_epl(" + "|".join(epl_pats) + r")_")
+    for p in new_files:
+        if epl_re.search(p.name):
+            return p
+    return None
+
+
+def _run_with_oom_retry(args: argparse.Namespace, epl: float,
+                         reference_npz: Path = None,
+                         is_reference: bool = False) -> Optional[Path]:
+    """
+    Run a single EPL with **subprocess isolation** and progressive OOM fallback.
+
+    Each attempt launches a separate Python process so that an OS-level
+    OOM kill (SIGKILL / exit 137) does not take down the batch coordinator.
+
+    Fallback chain (dynamically pruned if CLI already enables a step):
+      0. CLI settings as-is
+      1. Enable out-of-core
+      2. OOC + METIS ordering
+      3. OOC + BLR compression
+      4. OOC + BLR + H_under = 3 mm
+      5. OOC + BLR + H_under = 2 mm
+      6. Give up
+    """
+    import subprocess
+
+    phys_mm = args.physical_size_mm or (5.4 if args.production_mode else 4.0)
+    existing_npz = set(STUDY_DIR.glob("*.npz")) if STUDY_DIR.exists() else set()
+
+    # Build the fallback chain, pruning steps redundant with CLI flags
+    attempts: list[tuple[str, dict]] = [("CLI defaults", {})]
+    if not args.mumps_out_of_core:
+        attempts.append(("out-of-core", dict(force_ooc=True)))
+    if not args.mumps_ordering:
+        attempts.append(("OOC+METIS ordering", dict(force_ooc=True, force_ordering="metis")))
+    if not args.mumps_blr:
+        attempts.append(("OOC+BLR compression", dict(force_ooc=True, force_blr=True)))
+    # Domain reduction is always available as a final resort
+    attempts.append(("OOC+BLR+H_under=3mm", dict(force_ooc=True, force_blr=True, h_under_mm=3.0)))
+    attempts.append(("OOC+BLR+H_under=2mm", dict(force_ooc=True, force_blr=True, h_under_mm=2.0)))
+
+    for i, (label, kwargs) in enumerate(attempts):
+        cmd = _build_subprocess_cmd(
+            args, epl, reference_npz=reference_npz, **kwargs)
+
+        print(f"\n{'─'*72}")
+        print(f"  EPL={epl} — attempt {i}: {label}")
+        print(f"  {' '.join(cmd[:8])} ...")
+        print(f"{'─'*72}\n")
+        sys.stdout.flush()
+
+        try:
+            proc = subprocess.run(cmd, timeout=7200)  # 2 h max per attempt
+        except subprocess.TimeoutExpired:
+            print(f"  EPL={epl}: TIMEOUT (2 h) with {label}. Next fallback ...")
+            continue
+
+        if proc.returncode == 0:
+            npz = _find_newest_npz(epl, phys_mm, existing_npz)
+            if npz:
+                print(f"\n  ✓ EPL={epl} succeeded ({label}) → {npz.name}")
+                return npz
+            else:
+                print(f"  EPL={epl}: exit 0 but no .npz found — treating as failure.")
+        elif proc.returncode == 137 or proc.returncode == -9:
+            print(f"  EPL={epl}: OOM-killed (exit {proc.returncode}) with {label}")
+        elif proc.returncode == 1:
+            print(f"  EPL={epl}: solver diverged or error (exit 1) with {label}")
+        else:
+            print(f"  EPL={epl}: failed (exit {proc.returncode}) with {label}")
+
+        # Clean up failed run directories to save disk quota
+        import shutil
+        if STUDY_DIR.exists():
+            for d in sorted(STUDY_DIR.iterdir()):
+                if d.is_dir() and d not in existing_npz:
+                    # Only remove dirs from this EPL that have no matching .npz
+                    npz_for_dir = STUDY_DIR / f"{d.name}.npz"
+                    if not npz_for_dir.exists() and f"epl{epl:.2f}" in d.name:
+                        print(f"  Cleaning up failed dir: {d.name}")
+                        shutil.rmtree(d, ignore_errors=True)
+
+        print(f"  Trying next fallback ...")
+
+    print(f"\n  *** EPL={epl}: ALL FALLBACK STRATEGIES EXHAUSTED — SKIPPING ***\n")
+    return None
+
+
+def main() -> int:
+    args = parse_args()
+
+    # ── default to convergence mode if neither flag given ─────────────────────
+    if not args.production_mode and not args.convergence_mode:
+        args.convergence_mode = True
+
+    # ── single-run mode (no --batch) ──────────────────────────────────────────
+    if not args.batch:
+        result = run_single_epl(args, args.epl)
+        return 0 if result is not None else 1
+
+    # ── batch mode ────────────────────────────────────────────────────────────
+    if args.epl_list:
+        epl_values = sorted([float(x.strip()) for x in args.epl_list.split(",")],
+                            reverse=True)
+    else:
+        epl_values = list(DEFAULT_BATCH_EPLS)
+
+    print("=" * 72)
+    print(f"BATCH CONVERGENCE STUDY — {len(epl_values)} EPL values")
+    print(f"  EPLs: {epl_values}")
+    print("=" * 72)
+    print()
+
+    reference_npz = None
+    completed = []
+    failed    = []
+
+    for i, epl in enumerate(epl_values):
+        is_ref = (i == 0)  # finest EPL is the reference
+        print(f"\n{'#'*72}")
+        print(f"#  BATCH [{i+1}/{len(epl_values)}]  EPL = {epl}"
+              f"{'  (REFERENCE)' if is_ref else ''}")
+        print(f"{'#'*72}\n")
+
+        npz_path = _run_with_oom_retry(
+            args, epl,
+            reference_npz=reference_npz,
+            is_reference=is_ref,
+        )
+
+        if npz_path is not None:
+            completed.append(epl)
+            if is_ref:
+                reference_npz = npz_path
+                print(f"\n  Reference .npz set: {npz_path.name}\n")
+            elif reference_npz is None:
+                # First run failed but this one succeeded — use as reference
+                reference_npz = npz_path
+                print(f"\n  (Reference fallback — using EPL={epl} as reference)\n")
+        else:
+            failed.append(epl)
+
+    # ── batch summary ─────────────────────────────────────────────────────────
+    print("\n" + "=" * 72)
+    print("BATCH COMPLETE")
+    print("=" * 72)
+    print(f"  Completed : {len(completed)}/{len(epl_values)}")
+    print(f"  EPLs OK   : {completed}")
+    if failed:
+        print(f"  FAILED    : {failed}")
+    if reference_npz:
+        print(f"  Reference : {reference_npz.name}")
+    print()
+
+    return 0 if len(completed) > 0 else 1
 
 
 if __name__ == "__main__":

@@ -130,11 +130,15 @@ GORKOV_DEPTH_FRAC   = 0.05   # min depth as fraction of ROI dynamic range
 GORKOV_MIN_SEP_M    = WAVELENGTH_M / 4.0  # min separation between traps
 
 # Reference EPL (used as benchmark in convergence study)
-REFERENCE_EPL  = 5.0
+# Auto-detected from data in main(). These serve as initial defaults.
+REFERENCE_EPL  = 6.5
 
 # EPLs used for Richardson extrapolation (finest three non-reference levels)
-# EPL=5.0 is the reference so has NaN eps_L2_roi — use 3.5/4.0/4.5 instead
-RE_EPLS        = [3.5, 4.0, 4.5]
+# Auto-detected from data in compute_re_gci(). These are initial defaults.
+RE_EPLS        = [5.5, 6.0, 6.25]
+
+# Default domain size for convergence sweep filtering (updated from data in main())
+CONV_DOMAIN_MM = 4.0
 
 # Matplotlib style
 plt.rcParams.update({
@@ -651,18 +655,25 @@ def richardson_gci(f1: float, f2: float, f3: float,
 
 def compute_re_gci(df: pd.DataFrame) -> dict:
     """Apply Richardson extrapolation to the finest three non-reference EPL levels."""
-    # Filter to convergence sweep only (3mm domain, PML=1.0λ, finite error)
+    # Filter to convergence sweep only (dominant domain, PML=1.0λ, finite error)
     conv = df[
-        (df["physical_size_mm"].round(1) == 3.0)
+        (df["physical_size_mm"].round(1) == CONV_DOMAIN_MM)
         & (df["pml_n_wavelengths_xy"].round(1) == 1.0)
         & df["eps_L2_roi"].notna()
         & np.isfinite(df["eps_L2_roi"])
     ].copy()
     conv = conv.sort_values("epl")
 
-    re_rows = conv[conv["epl"].isin(RE_EPLS)].sort_values("epl")
+    # Auto-select the three finest EPLs with valid error data
+    available_epls = sorted(conv["epl"].unique())
+    if len(available_epls) >= 3:
+        re_epls = available_epls[-3:]
+    else:
+        re_epls = available_epls
+
+    re_rows = conv[conv["epl"].isin(re_epls)].sort_values("epl")
     if len(re_rows) < 3:
-        print(f"[warn] Need EPL {RE_EPLS} for Richardson extrapolation; "
+        print(f"[warn] Need 3 EPL levels for Richardson extrapolation; "
               f"found {list(re_rows['epl'].values)}.  Skipping GCI.")
         return {}
 
@@ -703,7 +714,7 @@ def _remove_if_exists(path: Path):
 
 def fig_error_vs_h(df: pd.DataFrame, out_dir: Path):
     conv = df[
-        (df["physical_size_mm"].round(1) == 3.0) &
+        (df["physical_size_mm"].round(1) == CONV_DOMAIN_MM) &
         (df["pml_n_wavelengths_xy"].round(1) == 1.0) &
         (df["epl"] < REFERENCE_EPL) &
         df["eps_L2_roi"].notna() &
@@ -760,7 +771,7 @@ def fig_error_vs_h(df: pd.DataFrame, out_dir: Path):
 # ─── Figure 2: 3-panel ε, spacing, trap error vs EPL ─────────────────────────
 
 def fig_error_vs_epl(df: pd.DataFrame, out_dir: Path):
-    conv = df[(df["physical_size_mm"].round(1) == 3.0) &
+    conv = df[(df["physical_size_mm"].round(1) == CONV_DOMAIN_MM) &
               (df["epl"] < REFERENCE_EPL)].sort_values("epl")
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
@@ -794,7 +805,7 @@ def fig_error_vs_epl(df: pd.DataFrame, out_dir: Path):
     ax.set_title("Matched trap position error\n(secondary metric)")
 
     fig.suptitle(
-        f"Convergence metrics vs EPL  |  3.0 mm domain, PML = 1.0λ  |  "
+        f"Convergence metrics vs EPL  |  {CONV_DOMAIN_MM:.0f} mm domain, PML = 1.0λ  |  "
         f"Reference: EPL = {REFERENCE_EPL}",
         fontsize=11, y=1.02,
     )
@@ -809,7 +820,7 @@ def fig_richardson_gci(df: pd.DataFrame, gci: dict, out_dir: Path):
         print("  [skip] fig3 — GCI data not available")
         return
 
-    conv = df[(df["physical_size_mm"].round(1) == 3.0)].sort_values("epl")
+    conv = df[(df["physical_size_mm"].round(1) == CONV_DOMAIN_MM)].sort_values("epl")
     epl_vals = conv["epl"].values
     eps_vals = conv["eps_L2_roi"].values
 
@@ -1062,7 +1073,7 @@ def fig_domain_sensitivity(df: pd.DataFrame, out_dir: Path):
 def fig_pml_sensitivity(df: pd.DataFrame, out_dir: Path):
     # PML sweep runs: same EPL and domain size, varying pml_n_wavelengths_xy
     # Use the 3mm domain, EPL=5 reference runs
-    pml_df = df[(df["physical_size_mm"].round(1) == 3.0) &
+    pml_df = df[(df["physical_size_mm"].round(1) == CONV_DOMAIN_MM) &
                 (df["epl"] == REFERENCE_EPL)].sort_values("pml_n_wavelengths_xy")
 
     if len(pml_df) < 2:
@@ -1095,7 +1106,7 @@ def fig_pml_sensitivity(df: pd.DataFrame, out_dir: Path):
     ax.set_ylabel("Trap count in ROI")
     ax.set_title("Detected traps vs PML thickness")
 
-    fig.suptitle("PML sensitivity study  |  3.0 mm domain, EPL = 5.0",
+    fig.suptitle(f"PML sensitivity study  |  {CONV_DOMAIN_MM:.0f} mm domain, EPL = {REFERENCE_EPL}",
                  fontsize=11, y=1.02)
     fig.tight_layout()
     _save(fig, "fig7_pml_sensitivity.png", out_dir)
@@ -1105,7 +1116,7 @@ def fig_pml_sensitivity(df: pd.DataFrame, out_dir: Path):
 
 def fig_solve_time(df: pd.DataFrame, out_dir: Path):
     # Restrict to the convergence sweep only (3mm domain, PML=1.0λ)
-    conv = df[(df["physical_size_mm"].round(1) == 3.0) &
+    conv = df[(df["physical_size_mm"].round(1) == CONV_DOMAIN_MM) &
               (df["pml_n_wavelengths_xy"].round(1) == 1.0)].sort_values("dofs")
 
     fig, ax = plt.subplots(figsize=(6, 5))
@@ -1233,6 +1244,18 @@ def main():
     if "pml_n_wavelengths_xy" not in df.columns:
         df["pml_n_wavelengths_xy"] = 1.0
 
+    # ── Auto-detect domain size and reference EPL from data ───────────────────
+    global CONV_DOMAIN_MM, REFERENCE_EPL
+    if "physical_size_mm" in df.columns:
+        mode_size = df["physical_size_mm"].dropna().mode()
+        if len(mode_size):
+            CONV_DOMAIN_MM = float(mode_size.iloc[0])
+    if "epl" in df.columns:
+        conv_rows = df[df["physical_size_mm"].round(1) == round(CONV_DOMAIN_MM, 1)]
+        if len(conv_rows):
+            REFERENCE_EPL = float(conv_rows["epl"].max())
+    print(f"  Auto-detected: domain={CONV_DOMAIN_MM}mm, reference EPL={REFERENCE_EPL}")
+
     print(f"  Columns: {list(df.columns)}")
     print()
 
@@ -1277,57 +1300,60 @@ def main():
     if not npz_files:
         print("  [skip] No NPZ files found under", STUDY_DIR)
     else:
-        # Identify reference (EPL=5, phys=3mm, PML=1.0) and overlay NPZs
+        # Collect all NPZ metadata for auto-detection
+        npz_meta_list = []
+        for stem, npz_path in npz_files.items():
+            meta = _parse_npz_meta(stem)
+            epl  = meta.get("epl")
+            size = meta.get("physical_size_mm", CONV_DOMAIN_MM)
+            pml  = meta.get("pml_n_wavelengths_xy", 1.0)
+            if epl is not None and abs(size - CONV_DOMAIN_MM) < 0.2 and abs(pml - 1.0) < 0.05:
+                npz_meta_list.append((epl, npz_path))
+
+        npz_meta_list.sort(key=lambda x: x[0])  # sort by EPL ascending
+
         ref_npz_path    = None
         coarse_npz_path = None
         fine_npz_path   = None
 
-        for stem, npz_path in npz_files.items():
-            meta = _parse_npz_meta(stem)
-            epl  = meta.get("epl")
-            size = meta.get("physical_size_mm", 3.0)
-            pml  = meta.get("pml_n_wavelengths_xy", 1.0)
-            if epl is None:
-                continue
-            # Only take the first match (files sorted alphabetically = earliest timestamp)
-            if (ref_npz_path is None
-                    and abs(epl - REFERENCE_EPL) < 0.01
-                    and abs(size - 3.0) < 0.1
-                    and abs(pml - 1.0) < 0.05):
-                ref_npz_path = npz_path
-            elif (coarse_npz_path is None
-                    and abs(epl - 2.0) < 0.01 and abs(size - 3.0) < 0.1):
-                coarse_npz_path = npz_path
-            elif (fine_npz_path is None
-                    and abs(epl - 4.5) < 0.01 and abs(size - 3.0) < 0.1):
-                fine_npz_path = npz_path
+        if npz_meta_list:
+            # Reference = highest EPL, coarse = lowest EPL, fine = second-highest
+            ref_npz_path    = npz_meta_list[-1][1]
+            coarse_npz_path = npz_meta_list[0][1]
+            if len(npz_meta_list) >= 3:
+                fine_npz_path = npz_meta_list[-2][1]
+            ref_epl    = npz_meta_list[-1][0]
+            coarse_epl = npz_meta_list[0][0]
+            fine_epl   = npz_meta_list[-2][0] if len(npz_meta_list) >= 3 else None
+        else:
+            ref_epl = coarse_epl = fine_epl = None
 
         # Load reference traps from NPZ
         ref_traps = None
         if ref_npz_path is not None:
-            print(f"  Loading reference NPZ: {ref_npz_path.name}")
+            print(f"  Loading reference NPZ: {ref_npz_path.name} (EPL={ref_epl})")
             ref_data = load_npz(ref_npz_path)
             if ref_data is not None:
                 ref_traps = ref_data["traps"]
                 print(f"  Reference traps: {len(ref_traps)}")
         else:
-            print("  [warn] Reference NPZ (EPL=5, phys=3mm, PML=1.0) not found")
+            print(f"  [warn] No reference NPZ found at domain={CONV_DOMAIN_MM}mm")
 
         # Coarse overlay
         if coarse_npz_path is not None:
             print(f"  Generating coarse overlay: {coarse_npz_path.name}")
             fig_trap_overlay(load_npz(coarse_npz_path), ref_traps,
-                             "2.0", "fig4_trap_overlay_coarse.png", OUTPUT_DIR)
+                             f"{coarse_epl}", "fig4_trap_overlay_coarse.png", OUTPUT_DIR)
         else:
-            print("  [skip] fig4 — EPL=2.0 / phys=3mm NPZ not found")
+            print(f"  [skip] fig4 — no coarse NPZ at domain={CONV_DOMAIN_MM}mm")
 
         # Fine overlay
         if fine_npz_path is not None:
             print(f"  Generating fine overlay: {fine_npz_path.name}")
             fig_trap_overlay(load_npz(fine_npz_path), ref_traps,
-                             "4.5", "fig5_trap_overlay_fine.png", OUTPUT_DIR)
+                             f"{fine_epl}", "fig5_trap_overlay_fine.png", OUTPUT_DIR)
         else:
-            print("  [skip] fig5 — EPL=4.5 / phys=3mm NPZ not found")
+            print(f"  [skip] fig5 — no fine NPZ at domain={CONV_DOMAIN_MM}mm")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print()
