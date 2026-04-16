@@ -1,0 +1,15 @@
+parameter,value,notes
+epl_fine,6.5,Finest level used
+epl_med,6.25,Medium level
+epl_coarse,6.0,Coarsest of the three
+r21,1.04,h2/h1 refinement ratio
+r32,1.0416666666666667,h3/h2 refinement ratio
+p_apparent,5.108082852471699,Apparent convergence order
+p_reliable,True,False = pre-asymptotic regime
+eps_fine,0.07855676,L2 error at finest level
+eps_extrapolated,0.05531445223925382,"Richardson-extrapolated value (blank = pre-asymptotic, not reliable)"
+e21_approx_pct,6.562948879256226,Approximate relative error (%)
+e21_extrap_pct,42.01850840032782,Extrapolated relative error (%) — blank when pre-asymptotic
+GCI_fine_pct,36.9833031567655,GCI on finest grid (%)
+GCI_med_pct,42.40403417056917,GCI on medium grid (%)
+asymptotic_ratio,0.9384124693612508,Should be ~1.0

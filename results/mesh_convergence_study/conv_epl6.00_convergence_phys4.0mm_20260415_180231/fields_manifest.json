@@ -1,0 +1,12 @@
+{
+  "fields": [
+    "p_real",
+    "p_imag",
+    "p_mag",
+    "p_phase"
+  ],
+  "mesh": "mesh.xdmf",
+  "dofs": 596781,
+  "element_order": 2,
+  "notes": "All fields are P2 Lagrange on the same mesh. Complex pressure p = p_real + i*p_imag."
+}
