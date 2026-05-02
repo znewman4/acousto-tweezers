@@ -113,6 +113,7 @@ def solve_1d_helmholtz(robin_right, source_left, label=""):
     
     problem = LinearProblem(
         a_form, L_form, bcs=[],
+        petsc_options_prefix=f"test_1d_impedance_{label}_",
         petsc_options={"ksp_type": "preonly", "pc_type": "lu"}
     )
     p_h = problem.solve()

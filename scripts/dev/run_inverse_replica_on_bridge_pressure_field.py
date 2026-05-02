@@ -153,9 +153,17 @@ def parse_args() -> argparse.Namespace:
 def _normalise_target(raw_amp: np.ndarray, clip_pct: float, gamma: float) -> np.ndarray:
     a = np.asarray(raw_amp, dtype=float)
     a = np.maximum(a, 0.0)
-    a_floor = float(np.percentile(a, 1.0))
+    # Compute percentiles over non-zero pixels only; when the target
+    # occupies a small fraction of the grid (<2 %), the global 1st/99.5th
+    # percentiles land inside the zero background, clipping the entire
+    # corridor to 1.0 and destroying its internal structure.
+    nz = a[a > 1e-12]
+    if nz.size == 0:
+        return np.zeros_like(a)
+    a_floor = float(np.percentile(nz, 1.0))
     a = np.maximum(a - a_floor, 0.0)
-    a_clip = float(np.percentile(a, clip_pct))
+    nz2 = a[a > 1e-12]
+    a_clip = float(np.percentile(nz2, clip_pct)) if nz2.size > 0 else 0.0
     if a_clip <= 0.0:
         return np.zeros_like(a)
     a = np.clip(a / a_clip, 0.0, 1.0)

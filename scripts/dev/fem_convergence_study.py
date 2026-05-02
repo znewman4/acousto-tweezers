@@ -160,6 +160,28 @@ def parse_args() -> argparse.Namespace:
         "--pml-sigma-max-factor", type=float, default=None,
         help="PML sigma_max = factor * omega (default: from preset, 5.0)")
 
+    # ── vertical domain controls ───────────────────────────────────────────────
+    # Convergence default: H_under = 1.5 mm cuts DOFs ~60% vs 5 mm.
+    # Validate first with --vertical-sensitivity before relying on this.
+    p.add_argument(
+        "--h-under-mm", type=float, default=None,
+        help=("Water-bath depth below Petri [mm]. "
+              "Defaults: 1.5 (convergence) / 5.0 (production). "
+              "Reduced height cuts DOFs significantly — validate with "
+              "--vertical-sensitivity."))
+    p.add_argument(
+        "--h-top-mm", type=float, default=None,
+        help="Petri water depth [mm]. Default: 2.0 mm (unchanged).")
+    p.add_argument(
+        "--vertical-sensitivity", action="store_true", default=False,
+        help=("Run vertical domain sensitivity check at fixed EPL. "
+              "Sweeps H_under over --h-under-sensitivity-values, compares "
+              "ROI metrics, then exits."))
+    p.add_argument(
+        "--h-under-sensitivity-values", type=float, nargs="+",
+        default=[1.0, 1.5, 2.0, 3.0, 5.0],
+        help="H_under values [mm] to sweep in --vertical-sensitivity mode.")
+
     # ── reference solution ────────────────────────────────────────────────────
     p.add_argument(
         "--reference-npz", type=str, default=None,
@@ -218,14 +240,22 @@ def build_config(args: argparse.Namespace) -> tuple[FarFieldConfig, str, float]:
     Lx    = (phys_mm * 1e-3) + 2.0 * t_pml
     Ly    = Lx
 
+    # ── vertical domain height ─────────────────────────────────────────────────
+    # Convergence default: 1.5 mm — reduces DOFs ~60% vs full 5 mm water bath.
+    # MUST be validated with --vertical-sensitivity before use in the study.
+    # Production: 5.0 mm — original geometry, unchanged.
+    default_h_under = 5.0 if args.production_mode else 1.5
+    h_under_m = (args.h_under_mm if args.h_under_mm is not None else default_h_under) * 1e-3
+    h_top_m   = (args.h_top_mm   if args.h_top_mm   is not None else 2.0) * 1e-3
+
     overrides = {
         **CORRECTED_PRESET,            # inherit BCs, solver, lens settings
         # updated frequency & geometry
         "frequency_hz"               : 2.15e6,
         "Lx"                         : Lx,
         "Ly"                         : Ly,
-        "H_under"                    : 5e-3,   # water-bath depth — unchanged
-        "H_top"                      : 2e-3,   # Petri water depth — unchanged
+        "H_under"                    : h_under_m,  # configurable — see above
+        "H_top"                      : h_top_m,    # configurable, default 2 mm
         # standing wave only
         "disk_velocity_amplitude"    : 0.0,
         # mesh resolution from CLI
@@ -618,6 +648,8 @@ def match_traps_to_reference(
             "mean_trap_error_m"     : np.nan,
             "max_trap_error_m"      : np.nan,
             "matched_pairs"         : np.zeros((0, 2, 2)),
+            "matched_cur_idx"       : [],
+            "matched_ref_idx"       : [],
         }
 
     # Build distance matrix: (M, N)
@@ -668,6 +700,8 @@ def match_traps_to_reference(
         "mean_trap_error_m"     : float(np.mean(matched_err)) if n_matched > 0 else np.nan,
         "max_trap_error_m"      : float(np.max(matched_err))  if n_matched > 0 else np.nan,
         "matched_pairs"         : pairs,
+        "matched_cur_idx"       : matched_cur,
+        "matched_ref_idx"       : matched_ref,
     }
 
 
@@ -768,6 +802,25 @@ def compute_error_metrics(
     max_match_dist = (wavelength * 0.25) if (wavelength and wavelength > 0) else 2e-4
     match_result = match_traps_to_reference(cur_traps, ref_traps, max_match_dist)
 
+    # ── Trap depth errors and count metrics ───────────────────────────────────
+    cur_depths     = np.asarray(trap_info.get("trap_depths", [])).ravel()
+    ref_depths_arr = np.asarray(ref_data.get("trap_depths", [])).ravel()
+
+    depth_errs = []
+    for ci, ri in zip(match_result["matched_cur_idx"], match_result["matched_ref_idx"]):
+        if ci < len(cur_depths) and ri < len(ref_depths_arr):
+            depth_errs.append(abs(float(cur_depths[ci]) - float(ref_depths_arr[ri])))
+    depth_errs         = np.array(depth_errs) if depth_errs else np.array([])
+    mean_depth_err     = float(np.mean(depth_errs)) if len(depth_errs) > 0 else np.nan
+    max_depth_err      = float(np.max(depth_errs))  if len(depth_errs) > 0 else np.nan
+
+    n_matched_td       = match_result["n_matched"]
+    N_ref_td           = len(ref_traps)
+    M_cur_td           = len(cur_traps)
+    frac_ref_matched   = n_matched_td / N_ref_td if N_ref_td > 0 else np.nan
+    frac_cur_matched   = n_matched_td / M_cur_td if M_cur_td > 0 else np.nan
+    trap_count_diff    = M_cur_td - N_ref_td
+
     # ── 6. Legacy first-centreline-min metric (kept for compatibility) ────────
     x_cur = trap_info["first_centreline_min_x_m"]
     x_ref_arr = ref_data.get("first_centreline_min_x_m", np.array([np.nan]))
@@ -785,13 +838,20 @@ def compute_error_metrics(
         # Legacy (demoted)
         "trap_pos_err_m"            : trap_pos_err_m,
         "trap_pos_err_pct_halfwav"  : trap_pos_err_pct,
-        # Robust trap metrics
+        # Robust trap position metrics
         "trap_spacing_err_pct"      : spacing_err_pct,
         "n_matched_traps"           : match_result["n_matched"],
         "n_unmatched_current"       : match_result["n_unmatched_current"],
         "n_unmatched_reference"     : match_result["n_unmatched_reference"],
         "mean_trap_error_m"         : match_result["mean_trap_error_m"],
         "max_trap_error_m"          : match_result["max_trap_error_m"],
+        # Trap depth metrics
+        "mean_trap_depth_err"       : mean_depth_err,
+        "max_trap_depth_err"        : max_depth_err,
+        # Trap count / matching completeness metrics
+        "trap_count_difference"         : trap_count_diff,
+        "fraction_reference_traps_matched": frac_ref_matched,
+        "fraction_current_traps_matched" : frac_cur_matched,
     }
 
 
@@ -813,6 +873,173 @@ def find_reference_npz(
     pattern = f"conv_epl{ref_epl:.1f}_{mode_tag}_phys{phys_size_mm:.1f}mm_*.npz"
     matches = sorted(study_dir.glob(pattern))
     return matches[-1] if matches else None
+
+
+# =============================================================================
+# Vertical domain sensitivity sweep
+# =============================================================================
+
+def run_vertical_sensitivity(
+    args: argparse.Namespace,
+    petsc_opts: dict,
+) -> int:
+    """
+    Sweep H_under at fixed EPL to verify that a reduced vertical domain
+    produces equivalent ROI metrics to the full domain.
+
+    The largest H_under tested is used as the within-study reference.
+    Prints a comparison table and returns 0 on success.
+
+    Decision criteria:
+      - eps_L2_roi < 0.5 %  and eps_gorkov_roi < 1 %  and trap count stable
+        => reduced domain is valid for the convergence study
+      - Otherwise: increase H_under or use the full 5 mm domain
+    """
+    import copy
+
+    h_under_vals = sorted(args.h_under_sensitivity_values)   # ascending
+    EPL          = args.epl
+    print("=" * 72)
+    print(f"VERTICAL DOMAIN SENSITIVITY CHECK  \u2014  EPL = {EPL}")
+    print("=" * 72)
+    print(f"  H_under sweep (mm): {h_under_vals}")
+    print(f"  H_top (mm)        : {args.h_top_mm or 2.0}")
+    print(f"  EPL               : {EPL}")
+    print()
+
+    results = []
+
+    for h_under_mm in h_under_vals:
+        print(f"\u2500\u2500\u2500 H_under = {h_under_mm:.1f} mm \u2500\u2500\u2500")
+        args_v = copy.copy(args)
+        args_v.h_under_mm            = h_under_mm
+        args_v.vertical_sensitivity  = False    # prevent recursion
+        cfg_v, _, phys_v = build_config(args_v)
+
+        z_star_v = cfg_v.H_under + cfg_v.H_top / 2.0 + 0.25 * cfg_v.wavelength
+        x_g = np.linspace(cfg_v.t_pml_xy, cfg_v.Lx - cfg_v.t_pml_xy, 300)
+        y_g = np.linspace(cfg_v.t_pml_xy, cfg_v.Ly - cfg_v.t_pml_xy, 300)
+
+        print(f"  Target mesh : {cfg_v.mesh_nx}\u00d7{cfg_v.mesh_ny}\u00d7{cfg_v.mesh_nz}")
+        print(f"  z*          : {z_star_v*1e3:.3f} mm")
+        t0 = time.time()
+        try:
+            sol_v = solve_helmholtz(
+                cfg_v, verbose=False, petsc_options=petsc_opts,
+                export_fields=False,
+            )
+        except Exception as exc:
+            print(f"  [ERROR] Solve failed: {exc}")
+            results.append({
+                "h_under_mm": h_under_mm, "dofs": None, "solve_time": None,
+                "n_traps": None, "spacing_mm": None, "max_p_Pa": None,
+                "p_cart": None, "U_cart": None, "trap_info": None,
+                "roi_mask": None, "x_grid": x_g, "y_grid": y_g,
+                "wavelength": cfg_v.wavelength,
+                "eps_L2_roi": None, "eps_gorkov_roi": None,
+                "mean_trap_err_m": None, "error_flag": str(exc),
+            })
+            continue
+
+        p_cart_v = eval_fem_on_cartesian_plane(
+            sol_v.p_function, sol_v.domain, x_g, y_g, z_star_v, verbose=False)
+        U_cart_v = compute_gorkov_2d(p_cart_v, x_g, y_g, cfg_v)
+        trap_v   = detect_traps(U_cart_v, x_g, y_g,
+                                roi_fraction=0.5, wavelength=cfg_v.wavelength)
+
+        results.append({
+            "h_under_mm"    : h_under_mm,
+            "dofs"          : sol_v.dofs,
+            "solve_time"    : time.time() - t0,
+            "n_traps"       : trap_v["n_traps"],
+            "spacing_mm"    : trap_v["centreline_min_spacing_m"] * 1e3,
+            "max_p_Pa"      : sol_v.max_pressure,
+            "p_cart"        : p_cart_v,
+            "U_cart"        : U_cart_v,
+            "trap_info"     : trap_v,
+            "roi_mask"      : trap_v["roi_mask"],
+            "x_grid"        : x_g,
+            "y_grid"        : y_g,
+            "wavelength"    : cfg_v.wavelength,
+            "eps_L2_roi"    : None,
+            "eps_gorkov_roi": None,
+            "mean_trap_err_m": None,
+        })
+        del sol_v
+        gc.collect()
+        r = results[-1]
+        print(f"  DOFs={r['dofs']:,}  solve={r['solve_time']:.1f}s  "
+              f"traps={r['n_traps']}  spacing={r['spacing_mm']:.3f}mm")
+
+    # Use the largest H_under as the within-study reference
+    valid = [r for r in results if r.get("p_cart") is not None]
+    if not valid:
+        print("[ERROR] No runs completed successfully.")
+        return 1
+
+    ref_v = valid[-1]   # largest H_under
+    ref_data_v = {
+        "p_cart_real"              : np.real(ref_v["p_cart"]),
+        "p_cart_imag"              : np.imag(ref_v["p_cart"]),
+        "gorkov_2d"                : ref_v["U_cart"],
+        "trap_positions_m"         : ref_v["trap_info"]["trap_positions_m"],
+        "trap_depths"              : ref_v["trap_info"]["trap_depths"],
+        "centreline_min_spacing_m" : np.array([ref_v["trap_info"]["centreline_min_spacing_m"]]),
+        "first_centreline_min_x_m" : np.array([ref_v["trap_info"]["first_centreline_min_x_m"]]),
+        "wavelength"               : np.array([ref_v["wavelength"]]),
+    }
+
+    for r in valid[:-1]:
+        m = compute_error_metrics(
+            r["p_cart"], r["U_cart"], r["trap_info"],
+            ref_data_v, r["roi_mask"], wavelength=r["wavelength"],
+        )
+        r["eps_L2_roi"]      = m["eps_L2_roi"]
+        r["eps_gorkov_roi"]  = m["eps_gorkov_roi"]
+        r["mean_trap_err_m"] = m["mean_trap_error_m"]
+
+    # Reference row: zero error by definition
+    ref_v["eps_L2_roi"]      = 0.0
+    ref_v["eps_gorkov_roi"]  = 0.0
+    ref_v["mean_trap_err_m"] = 0.0
+
+    # ── Print comparison table ─────────────────────────────────────────────
+    print()
+    print("=" * 72)
+    print("VERTICAL SENSITIVITY RESULTS  (reference = largest H_under, marked *)")
+    print("=" * 72)
+    _col_eps  = "\u03b5_L2_ROI"
+    _col_gor  = "\u03b5_Gor\u2019kov"
+    _col_terr = "trap_err_\u00b5m"
+    hdr = (f"  {'H_under':>8}  {'DOFs':>9}  {'t_sol':>7}  "
+           f"{_col_eps:>10}  {_col_gor:>10}  "
+           f"{'traps':>6}  {'spacing_mm':>10}  {_col_terr:>12}")
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    for r in results:
+        mark    = "*" if r["h_under_mm"] == ref_v["h_under_mm"] else " "
+        eps_s   = f"{r['eps_L2_roi']:.3e}"      if r.get("eps_L2_roi")     is not None else "   N/A"
+        egor_s  = f"{r['eps_gorkov_roi']:.3e}"  if r.get("eps_gorkov_roi") is not None else "   N/A"
+        terr_s  = (f"{r['mean_trap_err_m']*1e6:.1f}"
+                   if (r.get("mean_trap_err_m") is not None
+                       and np.isfinite(r["mean_trap_err_m"]))
+                   else "  N/A")
+        dofs_s  = f"{r['dofs']:,}"      if r.get("dofs")  else "FAILED"
+        tsol_s  = f"{r['solve_time']:.1f}s" if r.get("solve_time") else "N/A"
+        ntr_s   = str(r["n_traps"])     if r.get("n_traps") is not None else "N/A"
+        sp_s    = f"{r['spacing_mm']:.3f}"  if r.get("spacing_mm") else "N/A"
+        print(f"{mark} {r['h_under_mm']:>7.1f}mm  {dofs_s:>9}  {tsol_s:>7}  "
+              f"{eps_s:>10}  {egor_s:>10}  {ntr_s:>6}  {sp_s:>10}  {terr_s:>12}")
+
+    print()
+    print(f"  * Reference: H_under = {ref_v['h_under_mm']:.1f} mm (largest in sweep)")
+    print()
+    print("  INTERPRETATION:")
+    print("    eps_L2_roi < 0.5 % and stable trap count => reduced domain VALID")
+    print("    eps_L2_roi > 1.0 % or trap count changes => increase H_under")
+    print("    Use the smallest H_under that passes both criteria.")
+    print()
+    return 0
 
 
 # =============================================================================
@@ -922,7 +1149,8 @@ def update_convergence_csv(csv_path: Path, row: dict) -> None:
     """Append one row to convergence_summary.csv, writing header if new file."""
     fieldnames = [
         "run_id", "timestamp", "mode", "physical_size_mm",
-        "requested_epl",
+        "requested_epl", "element_degree", "element_size_m", "kh",
+        "domain_height_mm",
         "mesh_nx", "mesh_ny", "mesh_nz", "dofs",
         "mesh_time_s", "solve_time_s", "total_wall_time_s",
         "mumps_out_of_core", "mumps_mem_mb",
@@ -933,8 +1161,12 @@ def update_convergence_csv(csv_path: Path, row: dict) -> None:
         "trap_spacing_err_pct",
         "n_matched_traps", "n_unmatched_current", "n_unmatched_reference",
         "mean_trap_error_m", "max_trap_error_m",
+        "mean_trap_depth_err", "max_trap_depth_err",
+        "trap_count_difference",
+        "fraction_reference_traps_matched", "fraction_current_traps_matched",
         "trap_pos_err_m", "trap_pos_err_pct_halfwav",
         "pml_n_wavelengths_xy", "pml_n_wavelengths_z", "pml_sigma_max_factor",
+        "reference_role",
         "npz_path",
     ]
     write_header = not csv_path.exists()
@@ -967,6 +1199,14 @@ def main() -> int:
     phys_x_max = cfg.Lx - cfg.t_pml_xy
     phys_y_min = cfg.t_pml_xy
     phys_y_max = cfg.Ly - cfg.t_pml_xy
+
+    # ── derived physics quantities for metadata ────────────────────────────
+    element_size_m  = cfg.wavelength / EPL
+    kh              = cfg.k * element_size_m
+    domain_height_mm = (cfg.H_under + cfg.H_top) * 1e3
+    # EPL ≥ 5 is the finest available practical reference mesh.
+    # It is NOT a true/exact solution — it serves as a practical benchmark only.
+    reference_role  = "practical_reference" if EPL >= 5.0 else "convergence_level"
 
     # ── Cartesian evaluation grid ─────────────────────────────────────────────
     grid_n = args.grid_n if args.grid_n is not None else (
@@ -1085,17 +1325,22 @@ def main() -> int:
     print("─" * 72)
 
     nan_metrics = {
-        "eps_L2_full"               : np.nan,
-        "eps_L2_roi"                : np.nan,
-        "eps_gorkov_roi"            : np.nan,
-        "trap_pos_err_m"            : np.nan,
-        "trap_pos_err_pct_halfwav"  : np.nan,
-        "trap_spacing_err_pct"      : np.nan,
-        "n_matched_traps"           : 0,
-        "n_unmatched_current"       : 0,
-        "n_unmatched_reference"     : 0,
-        "mean_trap_error_m"         : np.nan,
-        "max_trap_error_m"          : np.nan,
+        "eps_L2_full"                     : np.nan,
+        "eps_L2_roi"                      : np.nan,
+        "eps_gorkov_roi"                  : np.nan,
+        "trap_pos_err_m"                  : np.nan,
+        "trap_pos_err_pct_halfwav"        : np.nan,
+        "trap_spacing_err_pct"            : np.nan,
+        "n_matched_traps"                 : 0,
+        "n_unmatched_current"             : 0,
+        "n_unmatched_reference"           : 0,
+        "mean_trap_error_m"               : np.nan,
+        "max_trap_error_m"                : np.nan,
+        "mean_trap_depth_err"             : np.nan,
+        "max_trap_depth_err"              : np.nan,
+        "trap_count_difference"           : 0,
+        "fraction_reference_traps_matched": np.nan,
+        "fraction_current_traps_matched"  : np.nan,
     }
     error_metrics = dict(nan_metrics)
 
@@ -1148,6 +1393,11 @@ def main() -> int:
         "mode"                     : mode_tag,
         "physical_size_mm"         : phys_size_mm,
         "requested_epl"            : EPL,
+        "element_degree"           : 2,
+        "element_size_m"           : element_size_m,
+        "kh"                       : kh,
+        "domain_height_mm"         : domain_height_mm,
+        "reference_role"           : reference_role,
         "frequency_hz"             : cfg.frequency_hz,
         "wavelength_m"             : cfg.wavelength,
         "z_star_m"                 : z_star,
@@ -1205,6 +1455,11 @@ def main() -> int:
         n_unmatched_reference      = np.array([error_metrics["n_unmatched_reference"]]),
         mean_trap_error_m          = np.array([error_metrics["mean_trap_error_m"]]),
         max_trap_error_m           = np.array([error_metrics["max_trap_error_m"]]),
+        mean_trap_depth_err        = np.array([error_metrics["mean_trap_depth_err"]]),
+        max_trap_depth_err         = np.array([error_metrics["max_trap_depth_err"]]),
+        trap_count_difference      = np.array([error_metrics["trap_count_difference"]]),
+        fraction_reference_traps_matched = np.array([error_metrics["fraction_reference_traps_matched"]]),
+        fraction_current_traps_matched   = np.array([error_metrics["fraction_current_traps_matched"]]),
         # ── Metadata ───────────────────────────────────────────────────────
         metadata                   = meta,
     )
@@ -1223,41 +1478,51 @@ def main() -> int:
 
     csv_path = STUDY_DIR / "convergence_summary.csv"
     csv_row = {
-        "run_id"                   : run_id,
-        "timestamp"                : TS,
-        "mode"                     : mode_tag,
-        "physical_size_mm"         : phys_size_mm,
-        "requested_epl"            : EPL,
-        "mesh_nx"                  : cfg.mesh_nx,
-        "mesh_ny"                  : cfg.mesh_ny,
-        "mesh_nz"                  : cfg.mesh_nz,
-        "dofs"                     : sol.dofs,
-        "mesh_time_s"              : round(sol.mesh_time, 2),
-        "solve_time_s"             : round(sol.solver_time, 2),
-        "total_wall_time_s"        : round(t_wall_total, 2),
-        "mumps_out_of_core"        : int(args.mumps_out_of_core),
-        "mumps_mem_mb"             : args.mumps_mem_mb or 0,
-        "max_p_Pa"                 : round(sol.max_pressure, 4),
-        "z_star_mm"                : round(z_star * 1e3, 4),
-        "wavelength_mm"            : round(cfg.wavelength * 1e3, 4),
-        "n_traps_roi"              : trap_info["n_traps"],
-        "first_centreline_min_x_mm": _fmt(trap_info["first_centreline_min_x_m"] * 1e3, ".4f"),
-        "centreline_min_spacing_mm": _fmt(trap_info["centreline_min_spacing_m"] * 1e3, ".4f"),
-        "eps_L2_full"              : _fmt(error_metrics["eps_L2_full"]),
-        "eps_L2_roi"               : _fmt(error_metrics["eps_L2_roi"]),
-        "eps_gorkov_roi"           : _fmt(error_metrics["eps_gorkov_roi"]),
-        "trap_spacing_err_pct"     : _fmt(error_metrics["trap_spacing_err_pct"], ".4f"),
-        "n_matched_traps"          : error_metrics["n_matched_traps"],
-        "n_unmatched_current"      : error_metrics["n_unmatched_current"],
-        "n_unmatched_reference"    : error_metrics["n_unmatched_reference"],
-        "mean_trap_error_m"        : _fmt(error_metrics["mean_trap_error_m"]),
-        "max_trap_error_m"         : _fmt(error_metrics["max_trap_error_m"]),
-        "trap_pos_err_m"           : _fmt(error_metrics["trap_pos_err_m"]),
-        "trap_pos_err_pct_halfwav" : _fmt(error_metrics["trap_pos_err_pct_halfwav"], ".4f"),
-        "pml_n_wavelengths_xy"     : cfg.pml_n_wavelengths_xy,
-        "pml_n_wavelengths_z"      : cfg.pml_n_wavelengths_z,
-        "pml_sigma_max_factor"     : cfg.pml_sigma_max_factor,
-        "npz_path"                 : str(npz_path),
+        "run_id"                          : run_id,
+        "timestamp"                       : TS,
+        "mode"                            : mode_tag,
+        "physical_size_mm"                : phys_size_mm,
+        "requested_epl"                   : EPL,
+        "element_degree"                  : 2,
+        "element_size_m"                  : _fmt(element_size_m, ".6e"),
+        "kh"                              : _fmt(kh, ".4f"),
+        "domain_height_mm"                : round(domain_height_mm, 3),
+        "mesh_nx"                         : cfg.mesh_nx,
+        "mesh_ny"                         : cfg.mesh_ny,
+        "mesh_nz"                         : cfg.mesh_nz,
+        "dofs"                            : sol.dofs,
+        "mesh_time_s"                     : round(sol.mesh_time, 2),
+        "solve_time_s"                    : round(sol.solver_time, 2),
+        "total_wall_time_s"               : round(t_wall_total, 2),
+        "mumps_out_of_core"               : int(args.mumps_out_of_core),
+        "mumps_mem_mb"                    : args.mumps_mem_mb or 0,
+        "max_p_Pa"                        : round(sol.max_pressure, 4),
+        "z_star_mm"                       : round(z_star * 1e3, 4),
+        "wavelength_mm"                   : round(cfg.wavelength * 1e3, 4),
+        "n_traps_roi"                     : trap_info["n_traps"],
+        "first_centreline_min_x_mm"       : _fmt(trap_info["first_centreline_min_x_m"] * 1e3, ".4f"),
+        "centreline_min_spacing_mm"       : _fmt(trap_info["centreline_min_spacing_m"] * 1e3, ".4f"),
+        "eps_L2_full"                     : _fmt(error_metrics["eps_L2_full"]),
+        "eps_L2_roi"                      : _fmt(error_metrics["eps_L2_roi"]),
+        "eps_gorkov_roi"                  : _fmt(error_metrics["eps_gorkov_roi"]),
+        "trap_spacing_err_pct"            : _fmt(error_metrics["trap_spacing_err_pct"], ".4f"),
+        "n_matched_traps"                 : error_metrics["n_matched_traps"],
+        "n_unmatched_current"             : error_metrics["n_unmatched_current"],
+        "n_unmatched_reference"           : error_metrics["n_unmatched_reference"],
+        "mean_trap_error_m"               : _fmt(error_metrics["mean_trap_error_m"]),
+        "max_trap_error_m"                : _fmt(error_metrics["max_trap_error_m"]),
+        "mean_trap_depth_err"             : _fmt(error_metrics["mean_trap_depth_err"]),
+        "max_trap_depth_err"              : _fmt(error_metrics["max_trap_depth_err"]),
+        "trap_count_difference"           : error_metrics["trap_count_difference"],
+        "fraction_reference_traps_matched": _fmt(error_metrics["fraction_reference_traps_matched"], ".4f"),
+        "fraction_current_traps_matched"  : _fmt(error_metrics["fraction_current_traps_matched"], ".4f"),
+        "trap_pos_err_m"                  : _fmt(error_metrics["trap_pos_err_m"]),
+        "trap_pos_err_pct_halfwav"        : _fmt(error_metrics["trap_pos_err_pct_halfwav"], ".4f"),
+        "pml_n_wavelengths_xy"            : cfg.pml_n_wavelengths_xy,
+        "pml_n_wavelengths_z"             : cfg.pml_n_wavelengths_z,
+        "pml_sigma_max_factor"            : cfg.pml_sigma_max_factor,
+        "reference_role"                  : reference_role,
+        "npz_path"                        : str(npz_path),
     }
     update_convergence_csv(csv_path, csv_row)
     print(f"  CSV: {csv_path}")

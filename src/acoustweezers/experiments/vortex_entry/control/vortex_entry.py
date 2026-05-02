@@ -210,6 +210,7 @@ def phase_sweep(
     vortex_center, pos_A, pos_B, r_barrier,
     w_barrier=1.0, w_pull=1.0, w_lateral=0.5, w_retain=1.0,
     opening_threshold=OPENING_THRESHOLD,
+    p_noise=None,
 ) -> Dict:
     e_B = vortex_center - pos_B
     norm_B = np.linalg.norm(e_B)
@@ -227,6 +228,8 @@ def phase_sweep(
     for psi in psi_values:
         p_tot = total_pressure(p_sw, vortex_gen, psi, alpha, beta,
                                vortex_center)
+        if p_noise is not None:
+            p_tot = p_tot + p_noise
         U_n, Fx_n, Fy_n = gorkov_normalised(p_tot, dx, dy)
 
         iU  = make_interp(U_n,  xg, yg)

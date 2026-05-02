@@ -230,6 +230,24 @@ class ForceEvaluator:
         Fy = -(U5[3] - U5[4]) / (2.0 * LOC_EPS)
         return Fx, Fy
 
+    def dF_dpsi(
+        self,
+        u: np.ndarray,
+        pos_xy: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Compute ∂F/∂ψ only — shape (n_particles, 2).
+
+        Analytic via the trilinear basis; skips the expensive FD position
+        gradients in dF_du.  ~40× faster than dF_du when only ψ gradient
+        is needed (receding-horizon psi-only MPC).
+        """
+        psi, xv, yv, alpha, beta = u
+        basis = self._get_basis(xv, yv)
+        grads = basis.eval_dF_dcontrols(beta, alpha, psi, pos_xy)
+        # grads["psi"] = (Fx_grad_psi, Fy_grad_psi) each shape (n_particles,)
+        return np.stack(grads["psi"], axis=1)  # (n_particles, 2)
+
     def dF_du(
         self,
         u: np.ndarray,

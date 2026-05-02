@@ -1,0 +1,1996 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{tocloft}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+
+\usepackage[a4paper,margin=20mm]{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{wrapfig}
+\usepackage{comment}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{titlesec}
+
+
+\captionsetup{justification=centering}
+
+%====COMMANDS=====%
+
+\newcommand{\subsubsubsection}[1]{%
+  \par\medskip
+  \noindent\textbf{#1}\par\nobreak\noindent\ignorespaces
+}
+
+\setlength{\parindent}{1em}
+\setlength{\parskip}{2pt}
+\titlespacing*{\paragraph}{0pt}{3pt}{0.5em}
+
+\setcounter{tocdepth}{2}
+
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PAGE 1 — TITLE PAGE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{center}
+
+{\Large \textbf{Investigation and Development of Low-Cost Acoustic Tweezer System}}
+
+\vspace{5mm}
+
+
+Daniel Aguirre,
+Joseph Chester, Zach Newman, Evelyn Knight Thompson, Justin Yau 
+
+\vspace{5mm}
+
+\end{center}
+
+{\Large \noindent \textbf{Summary}}
+
+\noindent In the world of biological research, the precise, contactless manipulation of microscopic biological structures, such as individual cells and cell-clusters on the scale of micrometers, is an intrinsic part of research into cell-cell interactions. This has applications in tissue engineering, regenerative medicine and disease treatment. Optical tweezers were the pioneering technique for contactless manipulation and remain in use for specific applications; however their utility in live-cell biological research is limited by photodamage and photothermal effects, which can damage biological specimens. Acoustics tweezers emerged as an adjacent technology, exploiting acoustic radiation forces for contactless manipulation, without the aforementioned cell viability issues. Advanced acoustic systems, such as phased transducer arrays, were developed as state of the art systems for flexible particle control, although tend to be inaccessible to biologists due to cost limitations and complex control and set-up procedures. 
+
+There is a multitude of existing acoustic techniques that have enabled all manner of research methods in the aforementioned branches of biology. However, there remains a clear gap in the field: a low-cost acoustic tweezer system capable of combining stable bulk trapping with selective manipulation of an individual particle, that is suitable for open Petri dish applications.  
+
+To enable the testing of proposed methods from the modelling streams of this project, a complete experimental platform was designed and produced. This consisted of a custom 3D printed standing-wave device, a water bath coupling system, and a magnetically coupled, robotically actuated stage that enables precise positioning of a transducer on the underside of the standing wave device. The transducer situated on the underside of the Petri dish propagated a tailored acoustic field via a 3D printed holographic lens.   
+
+Three complementary manipulation strategies were investigated and evaluated through modelling. A C-shaped holographic lens was designed for the underside transducer to allow particle movement and merging with other particles. Phase and frequency modulation of the standing-wave field was explored to enable flexible and accurate repositioning of particles. Finally, constructive and destructive interference between the vortex and standing-wave fields, controlled via relative phase offset, was investigated as a method for selective particle repositioning and merging. 
+The first two of the above strategies were tested in the aforementioned experimental setup using cinnamon and fluorescent polystyrene particles; the third (phase offset vortex / standing wave interference) was investigated computationally and is presented as a candidate for future experimental validation. Hardware studies were then carried out that included impedance-based transducer characterization and acoustic matching-layer optimization. 
+
+
+
+\vspace{5mm}
+
+\begin{center}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.3\linewidth]{Figures/bristolunilogo.png}    \label{fig:placeholder}
+\end{figure}
+
+
+\textbf{Supervised by Prof B. Drinkwater}
+
+\vspace{3mm}
+
+\textbf{School of Electrical, Electronic, and Mechanical Engineering}
+
+\textbf{University of Bristol}
+
+\vspace{5mm}
+
+\textbf{2025 / 2026}
+
+\end{center}
+
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PAGE 2 — DECLARATION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section*{Declaration}
+
+This project report is submitted towards an application for a degree at the
+University of Bristol. The report is based upon independent work by the
+candidates. All contributions from others have been acknowledged and the
+supervisor          is identified on the front page. The views expressed within the
+report are those of the authors and not of the University of Bristol.
+
+We hereby assert our right to be identified as the authors of this report.
+We give permission to the University of Bristol Library to add this report
+to its stock and to make it available for consultation in the library.
+
+We hereby declare that the above statements are true.
+
+\vspace{20mm}
+
+Zachary Newman: 
+\raisebox{-0.3\height}{\includegraphics[height=1cm]{Figures/Signatures/Zach.png}} \\
+
+Joseph Chester
+\raisebox{-0.3\height}{\includegraphics[height=1cm]{Figures/Signatures/JC Signature.png}} \\
+
+Student signature 2
+
+\vspace{20mm}
+
+© Copyright Daniel Aguirre, Joseph Chester, Zach Newman, Evelyn Thompson, Justin Yau 2026 
+
+Certification of ownership of the copyright in a dissertation presented as part of and in accordance
+with the requirements for the relevant degree at the University of Bristol.
+This report is the property of the University of Bristol Library and may only be used with due regard
+to the authors. Bibliographical references may be noted but no part may be copied for use or
+quotation in any published work without prior permission of the authors. In addition, due
+acknowledgement for any use must be made.
+
+
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PAGE 3 — WORK ALLOCATION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section*{Work Allocation}
+
+\begin{table}[h]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Task / Section} & \textbf{DA} & \textbf{JC} & \textbf{ZN} & \textbf{ET} & \textbf{JY} \\
+\hline
+%====SUMMARY=====
+\textbf{Summary} & 0 & 0 & 100 & 0 & 0 \\
+\hline
+
+% ===== SECTION 1: INTRODUCTION =====
+\textbf{1. Introduction} & 0 & 0 & 100 & 0 & 0 \\
+\hline
+
+% ===== SECTION 2: GOVERNING PHYSICS =====
+\textbf{2. Governing Physics} & 0 & 50 & 50 & 0 & 0 \\
+\hline
+
+% ===== SECTION 3: MODELLING =====
+\textbf{3. Modelling} & & & & & \\
+\quad 3.1 Lens Specific Modelling            & 0 & 100 & 0 & 0 & 0 \\
+\quad 3.2 Phase/Freq Investigation           & 100 & 0 & 0 & 0 & 0 \\
+\quad 3.3 Main Model                         & 0 & 0 & 100 & 0 & 0 \\
+\hline
+
+% ===== SECTION 4: METHODS =====
+\textbf{4. Methods} & & & & & \\
+\quad 4.1 Overall Design                     & 20 & 20 & 0 & 30 & 20 \\
+\quad 4.2 Experimental Setup (Overall)       & 10 & 20 & 0 & 40 & 20 \\
+\quad 4.3 Experimental Setup (Phase/Freq)    & 70 & 0 & 0 & 0 & 30 \\
+\quad 4.4 Cellular Viability                 & 100 & 0 & 0 & 0 & 0 \\
+\hline
+% ===== SECTION 5: RESULTS =====
+\textbf{5. Results}                          & 20 & 20 & 0 & 20 & 20 \\
+\hline
+% ===== SECTION 6: DISCUSSION =====
+\textbf{6. Discussion}                       & 25 & 25 & 25 & 10 & 15 \\
+\hline
+% ===== SECTION 7: CONCLUSION =====
+\textbf{7. Conclusion}                       & 30 & 30 & 30 & 5  & 5  \\
+\hline
+% ===== GENERAL =====
+\textbf{Report Writing \& Editing}           & 20 & 20 & 20 & 0 & 0 \\
+\hline
+\end{tabular}
+\caption{Estimated contribution percentages by section}
+\end{table}
+
+
+\vspace{5mm}
+
+We confirm that the information on this page accurately describes our
+individual contributions to the project.
+
+\vspace{5mm}
+
+Signatures: \\
+
+Daniel Aguirre  \\
+
+Joe Chester:
+\raisebox{-0.3\height}{\includegraphics[height=1cm]{Figures/Signatures/JC Signature.png}} \\
+
+Zachary Newman: 
+\raisebox{-0.3\height}{\includegraphics[height=1cm]{Figures/Signatures/Zach.png}} \\
+
+
+Evelyn Thompson \\
+
+
+Justin Yau  \\
+
+
+
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PAGE 4 — CONTENTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\tableofcontents
+
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% MAIN BODY (PAGE 5 START)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Introduction (ZN)}
+\label{sec:introduction}
+
+\subsection{Motivation: Precision Manipulation in Biological Systems}
+\label{subsec:tweezers-uses}
+
+The ability to position, isolate, and selectively merge microscopic biological objects without physical contact represents a fundamental unmet need of contemporary biomedicine. There are numerous fields in biology - cell-cell communication research; tissue engineering; regenerative medicine; disease treatment - where researchers must organise individual cells, spheroids, and organoids \cite{schutgens2020organoids} into precise spatial configurations \cite{organoid_assembly_review} and controlled interactions.
+
+Organoids are 3D cellular constructs of $50\text{--}1000\,\mu\mathrm{m}$ used to model the microanatomy of living tissue. They are now central to disease modelling \cite{schutgens2020organoids}, drug screening and organ-on-a-chip platforms \cite{leung2022organchip}. Programmable, sequential, accurate merging of individual specimens, without disturbing surrounding material, introducing biochemical labels, or applying mechanical stress, is required to ensure viability in these experiments \cite{yang2025acoustic}.
+
+Conventional manual micromanipulation (micropipettes, robotic grippers, or direct mechanical instruments) introduces risks such as contamination, and rupture of membranes as well as often lacking the specificity and selectivity needed at this scale. These limitations motivate the development of entirely contactless manipulation methods that can operate within standard biological laboratory infrastructure (e.g. open Petri dish environment). 
+
+This investigation started with a concept for a system that utilises two methods of acoustic particle manipulation to arrange organic particles into specific patterns. This concept addresses the gap in current research found in the literature review.
+
+Fig.~\ref{fig:particle_trapping_schematic} illustrates the system in which both standing wave particle trapping and an acoustic tweezer function simultaneously. The nodes of the standing waves are shown in pink, particles are shown in red and the acoustic tweezer beam is shown in blue. Particles are held in place within the grid of acoustic traps and held in place against acoustic streaming, while an acoustic tweezer targets particles individually or as groups, trapping them and translating them within the 2-dimensional plane. Translation of particles can be performed by physically moving the transducer that emits the single acoustic trap. The system is observed from above.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{Figures/particle manipulation schematic.png}
+    \caption{Simple schematic for the concept of combining standing wave particle trapping with individual particle manipulation with an acoustic beam}
+    \label{fig:particle_trapping_schematic}
+\end{figure}
+
+Particles may be held in stable positions in the nodes of the 2-dimensional standing wave, while the acoustic tweezer may move particles between said nodes, thus allowing them to be arranged in specific patterns. However, at the start of the investigation, the exact methods through which particles may be moved between stationary acoustic traps was not known.
+
+\subsection{Acoustic Tweezers as a Non-Contact Solution}
+
+There are several pre-existing non-contact solutions that are widely used in the aforementioned applications, each exploiting different physical principles, the most widely used being optical, magnetic and electric-field based tweezers, all of which carry limitations for use with cell-cluster scale in an open Petri dish environment. 
+
+\paragraph{Optical Tweezers} Traps are created by using a focused laser beam to generate forces \cite{ashkin1992forces} with local minimums, towards which dielectric particles are forced \cite{kishimoto2022optical, neuman2008single}. Although used extensively for microscopic manipulation, a critical phenomenon has been observed to arise - photodamage and thermal damage to the trapped biological structures, which tends to be detrimental to cell viability. Furthermore, optical tweezers lack selectivity, trapping any particles near the laser focus \cite{blazquez2019optical}. 
+
+\paragraph{Magnetic Tweezers} Manipulation is achieved using a pair of permanent magnets or electromagnets, allowing for traps and rotation of magnetically responsive particles. This method avoids the damaging drawbacks associated with optical tweezers, but requires either intrinsically magnetic cells or magnetic labelling. This introduces another sample-preparation step and makes the method less compatible with open, label-free set-ups \cite{yang2025acoustic, neuman2008single}. 
+
+\paragraph{Dielectrophoresis (DEP)} Manipulation is achieved by exploiting the interaction between non-uniform electric fields and polarised dielectric particles, generated by microfabricated electrode arrays integrated into the device channel \cite{kim2019dielectrophoresis}. Although an effective method for sorting, separation and manipulation, this method requires complex integration of electrodes into a lab-on-a-chip set-up, incompatible with an open Petri dish. Secondary concerns include electrochemical fouling and Joule heating at high field strengths \cite{kim2019dielectrophoresis,yang2025acoustic}. \\
+
+\noindent None of the above methods simultaneously achieve label-free operation, open Petri dish compatibility, and viable conditions for biological particles at cell-cluster scales. Acoustic tweezers address each of these limitations, by harnessing the acoustic radiation force described in \S~\ref{subsec:gorkov}, creating flexible and manipulatable pressure fields that create traps by driving particles towards pressure nodes or antinodes (minima / maxima respectively). 
+
+
+
+Compared to optical tweezers, acoustic forces cause no photodamage or photothermal effects \cite{blazquez2019optical, neuman2008single, yang2025acoustic}. They also require no specimen labelling,  unlike with magnetic tweezers \cite{yang2025acoustic, neuman2008single}, and, unlike DEP, do not rely on electrode structures or impose conductivity-related constraints \cite{kim2019dielectrophoresis, yang2025acoustic}. Acoustic tweezers have been shown to preserve cell viability, with the potential for open Petri dish environments, generating trapping forces up to 200~$\mathrm{pN}$ \cite{baudoin2020acoustical}. These qualities, alongside their ease of use in standard laboratory infrastructure, have established them as an increasingly useful tool for precision biology \cite{yang2025acoustic, neuman2008single}. 
+
+
+\subsection{Limitations and Research Gap}
+
+Despite the advantages described above, no acoustic set-ups simultaneously achieve widespread positional control, single-cell selectivity and manipulation in an open Petri dish at a reasonable cost. The current mainstream methods are as described below:
+
+\paragraph{Bulk standing-wave traps}
+This method organises all suspended particles into a lattice of pressure nodes with trap spacing defined by the wavelength \cite{marzo2019holographic}. The traps are generated by piezoelectric transducers situated opposite to one another, creating a field of standing-waves in the bulk fluid. This method is effective for cell patterning, but is incapable of manipulating particles independently - every particle in the field responds identically to any change in acoustic input. 
+
+\paragraph{Surface acoustic wave (SAW) devices} These use electrode arrays patterned onto a piezoelectric substrate to generate waves that propagate along a solid surface and leak into the adjacent fluid. These have been widely used for cell sorting and patterning, although the surface-bound geometry of the sealed channel is incompatible with the open Petri dish environment required here \cite{qin2024saw, ding2013saw}.
+
+\paragraph{Single-beam vortex tweezers}
+This approach is closest to the required selective movement mentioned before. Baudoin et al. demonstrated selective contactless manipulation of a particle without loss in viability by utilising acoustic vortices \cite{baudoin2020acoustical}. However, this method has three drawbacks: first, the vortex is created by an expensive, custom, micro-fabricated, spiral patterned transducer; second,  manipulation is performed inside a closed microfluidic chamber rather than an open Petri dish; and third, no bulk trapping of the surrounding particles is achieved, meaning particles outside the vortex are repelled by the high-pressure vortex perimeter \cite{baudoin2020acoustical}.
+
+\paragraph{Phased array acoustic tweezers}
+This approach uses a two-dimensional array of 256 transducers whereby each element requires an independent channel with it's own amplifier and phase control electronics - these systems have proven to be adept at flexibly controlling up to 25 particles simultaneously \cite{marzo2019holographicPNAS}. Although this is the current state of the art method for particle manipulation, achieving nearly any 3D acoustic field desired, the platforms cost in excess of £100,000 and require specialist operation, proving inaccessible for routine biological laboratory use. 
+
+\paragraph{The research gap is therefore clearly defined:} a low-cost, accessible, acoustic manipulation method that can simultaneously hold a population of particles at stable, known positions while enabling the selective manipulation and merging of individual particles in an open Petri dish.
+
+
+\subsection{Aims and Objectives}
+\label{subsec:aims}
+
+This project aims to design, model, and experimentally demonstrate a low-cost acoustic tweezer system, building upon the original design concept presented in Fig.~\ref{fig:particle_trapping_schematic}, capable of simultaneously trapping a population of microparticles in bulk whilst selectively manipulating and merging individual particles within an open dish environment, thereby addressing the limitations of existing approaches identified in \S\ref{sec:introduction}.
+
+These objective are laid out in full below.
+
+\begin{enumerate}
+
+    \item[\textbf{1}] \textbf{Physics characterisation.} 
+    Establish an understanding of the forces acting on the microparticles at 2.15\,\text{MHz} and quantify the effects of said forces and the associated secondary effects to decide what may be neglected in the subsequent modelling. 
+    
+    \item[\textbf{2}] \textbf{Computational framework.} 
+    Develop and validate computational frameworks to model and analyse the acoustic fields produced by various experimental set-ups, and the effect of said fields on particles in the fluid.
+    
+
+    \item[\textbf{3}] \textbf{Manipulation strategy evaluation.} 
+    Simulate and evaluate selective manipulation strategies within the modelling framework. Each strategy is assessed against the aim of achieving selective particle merging with minimal disturbance to neighbouring trapped particles.
+
+    \item[\textbf{4}] \textbf{Experimental platform.} 
+    Design and manufacture a low-cost experimental apparatus based off of the initial concept seen in Fig.~\ref{fig:particle_trapping_schematic}, in line with the research gap defined in \S~~\ref{sec:introduction}
+
+    \item[\textbf{5}] \textbf{Experimental validation.} 
+    Validate the modelled strategies experimentally using cinnamon and fluorescent polystyrene particles, comparing against the behavioural predictions of the computational framework. 
+
+\end{enumerate}
+
+\noindent Objective 1 is addressed in Section~\ref{sec:gov-physics}, Objectives 2 and 3 in Sections~\ref{sec:model-overview}--\ref{sec:fem/asm-modelling}, Objective 4 in Section~\ref{sec:final-design}, and Objective 5 in Section~\ref{sec:}.
+
+
+\section{Device Concept (EKT)}
+
+Fig.~\ref{fig:device_design} shows the initially proposed design for manipulating particles as described in aims and objectives section.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{Figures/device design.png}
+    \caption{Exploded layout for the initial design}
+    \label{fig:device_design}
+\end{figure}
+
+In the literature review, it was found that a system of four orthogonal transducers surrounding a central reservoir was an effective method of generating a grid-shaped, 2-dimensional pattern of standing waves, with the nodes acting as acoustic traps. Methods that utilise both BAWs and SAWs exist, however, SAWs need to propagate through a suitable substrate in direct contact with the particles, which adds more complex design requirements, as well as a transducer type (IDTs) that is more difficult to acquire. BAWs can be produced with piezoceramic transducers that are easier to acquire, generally low cost and that come in a variety of shapes. Horizontally placed rectangular piezoceramic transducers were chosen as they emit a wide wavefront that remains parallel across a larger area, thus creating a larger region of grid-shaped standing waves in the centre of the reservoir.
+
+The literature review also found that acoustic tweezers were an effective method of targeted particle manipulation. By coupling a bespoke lens to a BAW-emitting transducer, a focused beam with a pattern of nodes and antinodes could be produced. Typically, the lens is used to shape the beam into a vortex that generates a ring shaped antinode within the focal point, in the centre of which particles of the correct acoustic contrast factor are trapped by acoustic forces. However, holographic lenses can also be used to create traps of varying shapes. The use of holographic lenses. A low cost acoustic tweezer was produced by coupling a transducer to a 3D-printed bespoke lens. The lowest cost transducer available for this application were disc-shaped piezoceramic transducers, which were readily available from many electronics suppliers.
+
+To increase efficiency, the four orthogonal transducers would be housed such that the inner chamber would resonate at their operating frequency. This would form a series of nodes/antinodes with greater amplitude as less energy would be lost from the system. This would the required input voltage. For this to occur, the inner chamber had to have a width matching a whole number multiple of the wavelength of the input frequency. To achieve resonance, the orthogonal transducer array would have to reflect acoustic radiation back into the reservoir. Methods of doing so were explored.
+
+The robotic platform would consist of two linear actuator rails operating simultaneously to provide 2-dimensional control.
+
+The bottom of the petri dish and the acoustic tweezer device were to be fully submerged in a bath of acoustic medium, such as water or gel to reduce the energy loss from acoustic attenuation between the two. Submerging the robotics was avoided because the cost of waterproof robotics would be greater and fitting the robotics inside a large enough tank of medium would be difficult. The robotic platform was positioned below the tank and the transducer would be coupled to it via an array of magnets on each side of the bottom of the tank. As the lower half of the magnetic coupling was moved by the robotic translation stage outside of the tank, the upper half would follow it inside the tank, with the transducer bonded to it.
+
+The system allows for the use of phase manipulation of individual transducers, transducers of potentially any base frequency, and bespoke acoustic lenses of potentially any shape. The flexibility of the design allowed for the 2 new particle merging methods to be explored. The first of these methods used a bespoke acoustic lens to generate an acoustic tweezer with a novel shape, and the second used phase-manipulation between a vortex-based tweezer and the standing wave device (this relied on every transducer having the same base frequency).
+
+%: one that utilises a bespoke holographic lens, one that uses phase of manipulation of the standing wave generator and the acoustic tweezer (this relies on every transducer in system having their frequency matched), and a method that uses phase manipulation of the standing wave generator only.
+
+\section{Governing Physics (ZN, JC)}
+
+Several physical phenomena are fundamental to the design and modelling of the acoustic trapping systems presented. These are introduced below and applied throughout Sections~\ref{sec:acoustic-lens-dev} -- \ref{sec:fem/asm-modelling}, crucial in quantifying pressure fields and the particle motion in these pressure fields. 
+
+
+\label{sec:gov-physics}
+
+\subsection{Linear Acoustic Wave Model}
+\label{subsec:linear-acoustics}
+
+For a homogeneous fluid with density $\rho_0$ and speed of sound $c_0$, the acoustic pressure field can be represented by the Helmholtz equation
+
+\begin{equation}
+\nabla^2 p + k^2 p = 0
+\label{eq:helmholtz}
+\end{equation}
+
+\noindent where $p$ is the complex acoustic pressure and $k = \frac{\omega}{c_0}$ is the acoustic wavenumber with angular frequency $\omega$. The Helmholtz equation is obtained by linearising the equations of fluid motion, namely conservation of mass and momentum, and assuming a time-harmonic solution of the form $e^{i \omega t}$ \cite{kinsler2000acoustics, ihlenburg1998finite}. 
+
+In the frequency-domain formulation, the complex acoustic pressure field is represented as 
+
+\begin{equation}
+p(\mathbf{x},t)=\Re\!\left\{P(\mathbf{x})e^{i\omega t}\right\}
+\label{eq:complex-pressure}
+\end{equation}
+
+\noindent whereby $P(\mathbf{x)}$ represents the amplitude and phase, and $\Re{}$ denotes the real part and where $\omega = 2\pi f$. This pressure field is then used in the evaluation of Gor'kov potential, from which the acoustic radiation force is calculated. 
+
+\subsection{Gor’kov Potential and Radiation Forces}
+\label{subsec:gorkov}
+
+
+The applicability of Gor'kov theory, the formulation dictating the radiation force a small particle experiences in an inviscid acoustic field, requires that the particle radius $a$ be small compared the wavelength $\lambda$, i.e.\ $ka \ll 1$, where
+$k = 2\pi/\lambda$ \cite{gorkov1962, bruus2012radiationforce}. At 2.15\,MHz in water, $\lambda = 689\,\mu\mathrm{m}$,
+giving $ka = 0.57$--$0.68$ for particle radii of
+$a = 63$--$75\,\mu\mathrm{m}$. This confirms the particle sits comfortably in the Rayleigh regime at the lower and upper bounds of the radius for the particles used. Gor'kov theory is therefore the appropriate method with which to model the forces acting on the particles from the pressure field  \cite{settnes2012forces}. 
+
+
+As such, the time-averaged radiation force $F$ acting on the particles may be written as the gradient of the Gor'kov potential $U$, defined by
+
+
+\begin{equation}
+    \begin{aligned}
+    \mathbf{F} &= - \nabla U,\quad
+    U &=
+    \frac{4 \pi a^3}{3}
+    \left(
+    \frac{f_1}{2 \rho_0 c_0^2}
+    \langle p^2 \rangle
+    -
+    \frac{3 f_2 \rho_0}{4}
+    \langle v^2 \rangle
+    \right)
+    \end{aligned}
+    \label{eq:gorkov}
+\end{equation}
+
+\noindent where $a$ is the radius of the particles, $\rho_0$ and $c_0$ are the density and speed of sound in the fluid, 
+$p$ is the acoustic pressure, $v$ is the velocity of the fluid particles and 
+$\langle\cdot\rangle$ denotes the time average over one acoustic cycle. The coefficients $f_1$ and $f_2$ depend on the relative density and compressibility of the particle and the surrounding fluid. 
+
+\begin{equation}
+f_1 = 1 - \frac{\kappa_p}{\kappa_0}, \quad
+f_2 = \frac{2(\rho_p - \rho_0)}{2\rho_p + \rho_0}
+\label{eq:contrast-factors}
+\end{equation}
+
+
+\noindent where $\kappa = 1/(\rho c^2)$ and the remaining variables are defined in Table~\ref{tab:contrast}. The direction of particle migration in an acoustic field is governed by the monopole and dipole scattering coefficients $f_1$ and $f_2$, in Eq. ~\ref{eq:contrast-factors}, and depend on the contrast between the particle and the surrounding medium 
+\cite{gorkov1962}:
+
+
+The material properties and resulting coefficients for the particles used for this work are given in Table~\ref{tab:contrast}. Cinnamon has been modelled as a wood/cellulosic solid, with properties taken as a median of the range reported in the literature \cite{acousticMaterials2025}\cite{kinsler2000fundamentals}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccccc}
+Material & $\rho$ (kg\,m$^{-3}$) & $c$ (m\,s$^{-1}$) & $f_1$ & $f_2$ \\
+\hline
+Water (medium) & 998  & 1480 & ---   & ---    \\
+Polystyrene    & 1050 & 2390 & 0.635 & 0.034  \\
+Cinnamon       & 900  & 2750 & 0.679 & -0.07 \\
+\end{tabular}
+\caption{Material properties and acoustic scattering coefficients for 
+         water, polystyrene, and cinnamon.}
+\label{tab:contrast}
+\end{table}
+
+\noindent Both polystyrene ($f_1 = 0.635,\ f_2 = 0.034$) and cinnamon ($f_1 = 0.679,\ f_2 = -0.07$) exhibit sufficient acoustic contrast with water to experience a measurable radiation force. This means that for both particles and all experimental setups, the particles will be driven towards pressure minima. This can be seen in \S~\ref{}, Fig. \ref{} and \ref{}. 
+
+\subsection{Stoke's Law}
+\label{subsec:stokes}
+
+The primary force opposing the Gor'kov potential $U$, exerted on a particle moving at Reynolds number $Re<1$ in a fluid, is the viscous drag force $F_{drag}$ given by Stoke's law. For a spherical particle of radius $a$ moving at velocity $v$ through a fluid of dynamic viscosity $\mu$, the viscous drag $F_{drag}$ is expressed as \cite{stokesLawUVA}:
+
+\begin{equation}
+    F_{drag} = 6\pi \mu a v
+\label{eq:stokes}
+\end{equation}
+
+\subsection{Bjerknes Forces}
+\label{subsec:bjerknes}
+
+When multiple particles are present simultaneously in an acoustic field, each particle experiences a primary Gor'kov radiation force and a secondary force arising from the scattered waves of other particles within the field, known as the Bjerknes force. The interaction force between these particles in the short range $k\varrho \ll 1$, where the interparticle separation is less than one wavelength, can be expressed as \cite{silva2014}:
+
+\begin{equation}
+    \vec{F}^{\,\text{int}}_{\text{BJ}}(\varrho) \approx 
+    -kU_1\left(\frac{3}{(k\varrho)^4}\right)\hat{e}_\varrho, 
+    \qquad 
+    U_1 = \pi E_0 k^3 a_p^3 a_s^3 f_{1,p} f_{1,s}
+    \label{eq:bjerknes}
+\end{equation}
+
+\noindent where $\varrho$ is the interparticle separation, $E_0$ is the acoustic energy density, and $f_{1,p}$, $f_{1,s}$ are the dipole scattering coefficients of the probe and source particles respectively. 
+
+\subsection{Standing Waves and Trapping Nodes}
+
+Standing waves are formed via the overlay of two waves of the same frequency travelling in opposite directions, otherwise known as counter-propagation. This produces a field of nodes and antinodes separated by $\lambda/2$. As mentioned in \S~\ref{subsec:gorkov}, for particles with a positive acoustic contrast factor, pressure nodes act as stable trapping positions. These nodes form a lattice of equilibria towards which particles are forced towards via Gor'kov potential $U$, whereby the stable equilibria points local minima of $U$ \cite{marzo2019holographic, settnes2012forces, gorkov1962}.
+
+\section{Modelling Overview}
+\label{sec:model-overview}
+
+\begin{comment}
+    
+Throughtout the project, modelling was used to simulate and test concept ideas. This allowed us to have an initial understanding on whether a concept could work before investing resources in testing via experiment. The initial model was made to reflect our initial concept: it consisted of modelling a vortex lens that can be robotically manipulated situated underneath a chamber manipulated by four orthogonal transducers creating a static standing wave. However, as the project progressed, more ideas were generated with slight changes to the initial concept, therefore our modelling reflected this and experienced constant changes, providing necessary feedback on what could work. Moreover, specialist models were also created to help understand more complicated techniques and aid manufacturing of components for experimental purposes. The following sections look to review the work carried out with the three main models used for this project, these being:
+
+DA's model with phase / frequency modulation (\S~\ref{controllable In-Plane}), JC's holographic lens design (\S~\ref{sec:acoustic-lens-dev}), and the hybrid FEM / ASM framework (\S~\ref{sec:fem/asm-modelling}). Within the FEM / ASM stream, the framework continually evolved with the needs of the project. Each stage of development occurred either to improve the physical accuracy of the model or to reduce the computational cost, ultimately leading to the hybrid FEM / ASM framework used in the final lens studies. This process is detailed in the following section.
+
+1. to achieve objectives 2,3 ie to understand whether a concept could work before investing resources in testing via experiment
+2. Three Parallel modelling streams were developed to fulfill objectives
+3. In SXX JC investigated the production of hologrpahic lenses and their ability to alter acoustic beams led to c shape concept
+3. In SXX DA investigated the use fo phase and frequency modulation led to phase offset concept
+4.  SXX outlines the developemetn of the integrated 3D model of standing waves and acoustic beams. This framework borrows methods from SX and SY such as the concept of phase offset in SX and the propagation of beams in SY. allowing simulation of particle behaviour for final concepts
+
+\begin{itemize}
+    \item[] Specialist Models:
+    \begin{itemize}
+        \item \textit{Model for Acoustic Lens Development} - Investigate lens behaviour and aid lens manufacturing
+        \item \textit{Modelling of Controllable In-Plane Standing Waves} - Investigate the use of frequency and phase modulation on an in-plane acoustic tweezer
+    \end{itemize}
+
+    \item[] General Model:
+    \begin{itemize}
+        \item \textit{Integrated 3D Model of Standing Waves and Acoustic Beam} - 
+    \end{itemize}
+\end{itemize}
+\end{comment}
+
+
+Three parallel modelling streams were developed to fulfil objectives 2 and 3 (\S~\ref{subsec:aims}), in order to gauge the capabilities of a concept before investing resources in testing via experiment. 
+
+Primarily, the acoustic lens development stream investigated the production and design of acoustic lenses and their ability to alter acoustic beams through two main lens designs, a Fresnel Spiral Zone Plate, \S~\ref{subsec:fzp}, and an Acoustic Hologram, \S~\ref{subsec:hologram}, that was eventually integrated into the overall concept \ref{}. 
+
+In parallel, the controllable in-plane standing wave stream investigated the use of phase and frequency modulation in planar standing waves, leading to the phase offset concept used in \S~\ref{}. 
+
+Finally, \S~\ref{sec:fem/asm-modelling} outlines the development of the integrated 3D model of standing-waves and acoustic beams, which borrows the beam modelling techniques used in \S~\ref{sec:acoustic-lens-dev} and the phase offset concept used in \S~\ref{controllable In-Plane}, allowing simulation of particle behavior to develop an appropriate manipulation strategy (Objective 3 in \ref{subsec:aims}). 
+
+
+\section{Acoustic Lens Development}
+\label{sec:acoustic-lens-dev}
+
+Acoustic lens design is central to the project's goal of achieving simultaneous trapping and selective particle manipulation in an open Petri dish environment, seen in Fig. \ref{Figure of everything.}. This section details the design and computational validation of two lenses, each targeting a distinct manipulation technique within the hybrid system. 
+
+An acoustic lens is a structured surface that imposes a phase delay across a wavefront, shaping the field to produce a desired pressure distribution at a target plane, seen in Fig. \ref{fig:overallschem}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.3\linewidth]{Figures/lens shcematis.png}
+    \caption{Schematic of the acoustic lens--transducer assembly and 
+coordinate system.  Radial position $r$ and azimuthal angle $\theta$ describe 
+coordinates at the focal plane $z = z_f$.}
+    \label{fig:overallschem}
+\end{figure}
+
+\noindent A Fresnel Spiral Zone Plate (FZP) lens has commonly been used to generate acoustic vortex beams for particle manipulation \cite{inpetridish2025}, and is designed in this section to produce a vortex beam and stable pressure null for single particle trapping. 
+
+Acoustic Hologram lenses encode arbitrary target pressure field by iterative back-propagation, and have demonstrated the ability to reconstruct complex geometries at a focal plane \cite{melde2016holograms}. A C-shape hologram is designed in this section to produce a C-shaped pressure arc for directed particle confinement and manipulation. 
+
+\subsection{Fresnel Spiral Zone Plate Lens}
+\label{subsec:fzp}
+
+The aim of the Fresnel Spiral Zone Plate lens is to manipulate and maneuver particles using an acoustic vortex. The design of the Fresnel Spiral Zone Plate lens is based upon the  Huygens Fresnel principle, which states that every point on a propagating wavefront acts as a source of secondary spherical wavelets of equal frequency, and the resultant field at any downstream point is the coherent superposition of contributions from all wavelets \cite{bornwolf1999principles}:
+
+\begin{equation}
+    p(\mathbf{r}) = \frac{-ik}{2\pi} \iint_{\Sigma} p(\mathbf{r}_0)\, 
+    \frac{e^{ikR}}{R}\, \mathrm{d}S
+\label{eq:huygens}
+\end{equation}
+
+\noindent where $k = 2\pi/\lambda$ is the acoustic wavenumber, $R = |\mathbf{r} - \mathbf{r}_0|$ is the distance from each source point $\mathbf{r}_0$ on the lens aperture $\Sigma$ to the observation point $\mathbf{r}$, and the exponential term $e^{ikR}$ encodes the phase accumulated over path length $R$.
+
+The lens works by controlling the local thickness at every point across a uniformly sampled two-dimensional Cartesian grid of point sources spanning the aperture, where each source point is assigned a complex amplitude encoding the prescribed phase \cite{christensen2015thin}.
+
+\subsubsection{Acoustic Vortex Beams}
+An acoustic vortex is a beam of sound that carries orbital angular momentum about its propagation axis, characterised by a helical wavefront and an on-axis pressure null arising from a phase singularity at the beam centre \cite{guo2022review}.
+
+Vortex beams are produced by encoding a phase map onto the lens surface which imposes a spatially varying phase delay across the aperture such that the waves converge to form a vortex at the desired focal point. This phase map comprises two components, a focusing phase that converges the beam to a desired focal distance and a helical phase, which wraps the phase around the beam axis to create the vortex structure. The total phase is therefore:
+
+\begin{equation}
+    \phi_{\mathrm{total}}(r, \theta) = \phi_{\mathrm{focus}}(r) + 
+    \phi_{\mathrm{vortex}}(\theta)
+\end{equation} 
+
+\noindent where $r$ is the radial coordinate and $\theta$ is the azimuthal angle. The helical phase may be expressed as
+\begin{equation}
+    \phi_{\mathrm{vortex}}(x,y)=m\tan^{-1}\!\left(\frac{y}{x}\right) = m \Theta
+\end{equation}
+
+\noindent Where m = topological charge, which is in integer that quantifies the number of $2\pi$ phase windings completed in one full revolution around the beam axis \cite{nye1974dislocations}. For example,a beam of charge m = 1 completes one full helical twist between the source plan and desired focal distance, m = 2 completes two and so forth. 
+
+A commonly used acoustic vortex beams for particle manipulation is a Bessel vortex beam, which is a direct solution to the Helmholtz equation, Eq. \ref{eq:helmholtz}, and offers non-diffracting wave propagation.  \cite{khonina2020bessel}. In our Fresnel Spiral Zone plate (FZP) lens design, we opted to use the Laguerre Gaussian beam as the target vortex profile due to the simplicity of the phase map and extensive online resources detailing its application \cite{arlt2000laguerre}. Despite being commonly used in optics, we were confident that the same principles could be applied in an acoustic context to yield the desired results. 
+
+\subsubsection{Lens Design}
+
+A driving frequency of $f = 2.44$\,MHz was selected, consistent with the operating frequency of the transducer used. To design a FZP lens to produce an acoustic vortex beam, the acoustic pressure field is expressed in phasor notation \ref{eq:complex-pressure}, since the time dependence $e^{j\omega t}$ is known, enabling solution via the Helmholtz equation ~\ref{eq:helmholtz}. 
+
+The acoustic wavenumber in water is $k_w = 1.036\times10^{4}$\,rad\,m$^{-1}$ and in Formlabs Grey Resin V4.1 is $k_l = 6.5\times10^{3}$\,rad\,m$^{-1}$ \cite{formlabsGreyV41}. These wavenumbers govern the phase accumulated during propagation through each medium and determine the maximum lens thickness required to encode a full $2\pi$ phase shift. The lens was designed with a focal distance $z_f = 40$\,mm and aperture diameter $D = 20$\,mm, giving an F-number, which is the ratio of focal length to aperture diameter, of 2. 
+
+Laguerre Gaussian beams are an exact solution to the paraxial wave equation, and the complete source plane phase map required to produce a Laguerre Gauss Vortex , including the $-z_f$ term used to reference the phase to the on axis point, may be expressed as \cite{jimenez2018sharp}:
+
+\begin{equation}
+    \phi_{\mathrm{LG}}(x,y) = k\!\left(\sqrt{x^2+y^2+z_f^2} - z_f\right) + m\Theta
+\label{eq:lgphase}
+\end{equation}
+
+\noindent The combined phase, which may exceed $2\pi$ many times across the aperture, is then wrapped back to the range $[0, 2\pi]$. This is done to bound the lens thickness to a single maximum value $h_{\max}$. Without wrapping, the thickness would grow monotonically across the aperture, significantly increasing the lens thickness and therefore acoustic attenuation.
+
+\begin{equation}
+    \phi_{\mathrm{wrapped}} = \phi \bmod 2\pi \;\in [0,2\pi]
+\end{equation}
+
+\noindent The local thickness that encodes $\phi_{\mathrm{wrapped}}$ is then:
+
+\begin{equation}
+    h(x,y) = h_{\mathrm{base}} 
+    + h_{\max}\cdot\frac{\phi_{\mathrm{wrapped}}(x,y)}{2\pi}
+\label{eq:thicknesseq}
+\end{equation}
+
+
+\noindent Where $h_{base}$ is the base plate thickness, $h_{max}$ = ${\frac{2\pi}{|k_l - k_w|}}$ = 1.323 mm is the thickness required for a full $2\pi$ phase shift, determined by the wavenumbers of $k_{resin}$ and $k_{water}$, and was found to be 1.323 mm.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.25\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Phase Map FZP.png}
+        \caption{ Computed phase map $\phi_{\mathrm{LG}}(x,y)$ of the FZP lens, Eq. \ref{eq:lgphase}, wrapped to $[0, 2\pi]$.}
+        \label{fig:fzpphase}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.275\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Thickness Map.png}
+        \caption{Corresponding lens thickness profile $h(x,y)$, Eq. \ref{eq:thicknesseq}.}
+        \label{fig:fzpthickness}
+    \end{subfigure}
+    \caption{Phase map and thickness profile of the FZP lens for $z_f = 40\,\mathrm{mm}$, $D = 20\,\mathrm{mm}$, and m = 1 at $f = 2.44\,\mathrm{MHz}.$}
+    \label{fig:fzppandt}
+\end{figure}
+
+\noindent The phase map and corresponding thickness profile computed from Eqs. \ref{eq:lgphase} and \ref{eq:thicknesseq} are shown in Figs. \ref{fig:fzpphase} and \ref{fig:fzpthickness} respectively. The  helical term m$\Theta$ within the phase map causes the phase to increase continually around the disc, causing the Archimedean spiral pattern seen. 
+
+\subsubsection{Pressure Field Modelling and Trapping Force Analysis}
+
+A closed-form solution for the pressure field produced by the lens is intractable, therefore, the field is computed numerically using the Huygens principle, Eq. \ref{eq:huygens}. The lens aperture is discretised into a $150 \times 150$ Cartesian grid, where all points within the circular aperture of diameter $D = 20$\,mm are retained as active point sources. Each source point $n$ is assigned a complex amplitude $A_n$ encoding the Laguerre-Gaussian phase map, Eq.~\ref{eq:lgphase}:
+
+\begin{equation}
+    A_n = \exp\!\left[j\,\phi_{\mathrm{LG}}(x_n, y_n)\right]
+\end{equation}
+                    
+\noindent The complex pressure at each point at the focal plane $z = z_f$ is then obtained by direct Huygens summation over all source points \cite{fink2000acoustic}:
+
+\begin{equation}
+    p(x_o, y_o, z_f) = \sum_{n} A_n\,\frac{e^{-jk_w d_n}}{d_n}
+\end{equation}
+
+\noindent where
+
+\begin{equation}
+    d_n = \sqrt{(x_o - x_n)^2 + (y_o - y_n)^2 + z_f^2}
+\label{eq:d}
+\end{equation}
+
+\noindent Eq. \ref{eq:d} is the distance from source point $n$ to observation point $(x_o, y_o, z_f)$. The magnitude of the pressure is obtained by the modulus of the complex field and is plotted in Fig. \ref{fig:fzppressure}. 
+
+Azimuthal averaging of $|p|$ at the focal plane yields the radial profile in Fig. \ref{fig:fzpmodp}, confirming the on-axis pressure null and its depth to be 0.12 mm. The ring radius was calculated to be 0.957 mm, providing a area trapping margin of 21.3x over the polystyrene of radius r = 65 $\mu m$.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.25\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Pressure Map FZP.png}
+        \caption{Pressure magnitude $|p|$ at the focal plane ($z = 40\,\mathrm{mm}$), showing the on-axis pressure null and surrounding vortex ring.}
+        \label{fig:fzppressure}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.35\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/lens_m1_crosssection.png}
+        \caption{Azimuthal-averaged radial pressure profile, confirming the vortex ring radius of $0.957\,\mathrm{mm}$.}
+        \label{fig:fzpmodp}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.25\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Gor'kov FZP.png}
+        \caption{Gor'kov potential $U$ at the focal plane, showing the trapping potential well at the vortex ring.}
+        \label{fig:fzpgorkov}
+    \end{subfigure}
+    \caption{Computed acoustic field of the FZP vortex lens at the focal plane ($z = 40\,\mathrm{mm}$, $m = 1$, $f = 2.44\,\mathrm{MHz}$).}
+    \label{fig:fzpforces}
+\end{figure}
+
+Trapping of the particle requires the Gor'kov radiation force to exceed the Stokes viscous drag, $F_{\mathrm{rad}} > F_{\mathrm{drag}}$. Using Eq.~\ref{eq:gorkov} from \S~\ref{subsec:gorkov}, the Gor'kov potential $U$ is evaluated at the focal plane from the computed pressure field, yielding the radiation force field shown in Fig.~\ref{fig:fzpgorkov}. The peak Gor'kov force was found to be $F_{\mathrm{rad}} = 2759$\,pN.
+
+The Stokes drag was evaluated at a representative particle velocity of $v = 1$\,mm\,s$^{-1}$ using Eq.~\ref{eq:stokes}, giving $F_\text{drag} = 848.23$ pN. Since Stoke's viscous drag scales linearly with velocity, the trap holds for particle velocities up to $v_\text{max} = 3.3$\,mm\,s$^{-1}$, above which the particle escapes. This trapping margin of $3.3\times$ at $v = 1$\,mm\,s$^{-1}$ confirms sufficient radiation force to trap a polystyrene particle of radius $a = 65\,\mu$ under realistic operating conditions.
+
+\subsection{Acoustic Hologram Lens}
+\label{subsec:hologram}
+
+As opposed to the FZP lens, which encodes a fixed phase profile into the lens surface to generate a specific acoustic vortex beam, an acoustic hologram lens can produce any arbitrary target pressure field at the focal plane. To achieve this, the desired pressure field is defined first, and the lens phase map required to produce it is computed by back-propagating the target from the focal plane to the source plane, which is the hologram lens surface $h(x,y)$, using the Angular Spectrum Method (ASM), detailed below in \S~\ref{subsubsec:ASM}. This design approach, pioneered by Melde et al. \cite{melde2016holograms}, enables pressure fields of arbitrary geometry to be achieved using a single transducer and lens system at a low cost.  
+
+\subsubsection{Design Objectives}
+
+The target acoustic pressure field for the acoustic hologram lens is a C-Shape arc, chosen to encompass and confine a particle within the c-shaped arc radius, whilst enabling 2D translational manipulation through moving the lens, as demonstrated in Fig.~\ref{fig:csequence} developed by ZN. Compared to an acoustic vortex, the C-shape produces higher pressure maxima along the arc and eliminates the surrounding pressure maxima, making it theoretically possible to push and merge two particles within the trap without the opposing Gor'kov forces that impede vortex-based merging 
+(\S~\ref{subsec:bjerknes}).
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.6\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/C-Shape Sequence.png}
+        \caption{Simulated pressure field sequence showing the C-shape beam encompassing and translating a trapped particle.}
+        \label{fig:csequence}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.25\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/target_cshape.png}
+        \caption{The target amplitude mask $A_{\mathrm{target}}(x,y)$ at the focal plane.}
+        \label{fig:targetcshape}
+    \end{subfigure}
+    \caption{C-shape holographic lens design simulated trapping behaviour and corresponding target amplitude mask $A_{\mathrm{target}}(x,y)$ used as input to the IASA, in \S~\ref{sec:IASA}}
+    \label{fig:ctarget}
+\end{figure}
+
+
+\noindent The target amplitude mask $A_\text{target}(x,y)$ is an image defining where the pressure should be high at the focal plane and is constructed as a C-Shape, seen in Fig. \ref{fig:targetcshape}, and is created by:
+
+\begin{equation}
+    A_\text{target}(x,y) = \begin{cases}
+        1 & \text{if } r_0 - \dfrac{\delta r}{2} < R < r_0 + \dfrac{\delta r}{2} \text{ and } \left|\angle\!\left(e^{i(\theta - \theta_\text{gap})}\right)\right| > \dfrac{\alpha}{2} \\[6pt]
+        0 & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+\noindent where $r_0 = 1.5 mm$ is the arc radius, $\delta$ the arc width, $\alpha$ the gap angle, and $\theta_{gap}$ the gap direction. The constraint $r_0 \gg a$ ensures the particle sits comfortably within the trap, and for a polystyrene particle of diameter d = $130 \mu m$a ratio of $r_0 / a$ = 950.4x is achieved. This produces the following C-Shape arc definition seen in Fig. \ref{fig:targetcshape}.
+
+A driving frequency of f = 1.65 MHz was selected, consistent with the operating frequency of the
+transducer usedd. The lens was designed with a focal distance zf = 50 mm and aperture diameter D = 25 mm,
+giving an F-number, which is the ratio of focal length to aperture diameter, of 2. 
+
+\subsubsection{Angular Spectrum Method (ASM)}
+\label{subsubsec:ASM}
+
+The Angular Spectrum Method (ASM) is an exact solution of the Helmholtz equation \ref{eq:helmholtz} that decomposes a complex pressure field at a source plane into its constituent plane-wave components via a Fourier transform, propagates each component analytically, and reconstructs the field via inverse Fourier transform \cite{konijnenberg2021optics}. The ASM operates entirely in the spatial frequency domain, making it computationally efficient for repeated forward and backward propagation \cite{melde2016holograms}. The foundation of the hologram design is the propagation of a monochromatic acoustic pressure wave, where the complex pressure field is expressed as:
+
+\begin{equation}
+    p(x, y, z) = \hat{p}(x, y, z) \, e^{j\Delta\phi(x,y,z)}
+\end{equation}
+
+\noindent where $\hat{p}(x,y,z)$ and $\Delta\phi(x,y,z)$ are the amplitude and phase function maps respectively, and the explicit time dependence has been dropped. The angular spectrum of this wave at a constant focal distance z is obtained by taking the Fourier transform, which decomposes the field into plane wave components \cite{konijnenberg2021optics}:
+
+\begin{equation}
+    P(k_x, k_y, z) = \int_{-\infty}^{+\infty} \int p(x, y, z) \, e^{-j(k_x x + k_y y)} \, \mathrm{d}x \, \mathrm{d}y
+\end{equation}
+
+\noindent Once $P(k_x, k_y, 0)$ is known and the hologram plane is set to z = 0, the angular spectrum at any plane downstream is calculated by multiplying with a propagator function $\gamma$ \cite{melde2016holograms}
+
+\begin{equation}
+   P(k_x, k_y, z) = P(k_x, k_y, 0) \gamma(k_x, k_y, z)
+\label{eq:forward}
+\end{equation}
+
+\noindent where the propagator function $\gamma$ is defined as  
+
+\begin{equation}
+    \gamma(k_x, k_y, z) = e^{jz\sqrt{k^2 - k_x^2 - k_y^2}}
+\end{equation}
+
+\noindent where $k_m = |\mathbf{k}| = \omega/c$ is the wavenumber in a liquid medium, $\omega$ the angular frequency, c the speed of sound in the medium and $\mathbf{k} = (k_x, k_y, k_z)$ the wave vector whose transverse components $(k_x, k_y)$ define each plane-wave direction. The pressure field in any plane $z$ is then recovered via the inverse Fourier transform \cite{konijnenberg2021optics}:
+
+\begin{equation}
+    p(x, y, z) = \frac{1}{4\pi^2} \int_{-\infty}^{+\infty} \int P(k_x, k_y, z)  e^{j(k_x x + k_y y)}\, \mathrm{d}k_x \, \mathrm{d}k_y
+\end{equation}
+
+\noindent Back-propagation is achieved by applying the conjugate propagator $\gamma$, reversing each phase shift:
+
+\begin{equation}
+    P(k_x, k_y, 0) = P(k_x, k_y, z) \gamma(k_x, k_y, -z)
+\label{eq:back}
+\end{equation}
+
+\noindent Since $|\gamma| = 1$, back-propagation shifts only the phase of each plane-wave component. The phase of the resulting field at the source plane is therefore the delay the lens must impose on each component to reconstruct $A_\text{target}$ at the focal plane. This phase is extracted and converted directly into the lens thickness $h(x,y)$.
+
+The limited size of the observation window leads to a cut-off of higher spatial frequencies over the propagation distance. The integration region of the inverse Fourier transform is limited to account for cut-offs, and a simple geometrical estimate yields:
+
+\begin{equation}
+k_{x,y} \leq \frac{\pi(L_h + L_i)}{\lambda\sqrt{\frac{1}{4}(L_h + L_i)^2 + \Delta z^2}}
+\end{equation}
+
+\noindent where $\lambda$ is the wavelength, $L_h$, and $L_i$ are the side lengths of the observation window in the hologram and image planes respectively, and $\Delta$z is the propagation distance. To prevent aliasing occurring, the computational domain is extended such that  $L_d \geq 3 \times \max\{L_h, L_i\}$ and the field outside the hologram aperture is then set to zero. 
+
+Together, these equations describe how a target pressure field defined at the focal plane is back-propagated to yield the phase map the lens must encode, used iteratively in the IASA, \S~\ref{sec:IASA}.
+
+
+\subsubsection{Iterative Angular Spectrum Approach (IASA) and Analysis}
+\label{sec:IASA}
+
+To compute the hologram we use the iterative angular spectrum approach (IASA). The field is propagated between the hologram plane and the image plane by the ASM, and the process is repeated iteratively until the phase map converges in the hologram plane. We first define the constraints for each plane. In the hologram plane, the amplitude is set to the measured transducer output pressure distribution, propagated to the transducer face, and the phase is initially set to zero. The image-plane constraints are then set separately.
+\noindent The following steps are applied iteratively \cite{melde2016holograms}:
+
+\begin{enumerate}
+    \item Initialise the lens field $F_l$ with unit amplitude and zero phase 
+          across the aperture and set $F_l = 0$ outside the aperture.
+    \item Forward-propagate $F_l$ to the focal plane via the ASM 
+          Eq.~\ref{eq:forward}, yielding the complex field $F_I$.
+    \item Apply the image-plane constraint by replacing the amplitude of 
+          $F_I$ with the target mask $A_\text{target}$ whilst retaining 
+          the forward-propagated phase. 
+    \item Back-propagate the constrained $F_I$ to the hologram plane via 
+          the ASM Eq.~\ref{eq:asm_back}.
+    \item Apply the hologram-plane constraint by retaining only the phase 
+          of the back-propagated field and resetting the amplitude to unity and set $F_l = 0$ outside the aperture.
+    \item Repeat from step 2 until convergence, where the phase map that the lens must encode such        that forward propagation of $F_H$ reconstructs $A_\text{target}$ at the focal plane is          achieved. 
+\end{enumerate}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.27\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/phase_map.png}
+        \caption{Hologram phase map $\phi(x,y)$ output from the IASA after 100 iterations.}
+        \label{fig:Cphase}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.29\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/c_shape_thickness_map.png}
+        \caption{Corresponding lens thickness map $h(x,y)$, Eq. \ref{eq:thicknesseq}}
+        \label{fig:Cthickness}
+    \end{subfigure}
+    \caption{IASA-converged phase and thickness maps for the C-shape holographic lens ($f = 2.15\,\mathrm{MHz}$, $z = 20\,\mathrm{mm}$, $D = 20\,\mathrm{mm}, m = 1)$}
+    \label{fig:Cpandt}
+\end{figure}
+
+\noindent Iterations as required as the lens encodes only phase, not amplitude, and therefore iteration is required to satisfy the amplitude constraint a both the hologram plane and the focal plane. The convergence of the IASA was analysed through NMSE analysis in \S~\ref{subsec:nmse}, and for this design $N=100$ iterations was used. The converged phase, plotted in Fig. \ref{fig:Cphase} is then converted to a physical lens thickness using Eq.~\ref{eq:thicknesseq}, seen in Fig. \ref{fig:Cthickness}.The maximum thickness $h_{max}$ is found to be 2.045 mm.
+
+\subsubsubsection{IASA Convergence Analysis}
+\label{subsec:nmse}
+
+\noindent To validate the iterative necessity of the IASA and validate its reconstruction fidelity, a Normalised Mean Square Error (NMSE) test was conducted across all 100 iterations. The NMSE is a dimensionless metric defined as the ratio of the mean squared deviation between the reconstructed focal amplitude and the target C-shape to the mean power of the target signal \cite{emergentmind_nmse}, and is expressed as:
+
+\begin{equation}
+\text{NMSE} = \frac{\sum_{i \in \Omega} \left( |p_{\text{norm},i}| - |p_{\text{target},i}| \right)^2}{\sum_{i \in \Omega} |p_{\text{target},i}|^2}
+\label{eq:nmse}
+\end{equation}
+
+\noindent where $\Omega$ denotes the set of pixels within the target arc region, $p_{\text{norm}}$ is the reconstructed focal pressure amplitude, and $p_{\text{target}}$ is the target C-shape mask. An NMSE of 0 indicates a perfect reconstruction and values approaching 1 indicate very poor consistency. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.3\linewidth]{Figures/iasa_convergence.png}
+    \caption{NMSE convergence of the IASA over 100 iterations for the 
+C-shape holographic lens.}
+    \label{fig:placeholder}
+\end{figure}
+
+\noindent The convergence curve is characteristic of the GS algorithm applied to non-symmetric targets, which are known to produce oscillatory convergence due to conflicts between the lens-plane and focal-plane phase projections \cite{rha2018investigating}. This can be directly represented in the graph, where spikes are seen between iterations 1 - 20 and between iterations 50 - 58. 
+
+The NMSE decreases from 0.070 at iteration 1 to 0.048 at iteration 100, representing a 31 \% improvement in the fidelity of the arc reconstruction. Convergence is effectively reached by iteration 60, after which fluctuations remain below 5 \% of the converged value. This validates the need to solve iteratively, and confirms that 100 iterations is a sufficient stopping criterion.
+
+\subsubsection{Pressure Field Modelling and Trapping Force Analysis}
+
+The complex pressure field obtained from the angular spectrum propagation was converted into a magnitude map using $p_{mag}$v= $|p(x,y,z)|$. The complex acoustic pressure field at the focal plane is shown in Fig. \ref{fig:Cpressure}. Unlike the FZP vortex field, the C-shape target produces a crescent-shaped pressure distribution with no on-axis null, as expected for a non-helical target amplitude.
+
+The azimuthal pressure profile along the arc, shown in Fig.~\ref{fig:Cmodp}, confirms the pressure maximum is located at the designed arc radius $r_0 = 1.5$\,mm. The slight dip at the peak of the graph is caused by the pressure field geometry, and has negligible effect on the trapping force. 
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.25\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/pressure_field.png}
+        \caption{Pressure magnitude $|p|$ at the focal plane ($z = 50\,\mathrm{mm}$), 
+    showing the reconstructed C-shaped pressure distribution.}
+        \label{fig:Cpressure}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.42\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/c_shape_radial_pressure.png}
+        \caption{Radial pressure profile across the arc centre, confirming the 
+    trapping ring radius.}
+        \label{fig:Cmodp}
+    \end{subfigure}
+        \begin{subfigure}{0.25\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/gorkov_potential.png}
+        \caption{Gor'kov potential $U$ at the focal plane, showing the potential along the C-shaped arc radius. }
+        \label{fig:Cgorkov}
+    \end{subfigure}
+    \caption{Overall Caption}
+    \label{fig:Cpressures}
+\end{figure}
+
+\noindent Trapping of the particle requires the Gor'kov radiation force to exceed the Stokes viscous drag, $F_{\mathrm{rad}} > F_{\mathrm{drag}}$. Using Eq.~\ref{eq:gorkov} from \S~\ref{subsec:gorkov}, the Gor'kov potential $U$ is evaluated at the focal plane from the computed pressure field, resulting in the radiation force field shown in Fig.~\ref{fig:Cgorkov}. The peak Gor'kov force was found to be $F_{\mathrm{rad}} = 3346.59$\,pN.
+
+The Stokes drag was evaluated at a particle velocity of $v = 1$\,mm\,s$^{-1}$ using Eq.~\ref{eq:stokes}, giving $F_\text{drag} = 1225.22$ pN. Since Stoke's viscous drag scales linearly with velocity, the trap holds for particle velocities up to $v_\text{max} = $2.73\,mm\,s$^{-1}$, above which the particle escapes. This trapping margin of $2.73\times$ at $v = 1$\,mm\,s$^{-1}$ confirms sufficient radiation force to trap a polystyrene particle of radius $a = 65\,\mu$ under realistic operating conditions.
+
+\subsection{Modelling The Petri Dish}
+\label{subsec:Petri}
+
+\subsubsection{General Effect of an Object in an Acoustic Path}
+
+A potential issue with the acoustic trapping system was the introduction of the Petri dish, required in experimentation for more dense particles to restt on, in between the source and the particle. It is therefore important to understand and calculate the losses created by the Petri Dish. At a planar boundary between two semi-infinite media, a plane wave is partially transmitted and partially reflected. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.3\linewidth]{Figures/Petri schem.png}
+    \caption{Schematic of the polystyrene Petri dish, showing the two impedance boundaries at the water to polystyrene ($Z_w$/$Z_{ps}$) and polystyrene to water ($Z_{ps}$/$Z_w$) interfaces.}
+    \label{fig:tankschem}
+\end{figure}
+
+The base of a polystyrene petri dish presents two impedance discontinuities, seen in Fig. \ref{fig:tankschem}, water to polystyrene and polystyrene to water. For a treatment in which multiple internal reflections (Fabry--P\'{e}rot resonances) are neglected and when the Petri dish base is not at a resonant thickness, the total intensity transmission is simply the product of the two single-interface coefficients \cite{prieto2018piezo1}:
+
+\begin{equation}
+    T_\mathrm{dish}
+        = T_{\mathrm{w} \to \mathrm{ps}} \cdot T_{\mathrm{ps} \to \mathrm{w}}
+        = \left[\frac{4 Z_\mathrm{w}\,Z_\mathrm{ps}}
+                     {\left(Z_\mathrm{w}+Z_\mathrm{ps}\right)^2}\right]^2.
+    \label{eq:T_dish}
+\end{equation}
+
+where $Z_w$ = 1.48 MRayl and $Z_{ps}$ = 2.53 MRayl.
+
+\subsubsection{Pressure and Gor'Kov calculations}
+
+The computed pressure amplitude is scaled by $\sqrt{T_\text{dish}}$ to 
+account for the intensity transmission loss ($I \propto |p|^2$) through 
+the Petri dish wall:
+
+\begin{equation}
+    p_\text{dish}(x,y) = p(x,y) \cdot \sqrt{T_\text{dish}}
+    \label{eq:dish}
+\end{equation}
+
+\noindent The spatially varying phase introduced by the dish wall is not 
+re-propagated through the ASM, as the resulting lateral energy redistribution is expected to be negligible \cite{zeng2008angular}, so the same scaling applies to both lens models.
+
+Using this equation, the transmission co-efficient $T_{dish}$ is found to be 0.87, representing a pressure intensity loss of 13\%. 
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.3\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/dish_comparison.png}
+        \caption{Radial pressure profile at $z = 40\,\mathrm{mm}$ with and without 
+    the dish effect for the FZP lens.}
+        \label{fig:fzpmodpcomp}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.3\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/radial_pressure_comparison.png}
+        \caption{Radial pressure profile at $z = 50\,\mathrm{mm}$ with and without 
+    the dish effect for the Acoustic Hologram lens.}
+        \label{fig:Cmodpcomp}
+    \end{subfigure}
+    \caption{Effect of the polystyrene Petri dish on the acoustic pressure field.}
+    \label{fig:Cpressures}
+\end{figure}
+
+\noindent Since the Gor'kov potential and trapping force are both defined as $\mathbf{F} = -\nabla U \propto p^2$ [14], a reduction in pressure amplitude by a factor $\sqrt{T_\mathrm{dish}}$ causes both $U$ and $\mathbf{F}$ to scale by $T_\mathrm{dish}$:
+
+\begin{equation}
+    U_\mathrm{dish} = T_\mathrm{dish}\,U_\mathrm{ideal}, \qquad
+    \mathbf{F}_\mathrm{dish} = T_\mathrm{dish}\,\mathbf{F}_\mathrm{ideal}
+\end{equation}
+
+\noindent The Gor'kov radiation effects are calculated using \ref{eq:gorkov} in \S~\ref{subsec:gorkov} . For the FZP lens, the Gor'kov potential $U$ found to be acting on the particle is 2401.60 pN, presenting a 13\% percent decrease as a result of the Petri dish. For the C-Shape hologram lens, the Gor'kov potential $U$ found to be acting on the particle is 2911.53, also presenting a 13\% percent decrease as a result of the Petri dish. 
+
+\subsubsection{Modelling assumptions}
+
+Several simplifications are made in the current model. Normal incidence is assumed, as off-axis components are not expected to deviate significantly \cite{kinsler2000acoustics}. Oblique incidence would degrade the reconstructed C-shape symmetry. Multiple internal reflections are neglected as the Fabry--P\'{e}rot resonance condition is not met at $d = 1.2$\,mm \cite{kinsler2000acoustics}, and the spatially varying phase $\Delta\phi(x,y)$ introduced by the dish is not re-propagated through the ASM, as the perturbation is considered negligible \cite{zeng2008angular}. Finally, material attenuation is considered negligible, being an order of magnitude smaller than the reflection loss \cite{kinsler2000acoustics}. 
+
+\subsection{Discussion}
+
+
+Two acoustic lens designs were developed and validated computationally. The FZP vortex lens achieves a trapping margin of $3.3\times$, confirming suitability for single-particle trapping via the pressure null at the vortex ring. The C-shape holographic lens achieves a trapping margin of $2.73\times$, sufficient for directed particle manipulation. Both designs were proven to be suitable for use with a petri dish, and then taken forward for manufacture and experimental validation, as described in \S~\ref{sec:testingrcl}. 
+
+\section{Modelling of Controllable In-Plane Standing Waves}
+\label{controllable In-Plane}
+
+As research into our initial concept progressed, it was apparent that completing a successful merge between two particles with a single acoustic lens and static standing waves was highly unlikely. Hence, an investigation into controllable in-plane acoustic tweezers was initiated to possibly provide another avenue of control to achieve a merge. Previous works include exploring the use of standing waves to separate particles of varying density \cite{Luo2018PhaseReview} and guiding particles while suspended in a fluid undergoing laminar flow \cite{Kim1995CiteAl}. For the purpose of this project, there was a focus on techniques involving counter-propagating waves to create a stationary wave, reflecting the design of the initial concept. The primary techniques being: introducing a frequency difference between transducer pairs to drive a constant motion of traps \cite{Xu2026Velocity-controlledManipulation}, and phase controllable standing waves to manipulate the position of traps, \cite{Courtney2012ManipulationWaves}. Both of these techniques require individual control over each transducer.
+
+\subsection{Frequency Modulation}
+\label{frequency modulation}
+
+Initially, controlling the in-plane transducers by manipulating the frequencies was investigated first. Frequency beat modulation introduces a small frequency offset between the two transducers in an opposing pair, producing a slowly varying envelope (the beat) that effectively makes the standing-wave nodes drift in space. 
+
+For a two-dimensional beat-frequency modulation, the acoustic pressure field, in respect to time ($t$) can be written as follows (Xu \cite{Xu2026Velocity-controlledManipulation}).
+
+\begin{equation}
+\begin{aligned}
+    P(x,y,t) \cong 4P_0 \cos\left( \frac{k_x x + \Delta\phi_x(t)}{2} \right) \cos\left( 2\pi f_x\, t \right) + 4P_0 \cos\left( \frac{k_y y + \Delta\phi_y(t)}{2} \right) \cos\left( 2\pi f_y\, t \right)
+\end{aligned}
+\label{eq:simplified_frequency}
+\end{equation}
+
+where $P_0$ is the amplitude of the transducers, $k_x$ and $k_y$ are the spatial frequencies in the $x$ and $y$ directions, $\Delta\phi_x(t)$ and $\Delta\phi_x(t)$ are the time varying phase shifts in x and y directions and $f_x$ anf $f_y$ are the frequencies in the $x$ and $y$ directions.
+
+It is important to note that each pair of transducers might have a slightly different carrier frequency (ie. $f_x,1 \cong f_x,2 \neq f_y,1\cong f_y,2$) to prevent coupling issues and have full independent 2-D control.
+
+The effect created from modulating frequency can be described as a conveyor-like effect, with the trap moving in a single direction. However, beat-frequency modulation is time-dependent, and because of this it can be difficult to accurately stop the trap in the desired location as cycle-averaging assumptions are required to predict where its final resting position [citation required]. Furthermore, frequency modulation excels at translating particles in straight lines, but experimental data has shown its struggles with complex shapes such as curves (Xu \cite{Xu2026Velocity-controlledManipulation}). Given that the ultimate objective involves merging cells, inaccuracies could compromise the process due to the precision required. This led to investigating other methods of control, which presented the case of phase modulation.
+
+\subsection{Phase Modulation in two dimensions}
+\label{Phase Modulation}
+By changing the relative phase, $\Delta\phi$, between transducers, it translates the standing-wave pattern in space without changing the drive frequency. Extending to two orthogonal pairs enables independent control of nodal/antinodal locations along (x) and (y), so the trapping sites (pressure minima/maxima, depending on particle contrast) can be “steered” smoothly across the plane by updating phase between each pair of transducers, $\Delta\phi_x$ and $\Delta\phi_y$.
+
+The total acoustic pressure field can be written as follows (\cite{Courtney2012ManipulationWaves}):
+
+\begin{equation}
+    P(x, y) = 2P_0 \left[ \exp(\mathrm{i}\phi_x) \cos\left(kx + \frac{\Delta\phi_x}{2}\right) + \exp(\mathrm{i}\phi_y) \cos\left(ky + \frac{\Delta\phi_y}{2}\right) \right]. 
+\label{eq:total_f_phase}
+\end{equation}
+
+To find the positions and shapes of pressure nodes, it is required to know where the pressure is zero (or minimal). By calculating the modulus squared, this process can be simplified as it eliminates complex phases allowing for all real values, furthermore it follows the form found in equation \ref{eq:gorkov} directly feeding into the calculation of trapping forces and potential wells. This is seen as follows:
+
+\begin{equation}
+\begin{aligned}
+    |P(x, y)|^2 = 4P_0^2 \Bigg[ &\cos^2\left(kx + \frac{\Delta\phi_x}{2}\right) 
+    + \cos^2\left(ky + \frac{\Delta\phi_y}{2}\right) \\
+    &+ 2\cos(\phi_x - \phi_y) \cos\left(kx + \frac{\Delta\phi_x}{2}\right) 
+    \cos\left(ky + \frac{\Delta\phi_y}{2}\right) \Bigg].
+\end{aligned}
+\label{eq:real_phase}
+\end{equation}
+
+Furthermore, removing complex phases simplifies computation to analytically find optimal phase settings, this is important for modelling. The relationship between phase modulation and node displacement is direct and linear, allowing for highly accurate prediction on where a trap will stop. This accuracy was seen as very beneficial, especially compared to the frequency modulation. However, phase modulation is periodic and because of this is limited to very small spatial displacements. Under phase modulation, a trap is limited to a range of $\lambda/2$ of the standing wave [citation required]. The ability to move a particle from afar to another trapped by the lens was still desired.
+
+\subsection{Integration into Model}
+\label{Phase_and_freq_model}
+% Requires: \usepackage{amsmath}
+After researching both techniques, it was identified that the two techniques offer complementary strengths; the range capabilities of using beat frequency modulation and the accuracy of using phase modulation. The aim: to have another layer of control to manipulate particles and experiment with acoustic beams to hopefully achieve objective (number) (merging of particles). 
+
+To validate the feasibility of this combined approach, a separate proof of concept model was developed in python. This model focused on the in-plane acoustic transducers, and therefore was restricted to two dimensions. However, to facilitate future integration with the 3D key parameters were maintained consistent, these being: the computational domain of 6 x 6 mm rectangular chamber of water; particles being modelled as polystyrene spheres with a diameter set at 125 $\mu$m; and four transducers with a resonant frequency of 2.15 MHz. 
+
+To best exploit the strengths of each method, a two-stage control strategy was implemented:
+\begin{itemize}
+    \item Frequency Modulation Stage - To cover greater distances, the model would begin by using frequency modulation until the particle was within $\lambda/2$ diameter range of the intended location
+    \item Phase Modulation Stage -  the model would then switch methods to phase modulation directly placing the particle in the intended location
+\end{itemize}
+Using this method, the aim of having a second layer of control capable of moving a particle anywhere across the computational domain was achieved.
+
+Initially, this two-stage strategy was validated using a quasi-static trapping model. At each step of the modulation sequence, the acoustic pressure field was computed, using equation \ref{eq:simplified_frequency} during the frequency modulation stage and equation \ref{eq:real_phase} during the phase modulation stage. Moreover, this is substituted into Gor'Kov's Portential \ref{eq:gorkov} to compute the resulting landscape of nodes. Then by assuming that the particle would remain at the nearest node at each step, the need to resolve its dynamics is avoided, providing for a simple simulation to test the validity of the idea. 
+
+However, the quasi-static model is very idealistic, ignoring viscous drag and the time required for a particle to respond to changes in the acoustic field.  Hence, changes were made to use Stokes Dynamics instead, to better reflect the nature of particle manipulation through water. This makes use of Stoke's Law \ref{eq:stokes}, evaluating the applied acoustic force against the viscous drag exerted by the water. As the small particle size and low velocities result in Reynolds numbers well below 1, this is an appropriate method. This model then assisted in validating the behaviour through experimentation, as discussed later in section \ref{controllable experiment}.
+\usepackage{float}
+\begin{figure}[H]
+    \centering
+
+    \begin{subfigure}[t]{0.44\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Images/Frequency_circle.png}
+        \caption{Trace of Circle using only frequency modulation}
+        \label{fig:Frequency_circle}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.44\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Images/Combined_circle.png}
+        \caption{Trace of Circle using both methods}
+        \label{fig:Combined_circle}
+    \end{subfigure}
+
+    \caption{Controllable In-Plane Tweezers Model}
+    \label{fig:combined_stage}
+\end{figure}
+
+Figure \ref{} demonstrates the benefits of using both methods as it shows the results of tracing a circle via frequency modulation only, struggling to stay on path. Furthermore, figure \ref{} shows the capabilities of using both methods in unison, covering great distance via frequency modulation and then showing the potential at the end with accurately being able to trace a circle.
+
+This model was then integrated with the 3D model and several approaches were attempted to achieve the merge of two particles. This included trying to bring two particles together using the lens and the in-plane method, then turning off the lens to then try at turn it back on at a point that would cause a merge. (why this failed). Another approach was to try 'push' the particles together, before catching them together with the lens. (Failed cause wouldn't move far).
+
+Although these approaches were unsuccessful, the experimentation of modulating frequency and phase led to more ideas, and the idea of changing these parameters between the lens and the in-plane transducers was born helping to from the idea of our phase offset concept.
+
+
+\section{Integrated 3D Model of Standing-waves and Acoustic Beams}
+\label{sec:fem/asm-modelling}
+
+To better understand the acoustic behaviour of the system, a finite element method (FEM) simulation package was used to visualise the pressure field generated within the fluid. COMSOL Multiphysics is the standard package used, and as such was used for the initial investigation of the standing-wave system. 
+
+As the project progressed into the design stage, COMSOL proved to be inconvenient when handling more advanced modelling tasks, such as inverse lens design, control strategy testing, parameter sweeps and optimisation. To overcome these computational limitations, a custom FEM framework was developed in Python using an open-source FEM backend (FEniCSx). The resulting modeling framework was used throughout the project to guide design decisions and evaluate different partial manipulation strategies. The custom framework will be described in the following section. 
+
+\subsection{Physical System and Modelling Domain}
+\label{subsubsec:physical-system}
+
+\begin{wrapfigure}{r}{0.5\linewidth}
+    \centering
+    \vspace{-25pt}
+    \includegraphics[width=1.2\linewidth]{Figures/Modelled Domain.png}
+    \caption{Computational domain ($6 \times 6 \times 7~\mathrm{mm}$). Upper $2\,\mathrm{mm}$ are Petri dish with transducer boundaries (orange) and reflective air-water interface (green). Lower $5\,\mathrm{mm}$ show water bath, with PML boundaries, through which vortex propagates from below.}
+    \label{fig:domain_fig}
+\end{wrapfigure}
+ 
+The computational domain was a simplified idealisation of the experimental set up; the physical set up consisted of a water-filled square Petri dish in which a standing-wave field was created using rectangular transducers adjacent to the side walls of the dish. This Petri dish sat in a water bath through which a circular transducer and lens propagated a vortex beam from below. 
+
+The computational domain was defined as a $6 \times 6 \times 7~\mathrm{mm}$ rectangular cuboid of water. The upper $2~\mathrm{mm}$ represented the Petri dish domain, while the lower $5~\mathrm{mm}$ corresponded to the water bath through which the vortex propagated. This is illustrated in Fig.~\ref{fig:domain_fig}.
+
+
+\noindent The upper green surface of the cuboid represents the air-water interface at the top of the Petri dish. This was modeled using a Robin / impedance boundary condition to describe the reflection of the majority of the acoustic waves, as calculated from the reflection coefficients. The bottom and side boundaries of the water bath were modelled using Perfectly Matched Layers (PMLs), to approximate open-domain decay of waves - the water bath was approximated as an unbounded domain \cite{cimpeanu2015pml}. The orange transducers at the top of the cuboid, representing the sides of the Petri dish, were implemented as prescribed non-zero normal velocity boundary conditions (Neumann boundary condition \cite{ihlenburg1998finite}) as seen in Eq.~\ref{eq:neumann}. The polystyrene particles considered had diameters of between 125 -- 150~$\mu\text{m}$. 
+
+
+\subsection{Modelling Physics}
+\label{subsubsec:modelling-physics}
+
+The acoustic field was modelled using the linear, time-harmonic formulation introduced in \S~\ref{subsec:linear-acoustics}, solving the Helmholtz equation given in Eq.~\ref{eq:helmholtz}. The system operates at the single frequency of 2.15MHz (in line with our experimental capabilities), hence the governing equations can be written in the frequency domain. Under the time-harmonic assumption, the acoustic field can be written as a complex quantity where the real part represents physical pressure as seen in Equation.~\ref{eq:complex-pressure}. In the finite element model, this complex pressure  field is solved over the computational mesh, with both amplitude and phase stored in each mesh node \cite{kinsler2000acoustics, ihlenburg1998finite}. The mesh uses tetrahedral elements (\S~\ref{subsubsec:mesh-gen}) with second-order Lagrange functions with 5.75 Elements Per Wavelength (EPL), as justified by the mesh convergence study in \S~\ref{subsubsection:mesh-convergence}.
+
+The resulting pressure field is then used in the evaluation of the Gor'kov potential and the resulting radiation force described in Equation~\ref{eq:gorkov}, as described in \S~\ref{subsec:gorkov}. These variables are then used to model the motion of the particles throughout the simulation studies. 
+\\
+
+\subsubsection{Particle Motion Model}
+
+Four secondary physical effects were considered and found to be negligible for the present configuration: secondary Bjerknes force, thermoviscous boundary layer effects, non-linear acoustic streaming and Brownian diffusion. These effects are discussed in the following. 
+
+Bjerknes forces arise from high particle concentrations or particles in very close proximity and can be evaluated using Eq.~\ref{eq:bjerknes} in \S~\ref{subsec:bjerknes}. At the minimum inter-particle separation in the standing-wave lattice $\varrho = \lambda/2 = 344\,\mu\mathrm{m}$ yields $F_{\mathrm{Bj}}/F_G \sim 7.6\times10^{-3}$, confirming secondary interactions are more than two orders of magnitude smaller than the primary Gor'kov force shown in Eq.~\ref{eq:gorkov}. As Eq.~\ref{eq:bjerknes} is the short-range formula and hence an overestimate, this approximation is deemed to be conservative and neglect is well-justified. 
+
+During active merging, as  $\varrho\rightarrow 2a = 125\,\mu\mathrm{m}$, scaling increases this ratio to $F_{\mathrm{Bj}}/F_G \sim 0.43$. However, since both polystyrene particles share a positive acoustic contrast factor (\S~\ref{subsec:gorkov}), this interaction is attractive \cite{silva2014} and therefore assists rather than opposes merging. Secondary Bjerknes forces are therefore either negligible or beneficial throughout, and so are neglected from the particle motion model.
+
+
+Thermoviscous boundary layer thickness is of the order 1~$\mu\text{m}$ at 2.15$\mathrm{MHz}$ - this particular effect has minor contributions when the boundary layer thickness is much smaller than the particle radius \cite{settnes2012forces}. Acoustic streaming, which results from nonlinear viscous effects, was also neglected as mentioned previously in the choice of linear Helmholtz due to the low amplitude used \cite{muller2012acoustophoresis}. Brownian motion was calculated to be $\lambda_x = \sqrt{2Dt} \approx 83 \mathrm{nm}$ over $t=1$s, negligible compared to the trap spacing of $\lambda/2=344\mu\mathrm{m}$ \cite{einstein1905brownian}. 
+
+Particle motion included inertia and viscous damping, dictated by 
+
+\begin{equation}
+\frac{d\mathbf{v}}{dt} = \frac{\mathbf{F}_{\mathrm{G}}(\mathbf{x})}{m} - \frac{\mathbf{v}}{\tau}
+\label{eq:overdamped-motion}
+\end{equation}
+
+\noindent whereby $\mathbf{v}$ is the particle velocity, $\mathbf{F}_{\mathrm{G}}$ is the Gor'kov radiation force (Eq. \ref{eq:gorkov}), $\mathbf{m}$ is the particle mass, and $\tau = \frac{m}{6 \pi \mu a}$ assuming Stoke's drag, where $\mu$ is the dynamic viscosity and $\mathbf{a}$ is the particle radius. This allows the capture of lag and overshoot. Particles were modelled as polystyrene spheres of diameter 125~$\mu\text{m}$ and density 1050~$\mathrm{kgm^{-3}}$. This gives a relaxation timescale $\tau=0.91\mathrm{ms}$ which is 2--3 orders of magnitude larger than 
+the acoustic period ($T = 1/f = 0.5\,\mu\mathrm{s}$) but small compared to 
+the trap translation timescale ($\sim 10$--$100\,\mathrm{ms}$), confirming 
+that the particle follows the time-averaged Gor'kov force and does not respond 
+to individual acoustic cycles \cite{settnes2012forces}.
+
+\subsection{Evolution of the 3D Integrated Model Approach}
+\label{subsubsec:evolution-modelling}
+
+
+
+The final  hybrid FEM / ASM model, borrowed the beam modelling technique of ASM from \S~\ref{sec:acoustic-lens-dev}, and the phase offset concept from \S~\ref{controllable In-Plane}. These were combined to allow simulation of particle behavior and to develop an appropriate manipulation strategy (Objective 3 in \S~\ref{subsec:aims}).  The framework continually evolved with the needs of the project, each stage occurring either to improve the physical accuracy or to reduce the computational cost. 
+
+\subsubsubsection{Phase 1 — 2D Helmholtz Model}
+A 2D Helmholtz solver was developed to inspect the standing waves generated by the side transducers in the trapping plane, found at $z_{trap} = 5.75$ in Fig.~\ref{fig:domain_fig}. This was used primarily to verify that the governing equations had been implemented correctly, and Gor'kov minima were in the expected places. To confirm, the spacing between pressure nodes was compared with the expected half-wavelength spacings at 2.15MHz, and the pattern compared with literature. 
+
+\subsubsubsection{Phase 2 — 2.5D Model with Neumann Sources}
+The next stage of development was to allow the trialling of use of the 4 transducers on the underside of the Petri dish, instead of the sides. For this, an infinitely thin z-dimensional constant pressure was introduced. Prescribed normal velocity boundaries were injected through circular regions at the bottom of the domain to mimic circular transducers injecting acoustic excitation through the bottom of the Petri dish (\S~\ref{subsubsec:fem-standing-wave}). This enabled the investigation of mobile trap control, developed in Phase~3 using the control method (\S~\ref{subsec:adjoint-mpc}). 
+
+However, many of the same limitations were present in this model - no air-water interface reflection, neglect of the water bath and the inability to propagate vortices through the z-dimension. In addition, the control method used was very computationally intense and required unrealistically accurate control of the control inputs.
+
+
+\subsubsubsection{Phase 3 — Adjoint MPC Control Study}
+An optimisation-based control technique, detailed in \S~\ref{subsec:adjoint-mpc} confirmed that it was theoretically possible to control the local minima of the pressure field to guide particles around prescribed paths and merge them, by using the Phase~2 control variables.  
+At this point, the decision was made to pivot towards using a translatable vortex lens to manipulate the particles, whilst limiting movement of non-target particles with the standing-wave pattern creating an "egg-box" of stable traps. This was due to the complexity in the pressure field having 4 underside transducers introduced. 
+
+\subsubsubsection{Phase 4 — Full 3D FEM Model}
+At this point, the full 3D finite element model was developed to visualise the propagation of a vortex through the z-axis. The domain used can be seen in Figure \ref{fig:domain_fig}. The mesh resolution was chosen as 5.75 elements per wavelength at 2.15MHz. The computational cost of solving the FEM in such a large domain meant that the standing wave had to be solved once, and stored so it could be reused in later simulations. 
+
+\subsubsubsection{Phase 5 — ASM Vortex Modelling}
+
+To investigate the use of vortices in particle manipulation, FEM proved to be too computationally intense at $EPL = 5.75$ for repeated studies of beam / vortex interactions with the standing wave field. As such, the Angular Spectrum Method (ASM) was employed (\S~\ref{subsubsec:ASM}).
+
+The efficiency of this approach, although not as realistic as the FEM model, allowed for rapid exploration of parameters such as aperture size, focal distance, phase winding, and amplitude. 
+
+\subsubsubsection{Phase 6 — ASM / FEM Superposition and Lens Design}
+
+To combine the physical accuracy of the FEM model with the efficiency of the ASM, a hybrid approach was developed. The standing-wave field was computed at a high resolution and then cached. This field was then interpolated onto a Cartesian grid at $z_{trap}$. The pressure field generated using the ASM was then superimposed onto the FEM grid.
+
+This hybrid framework was then used to simulate custom lens designs and manipulation strategies. The interference with the standing-wave field was investigated, resulting in the manipulation strategy detailed in \S~\ref{subsec:simulation-studies}.
+
+\subsection{Adjoint MPC Control Theory}
+\label{subsec:adjoint-mpc}
+
+
+An adjoint-based gradient method was combined with model predictive control \cite{rakovic2019mpc} in order to use the numerous control inputs of the system to accurately manipulate the particles' positions. The control algorithm described in the following section is used in Phase~3, \S~\ref{subsubsec:evolution-modelling}, to follow a prescribed circular path. It was subsequently adapted to be implemented in Phase~6 to achieve the particle merging sequence seen in \S~\ref{subsec:simulation-studies}. 
+
+The control method used an optimisation horizon of $K$ time steps - at each time step, the objective function $J$ was minimised 
+
+
+\begin{equation}
+J =
+\sum_{t=0}^{K-1} L_t
++
+\Phi(\mathbf{x}_K)
+\end{equation}
+
+\noindent where $L_t$ is the loss function and $\Phi(\mathbf{x}_K)$ is the terminal penalty, which prevents optimisation from choosing controls that look good in the short term, but lead to the particle being in a position at $K$ that negatively affects its ability to complete the final objective. In other words, it forces the last state at the horizon $K$ to be consistent with the final objective.
+
+To minimise the objective, a gradient-based optimisation method was used where an adjoint method was used to compute how the total objective changes with respect to the control inputs vector $\mathbf{u}$ in a single forward-backward calculation. This made it possible to effectively update the sequence of control inputs within the horizon $K$ using a gradient descent step 
+
+\begin{equation}
+\mathbf{u}_t^{new} = \mathbf{u}_t - \alpha \frac{\partial J}{\partial \mathbf{u}_t} 
+\end{equation}
+
+
+\noindent where $\alpha$ is a step size. At each time step, the current particle position was used as a starting point to solve the optimisation problem over the horizon $K$, and only the first control input in the sequence was applied. The particle position was then advanced by one time step, the horizon shifted forward, and the optimisation solved again, allowing the controller to adapt the control inputs as the particle moved. 
+
+This control framework as applied throughout the project with different control input vectors $\mathbf{u}$ and objectives depending on the modelling set-up. In the final simulation studies using the hybrid FEM / ASM model described in Phase 6, the control inputs were adapted to: (i) underside vortex position; (ii) the relative amplitude scaling $\alpha$ between the vortex and standing-wave fields; and (iii) the relative phase offset $\psi$ between the two fields (Eq.~\ref{eq:phase-offset}).
+
+This study demonstrated that with the described control input vector it was possible to guide a particle along a prescribed path and then in later studies, to achieve the merging of 2 particles.
+
+\subsection{Finite Element Model of the Standing-Wave Field}
+\label{subsubsec:fem-standing-wave}
+
+\subsubsection{Mesh Generation and Boundary Conditions}
+\label{subsubsec:mesh-gen}
+
+The standing-wave field was obtained by solving the Helmholtz equation in the frequency domain \cite{kinsler2000acoustics}. The modelling domain shown in Figure~\ref{fig:domain_fig} was meshed using the Gmsh Python library\cite{gmsh_manual} using tetrahedral elements at a resolution of 5.75 elements per wavelength. Boundary regions were tagged in the mesh and imported into the FEniCSx framework \cite{baratta2023dolfinx, logg2012fenics} for assembly and solution of the Helmholtz equation. 
+
+Transducer actuation was implemented using prescribed normal velocity boundaries. For linear acoustics, pressure gradient and particle velocity are related by 
+
+\begin{equation}
+\frac{\partial p}{\partial n}
+=
+- i \omega \rho_0 v_n
+\label{eq:neumann}
+\end{equation}
+
+\noindent hence $i \omega \rho_0 v_n$ describes the velocity input \cite{ihlenburg1998finite}. Transducers opposite one another were driven with opposite velocities to generate the standing-wave field. 
+
+The air-water interface was modelled with a Robin type boundary condition \cite{ihlenburg1998finite}, defined via an impedance relation $v_n = p/Z$,  with  $Z = \rho_{air}\, c_{air}$, hence the air interface acts as a pressure release surface, reflecting the slightly diminished Neumann BC back into the domain.
+
+The remaining boundaries of the cuboid modelling domain used perfectly matched layers (PMLs) to approximate the unbounded domain of the water bath. These cause the outgoing waves to decay exponentially without reflection using a complex co-ordinate stretching with damping \cite{berenger1994pml, cimpeanu2015pml, johnson2021pml} defined in the $x$-direction as 
+
+\begin{equation}
+\tilde{x}(x) = x + \frac{i}{\omega} \int_0^x \sigma(x')\, dx'
+\end{equation}
+
+\noindent where $\sigma(x) \geq 0$ is the PML damping profile, chosen here as a 
+polynomial ramp from zero at the PML interface to a maximum $\sigma_{\max}$ 
+at the outer boundary. The stretched coordinates were substituted into the Helmholtz equation over a region of $1\lambda$ thickness. Numerical inspection of the pressure
+field confirmed negligible reflection at the truncation boundaries.
+\\
+
+\subsubsection{Solver Configuration}
+
+In the finite element formulation, the governing Helmholtz equation is converted to an integral form (the weak form \cite{ihlenburg1998finite}), which allows the solution to be approximated using piecewise polynomial functions defined over the mesh. The Helmholtz equation is multiplied by the test function $q$, which ensures that the governing equation is averaged over each element of the mesh as opposed to pointwise. It is then integrated over the mesh domain $\Omega$ \cite{baratta2023dolfinx, logg2012fenics}
+
+\begin{equation}
+\int_\Omega q \left( \nabla^2 p + k^2 p \right) d\Omega = 0
+\end{equation}
+
+\noindent Applying integration by parts introduces a boundary term and gives the weak form of Helmholtz as \cite{ihlenburg1998finite}
+
+\begin{equation}
+\int_\Omega \nabla p \cdot \nabla q \, d\Omega
+-
+\int_\Omega k^2 p q \, d\Omega
+=
+\int_{\partial \Omega}
+q \frac{\partial p}{\partial n} \, dS
+\end{equation}
+
+\noindent where the boundary term over allows Neumann and Robin type impedance boundary conditions to be applied through the normal derivative \cite{ihlenburg1998finite}. This form is then assembled over all elements in the mesh to produce the global matrix $A p = b$ where $A$ is the global stiffness matrix that emerges from the weak Helmholtz formulation, $p$ is the vector of complex pressures at each node and $b$ contains the boundary conditions of the normal derivative term on the right \cite{ihlenburg1998finite}. 
+
+\noindent The assembled frequency-domain system is large, sparse, and complex-valued. 
+For a sufficiently large wave number, the Helmholtz  problem becomes indefinite, leading to deterioration in numerical stability \cite{ihlenburg1998finite}. In addition, the light blue boundaries seen in Fig. \ref{fig:domain_fig} were implemented using perfectly matched layers, using a complex coordinate mapping of the Helmholtz equation \cite{cimpeanu2015pml, berenger1994pml}. 
+
+These features lead to a complex-valued system that is known to be challenging for iterative methods such as Krylov \cite{ernst2012helmholtz, ihlenburg1998finite}, which was unable to converge robustly in this instance. Hence, the linear system was solved using a direct factorisation via MUMPS solver \cite{mumps_userguide}, accessed through the PETSc backend, which provides interfaces to both iterative and direct solvers. 
+\\
+
+\subsubsection{Mesh Resolution Study}
+\label{subsubsection:mesh-convergence}
+
+The Helmholtz FE model was verified by a mesh convergence study where element size was dictated by $\mathrm{EPL}$ (Elements Per Wavelength). All other parameters were kept constant (PML = 1.0$\lambda$, Domain = 4mm, material properties $\rho, c$ etc. and $z_{trap}$). A reduced $4\times4\times7~\mathrm{mm}$ domain was used so that the EPL~=~6.75 reference solution was computationally feasible. The finest mesh (EPL = 6.75) was taken as the reference solution and the relative error $L^2$ of the complex pressure field was calculated using a central region of interest (ROI) as
+
+\begin{equation}
+\varepsilon_{\mathrm{ROI}}=
+\frac{\|p_{epl}-p_{\mathrm{ref}}\|_{L^2(\mathrm{ROI})}}
+{\|p_{\mathrm{ref}}\|_{L^2(\mathrm{ROI})}}.
+\end{equation}
+
+\noindent The variation of error with EPL is shown in Fig.~\ref{fig:mesh_convergence} with respect to the finest mesh EPL = 6.75. The error decreases rapidly between EPL = 2 to 4 but beyond this initial reduction the convergence behaviour oscillates. This behaviour is a characteristic of the Helmholtz equation, namely the Helmholtz pollution effect \cite{babuska1997pollution}, where accumulated phase error dominates over the expected polynomial convergence rate typical of FEM. This can lead to fluctuations and sharp changes as seen in Fig~\ref{fig:mesh_convergence}. 
+
+In the P2 Lagrange elements used, the expected asymptotic convergence is $\varepsilon \sim \mathcal{O}(EPL^{-3})$, however the Helmholtz pollution effect can prevent this from being seen clearly. The onset of the non-polluted regime is expected when ${kh}^{2p}  << 1$, where $k$ is the acoustic wavenumber $\frac{2\pi}{\lambda}$ where  $h$ is the  element size, and $p$ is the polynomial order; using  $h \sim \frac{\lambda}{\mathrm{EPL}}$, this condition corresponds approximately to $\mathrm{EPL} \geq 5$ for the present configuration \cite{ihlenburg1998finite}.
+
+This is consistent with the convergence of the trap overlays as seen in Figs.~\ref{fig:trap_overlay_coarse}--
+\ref{fig:trap_overlay_fine}, where blue dots indicate the reference Gor'kov minima and orange crosses indicate the minima identified at the coarser mesh. Coarser meshes produce distorted trapping locations as seen by the misalignment between the orange crosses and the blue dots. Asymptotic convergence can be observed where  $\mathrm{EPL} \geq 5$
+
+\begin{figure}[h]
+\centering
+\begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Figures/fig9_eps_vs_epl_extended.png}
+    \caption{$L^2$ pressure error (ROI) vs EPL, relative to EPL = 6.75. Oscillations at lower EPL reflect Helmholtz pollution effect. Convergence at EPL = 5.75}
+    \label{fig:error_vs_h}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Figures/fig4_trap_overlay_coarse.png}
+    \caption{Gor'kov landscape at EPL = 2.0. Orange crosses (computed traps) against blue  circles (reference traps at EPL = 6.75) showing heavily distorted landscape.}
+    \label{fig:trap_overlay_coarse}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{Figures/fig5_trap_overlay_fine.png}
+    \caption{Gor'kov landscape at EPL = 4.75 with uniform nodal spacing, and 16/19 traps correct, confirming entry into asymptotic regime.}
+    \label{fig:trap_overlay_fine}
+\end{subfigure}
+\caption{Mesh convergence study in $4\times4\times7~\mathrm{mm}$ domain, with EPL = 6.75 as reference. The coarsest acceptable mesh was EPL = 5.75, deemed within convergence regime and yielding stable trap positions}
+\label{fig:mesh_convergence}
+\end{figure}
+
+
+\noindent EPL = 5.75 was  selected as the final mesh,  providing stable trap positions and acceptable ROI error (within the asymptotic convergence regime) while remaining computationally feasible - MUMPS would need a RAM of greater than 32GB and lower memory iterative solvers were incompatible with the PML boundary solution. This resolution was suitable for standing wave fields, which could be solved once and cached for reuse, however proved to be too computationally intense and time-consuming for repeated vortex propagation and lens design studies. Therefore, the ASM method in the following section was developed to rapidly iterate different design ideas. 
+
+
+\subsection{Hybrid FEM--ASM Field Superposition}
+\label{subsubsec:hybrid-fem-asm}
+
+\subsubsection{Grid Alignment}
+
+To allow the superposition of the ASM vortex field described in \S~\ref{subsubsec:ASM} and the FEM standing-waves field, the two fields had to be translated onto a common plane with the same co-ordinate system. The ASM vortex field was generated onto a Cartesian 2D grid, whereas the FEM standing-wave field was generated onto a tetrahedral mesh. 
+
+The 2D standing-wave pressure field was extracted at $z_{trap}$, the position at which Gor'kov potential minima were strongest, and the particles were expected to reside in the petri dish region. As the tetrahedral mesh was irregular, the field was interpolated onto a 2D Cartesian grid, with the same grid spacing, origin, and dimensions as the ASM field, using shape functions \cite{ihlenburg1998finite, logg2012fenics}. 
+\\
+
+\subsubsection{Complex Field Superposition}
+
+Once both fields were interpolated onto the same Cartesian grid at the trapping plane $z_{\mathrm{trap}}$ they were combined via linear superposition. Both the standing-wave field, $P_{\mathrm{FEM}}$,  and the ASM-propagated lens field, $P_{\mathrm{ASM}}$,  are time harmonic at angular frequency $\omega = 2\pi f = 2\pi(2.15\times10^6)\,\mathrm{rad\,s^{-1}}$ hence each field could be represented by the complex pressure field $P(x,y,z_{trap})$ with the shared $e^{i \omega t}$ time dependence suppressed. Due to the linear nature of the Helmholtz equation under small amplitudes \cite{ihlenburg1998finite, kinsler2000acoustics}, the total pressure field could therefore be written as
+
+\begin{equation}
+P_{\text{total}}(x,y,z_{\mathrm{trap}})
+=
+P_{\text{FEM}}(x,y,z_{\mathrm{trap}})
++
+\alpha e^{i\psi} P_{\text{ASM}}(x,y,z_{\mathrm{trap}})
+\label{eq:phase-offset}
+\end{equation}
+
+\noindent where $\alpha$ is an amplitude scaling factor and $\psi \in [0,2\pi)$ is the relative phase offset between the two sources - this follows from the linear superposition principle underlying the counter-propagating wave method described in \S~\ref{controllable In-Plane}. This new acoustic field was represented in complex phasor form at each grid point written as
+
+\begin{equation}
+p_{total}(\mathbf{x},t)
+=
+\Re
+\left\{
+\left[
+P_{FEM}(\mathbf{x})
++
+\alpha e^{i\psi}
+P_{ASM}(\mathbf{x})
+\right]
+e^{i \omega t}
+\right\}
+\end{equation}
+
+\noindent After the total pressure field was obtained, Gor'kov's formula \cite{gorkov1962} was applied in the same manner as in \S~\ref{subsec:gorkov} to explore the pressure field's influence on the particles.
+\\
+
+\subsubsection{Assumptions and Limitations of Superposition}
+
+The primary limitation of this superposition arises from the interpolation of the tetrahedral FEM nodal pressures onto the Cartesian grid - small errors may be present in areas of large spatial gradient and be influenced by the shape functions used to interpolate \cite{ihlenburg1998finite}. In addition, the ASM field is computed assuming free-space propagation and so does not take into account the reflections of the vortex from the boundary walls, however the resulting error is expected to be small in the central trapping region, far from the reflective boundaries. A further limitation is the neglect of nonlinear effects such as acoustic streaming, shock formation, and viscous effects. Although not fully accurate for large particles or dense concentrations of particles, these approximations enabled a computationally efficient method for lens design, parameter sweeps, and manipulation strategy studies.
+
+\subsection{Simulation Studies}
+\label{subsec:simulation-studies}
+
+\begin{wrapfigure}{r}{0.5\linewidth}
+    \centering
+    \vspace{-20pt}
+    \includegraphics[width=0.8\linewidth]{Figures/roi_9particle.png}
+    \caption{Simulation Initial Position: Gor'kov landscape shows 9 particles placed in adjacent traps. Particle~A (orange) is to be merged with Particle~B. Remaining particles (grey) are bystanders.}
+    \label{fig:sw-roi-particles}
+\end{wrapfigure}
+
+The following studies were completed with the objective being to achieve selective manipulation and merging of any and all particles held in the trap lattice of standing-waves at 2.15MHz. 
+
+This is highly useful in biological applications where organoid assembly (spatial organisation and selective fusion) cannot be done via physical manipulation. Organisation and manipulation have long been possible, however the concept of selective merging with a low-cost system is very useful in constructing larger assemblies of organoids \cite{organoid_assembly_review} as described in \S~\ref{subsec:tweezers-uses}.
+
+The experiment was standardised as the process of moving Particle A (orange) to Particle B (blue) as seen in Fig~\ref{fig:sw-roi-particles}. Performance was quantified as efficacy at moving A to B with minimal disruption of the grey neighbouring particles. 
+\\
+
+\subsubsection{Particle Merging with Vortex Phase Control}
+
+The objective of this investigation was to evaluate whether a particle outside a vortex could be drawn into the vortex centre by utilising the relative phase offset between the standing wave field and the ASM propagated vortex field as seen in Eq.~\ref{eq:phase-offset}. With a standard vortex, the particle is generally repelled by the boundary of the vortex on it's approach towards the particle due to the Gor'kov force at the vortex perimeter. The FEM / ASM superpo sition described in \S~\ref{subsubsec:hybrid-fem-asm} was used to model this scenario. The reshaping of the Gor'kov landscape at several different phase offset $\psi$ values (the phase difference between the standing-wave and vortex signals) is shown in Fig~\ref{fig:phaseoffsetpanel}, demonstrating the destructive and constructive capabilities of phase control.
+
+\begin{figure}[h]
+    \centering
+    \vspace{-13pt}
+    \includegraphics[width=0.8\linewidth]{Figures/fig_vortex_phase_panel.png}
+    \caption{Gor'kov potential landscapes at relative phase offsets $\psi \in \left\{0, \frac{2\pi}{3}, \frac{4\pi}{3}\right\}$, illustrating the modulation of the vortex boundary barrier by FEM--ASM interference, as $\psi$ is varied.}
+    \label{fig:phaseoffsetpanel}
+\end{figure}
+
+\noindent Figure~\ref{fig:timesequencemerge} shows a time sequence of the controlled merging of A (orange) and B (blue) in the vortex, with A starting in the vortex and B outside. Under the MPC phase controller, B traverses the vortex boundary and is  drawn in by utilising the destructive and constructive effects of phase offset between the FEM and ASM field.
+
+\noindent The behaviour of the system is shown in Fig~\ref{fig:displacement-phase}, where the phase $\psi(t)$ and the distance between the particles $\mathrm{d(A,B)}$, is plotted against time. The phase evolves as a step function as at each timestep the controller described in \S~\ref{subsubsec:evolution-modelling} selects the phase that most improves the merging objective. The merging process requires dynamic control of phase, rather than a single phase value, hence the requirement of the adjoint MPC.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.5\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/fig4_gorkov_sequence.pdf}
+        \caption{Time sequence of vortex merging of Particle~A (orange) and B (blue) as a result of MPC controlled relative phase offset.}
+        \label{fig:timesequencemerge}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.4\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/fig2_psi_sequence.png}
+        \caption{Phase offset (black, left axis) and distance between Particle A and B (blue, right axis) over 0.6~seconds during MPC-controlled vortex merge process}
+        \label{fig:displacement-phase}
+    \end{subfigure}
+    \caption{Gor'kov landscape and corresponding controller state showing MPC-controlled merging and phase evolution.}
+    \label{fig:displacement-phase}
+\end{figure}
+
+\noindent In practise, this mechanism enables any particle to be manipulated by the vortex on the robotic translation stage, and  to be subsequently merged with any other particle of choice that is situated outside of the vortex. The use of phase offset between the standing FEM field and the ASM vortex field was necessary to stop the Particle B being pushed away by the outer edge of the vortex, and instead to "open" the vortex.
+
+\subsubsection{Monte Carlo Robustness Analysis}
+\label{subsubsec:monte-carlo}
+
+To gauge the trustworthiness of these results, robustness studies were carried out with the following conditions. In Figure~\ref{fig:robustness-scatter} the position of Particle B was randomly selected in the domain, with an overall success rate of 67\%, indicating the merging mechanism is not restricted to a single starting position. Timeouts (failures) in orange show no clear spatial clustering, suggesting that failure cannot be attributed to a single starting position. The most likely explanation is sensitivity due to the discrete nature of the phase controller. 
+
+In addition to this, the method was tested against a random-$\psi$ in Figure~\ref{fig:psi-baseline}, where the MPC controller was shown to outperform the random baseline by a large margin in every approach direction, indicating that successful merging is a direct consequence of the control method. 
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.3\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/figA1_outcome_scatter.png}
+        \caption{Merging robustness under 100 random starting positions. Merged is green, orange is timeout. Dot size indicates time to capture. No spatial clustering seen.}
+        \label{fig:robustness-scatter}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.6\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/figA5_mpc_vs_random_psi.png}
+        \caption{Comparison of the MPC phase-selection controller (blue) against a random-$\psi$ baseline (grey), by approach direction and overall success rate. MPC exceeds baseline in every approach direction ($p<0.001$)}
+        \label{fig:psi-baseline}
+    \end{subfigure}
+   
+    \caption{Monte Carlo robustness analysis of MPC-controlled vortex merging ($N = 100$, random Particle~B start position), showing successful merging is not restricted to single starting position or approach direction}
+    \label{fig:combined}
+\end{figure}
+
+
+
+\begin{wrapfigure}{r}{0.5\linewidth}
+    \centering
+    \vspace{-20pt}
+    \includegraphics[width=1\linewidth]{Figures/figA4_noise.png}
+    \caption{Sensitivity of MPC controller to Gaussian noise added to the physics engine, simulating unmodelled secondary effects, lens manufacturing errors etc. Success rate vs Gaussian noise amplitude is shown with logistic fit and 95\% bootstrap CI. The negative trend ($p = 0.004$) suggests closed-loop feedback would be beneficial.}
+    \label{fig:noise-study}
+\end{wrapfigure}
+
+
+\noindent In Figure~\ref{fig:noise-study} Gaussian noise is added to the total superimposed pressure field. The controller is fed the noiseless pressure field, however, the physics engine uses the field with added noise. The added noise reflects un-modelled physical effects in the model, such as secondary effects, streaming, manufacturing tolerances in the lens, randomness in the pressure field, all of which would cause the physical pressure field to deviate from the simulation. 160 trials are carried out, randomising Particle~B's starting position and the approach direction as with Fig.~\ref{fig:robustness-scatter}. The success rate drops from 75\% at 0\% noise to about 44\% at maximum noise with a significant negative trend ($p < 0.004$). This suggests the controller remains functional under moderate noise but reliability declines as the total pressure field is increasingly distorted. 
+
+To improve the rate of success, three changes could increase the success rate: (i) the controller horizon could be increased; (ii) the domain of the control input vector could be increased; and (iii) the incorporation of a closed-loop feedback using the camera described in \S~\ref{controllable experiment}.
+
+
+
+\section{Experimental Overview}
+With the use of modelling, we developed two concepts that satisfy all the objectives set out in section \ref{subsec:aims}. In parallel to the modelling, experiments were conducted to aid in understanding different approaches and guide research, providing real feedback on ideas generated. Experiments were also conducted to help validate simulations. The following sections outline the key experiments ran that best validate the behaviour behind our final concepts:  the C-Shape lens and the phase offset setup \ref{}. These experiments include:
+
+
+\textbf{Testing of Controllable In-plane Standing Waves}
+
+This experiment validated the behaviour predicted by the model in section\ref{controllable In-Plane} by (results). It also showed the possibility of controlling the relative phase of the transducers via a laptop, using a control algorithm driven by the model, providing validation that a programmable phase-offset device is possible.
+
+\textbf{Testing of Robotically Controlled C-Shape Lens}
+
+This experiment looked to demonstrate the capabilities of the C-Shape Lens, with the use of a robotic translation stage, an initial result includes: 2D manipulation of particles; observation on the design's effect on particles, validating the model in section \ref{}; and the first attempt at merging particles.
+
+\section{Experimental Setup for the  Controllable In-Plane Standing Waves}
+\label{controllable experiment}
+-JY collects raw data and present 
+
+-DA analyses data and review 
+
+The purpose of this experiment is to demonstrate the ability to modulate phase between independent transducers, mirroring the functionality required to carry out the phase offset concept discussed in section \ref{}. The experiment expands upon this by introducing programmable control via a laptop and establishing closed-loop feedback with the use of camera to look towards automating the process, hoping to simplify the use of such device and help bridge the gap between engineers and biologists. Figure \ref{setup_controllable} presents the overall setup used in the experiment, which is discussed in more detail.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{Figures/Overall setup.jpeg}
+    \caption{Overview of Setup for Controllable In-Plane Standing Waves}
+    \label{setup_controllable}
+\end{figure}
+
+-talk what the experiment was quickly, the use of the four transducer and particle used
+
+\subsection{Manufacturing Of In-Plane Standing Wave Chamber}[JY]
+This section describes the physical standing wave device that was developed to support controllable in plane particle manipulation. The purpose of the setup was to provide a platform so that the four orthogonal PZT transducers could generate a two dimensional standing wave inside the fluid cavity, Since phase frequency control is sensitive to transducer alignment, reflection and acoustic coupling. Therefore the design is  focus on improving the consistency of the acoustic response. The following subsection would discuss the modeling and strategy that was use to improve the controllability of the setup
+
+\subsubsection {Housing Design for the Standing Wave Chamber (JY)}
+ The  housing design adapted the standing wave array that Courtney use in his study\cite{Courtney2012ManipulationWaves} and was redesign to support the controllable in plane standing wave setup used in this project. The transducer holder was design using Fusion 360 and then was 3D printed using polylactic acid (PLA). A square geometry was chosen for the outer housing profile to provide a flat mounting face for the four transducers, The transducers were arranged as two opposing facings oriented at 90° to one another so that the transducers on each axis generate counter propagating waves along the x and y directions in the square cavity. Each transducer was modeled as a rectangular recess, with the height and width dimensioned with a clearance of 0.3mm beyond the PZT dimension to allow a smoother insertion. The slot depth behind the PZT face was designed to accommodate the cast backing composite which give a total slot depth of 10mm from the outer housing face to the inner cavity wall. Since the PLA housing is not in the direct propagation path between the transducer face and the fluid cavity, its acoustic influence on the primary wave path is small. \cite{tian2020generating}
+ 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.25\linewidth]{Figures//Images/housing design.png}
+    \caption{Housing design}
+    \label{fig:placeholder}
+\end{figure}
+\subsection{Backing Layer Study (JY)}
+The backing layer was introduced to absorb the rearward-propagating acoustic wave and reduce the reflections that return from the air boundary behind the transducer\cite{sayers1984ultrasonic}. Without a backing layer, these reflections re-enter the cavity and produce prolonged ringing which can interfere with controlled phase translation and degrade the intended standing-wave field. 
+
+Figure \ref{fig:backing_layer_comparison} was generated from one dimensional acoustic loading was used  to evaluate the effect of backing layer on transducer response. The PZT was treated as a damped resonator and the front boundary was coupled to water and the rear face was modeled as air or tungsten epoxy backing\cite{wu2021novel}.
+The quality factor Q of the transducer was estimated using\cite{wu2021novel}S:
+\begin{equation}
+Q = \frac{\pi Z_{\mathrm{pzt}}}{Z_{\mathrm{front}} + Z_{\mathrm{rear}}}
+\end{equation}
+where $Z_{\mathrm{front}}$ is the impedance of water and  $Z_{\mathrm{rear}}$ is the impedance of either air or the backing layer.
+Since the Q factor has been found, The ring-down time and bandwidth were then be estimated: 
+\begin{equation}
+\tau = \frac{Q}{\pi f_0}
+\end{equation}
+\begin{equation}
+\Delta f = \frac{f_0}{Q}
+\end{equation}
+Using these expression, the time and frequency domain response of the transducer was simulated in SPYDER as shown below 
+\begin{figure}[H]
+    \centering
+
+    % First row
+    \begin{subfigure}{0.3\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Images/With Q without backing layer.png}
+        \caption{Impulse response without backing layer}
+        \label{fig:q_without_backing}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.3\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Images/With Q with backing layer.png}
+        \caption{Impulse response with backing layer}
+        \label{fig:q_with_backing}
+    \end{subfigure}
+
+    \vspace{0.5cm}
+
+    % Second row
+    \begin{subfigure}{0.3\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Images/Frequency without backing layer.png}
+        \caption{Frequency spectrum without backing layer}
+        \label{fig:freq_without_backing}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.3\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Images/Frequency with backing layer.png}
+        \caption{Frequency spectrum with backing layer}
+        \label{fig:freq_with_backing}
+    \end{subfigure}
+
+    \caption{Comparison of the transducer response with and without backing layer}
+    \label{fig:backing_layer_comparison}
+\end{figure}
+
+
+
+\noindent Figure \ref{fig:backing_layer_comparison} shows the effect of backing layer by with and without a tungsten epoxy backing layer at 2.3Mhz. For the impulse response, the signal without backing persist longer than with backing. . With backing, it allow the field settle almost immediately, so it snaps to its new position instantly with each phase update. In the frequency domain response, the transducer exhibits a broader response and reduce resonance sharpness. This shows that the tungsten epoxy backing layer help suppress unwanted rear face reflection and improve the controllability of the transducer response.
+
+
+\subsubsection {Material Selection of the Backing Layer}
+
+Epoxy resin is one of the most common composites for backing layer due to its easy to cast and it bonds well to the back of the piezo but its acoustic impedance value is relatively low which therefore it requires an addition of high-density filler particles to mix with the resin in order to increase both the impedance and attenuation of the composite to the levels required for an effective backing. Hence, Tungsten powder ($5\,\mu\mathrm{m}$) was chosen due to its high density and acoustic impedance\cite{franco2005determination}. 
+
+The epoxy that was selected for this project was araldite 2011 which is a two-part slow cure epoxy resin consist of resin AW106 and hardener HV953U and was mixed at a 1:1 ratio by volume. A slow cure epoxy resin was chosen over the fast curing because the extended pot life provides time for mixing the tungsten powder and working with it.
+
+\subsubsection {Acoustic Properties of Composite Material}
+To evaluate the suitability of the composite as a backing layer, its  acoustic properties were estimated at the operating frequency. The density of the composite can be calculated using the rule of mixture:
+
+\begin{equation}
+\rho = \rho_1(1-\delta) + \rho_2\delta
+\end{equation}
+
+\noindent where $\delta$ is the volume fraction of the filler in which tungsten powder, and $\rho_1$ and $\rho_2$  ($2965\ \mathrm{kg/m^3}$) are the densities of the epoxy ($\rho_1 = 1150\ \mathrm{kg/m^3}$) and tungsten ($\rho_2 = 2965\ \mathrm{kg/m^3}$).
+The effective elastic properties were then estimated using the analytical model proposed by Franco et al. (2005)\cite{franco2005determination}. This model relates the effective modulus of a two phase composite to the properties of the constituent material and their volume fraction. then the model was implemented into MATLAB to acquire the longitudinal modulus of the tungsten epoxy composite across a range of volume fraction \cite{sayers1984ultrasonic,franco2005determination}.
+
+After acquiring the longitudinal modulus from the model the longitudinal velocity of the composite can now be calculated as below: 
+\begin{equation}
+v_{l,\mathrm{mixture}}= \sqrt{\frac{M}{\rho}}
+\end{equation}
+
+\noindent where M is the longitudinal modulus of the composite and $\rho$ is the density of the composite.
+
+\noindent The acoustic impedance was then determined as\cite{bar1984multiphase}:
+\begin{equation}
+Z_{\mathrm{acoustic},\mathrm{mixture}}
+=
+v_{l,\mathrm{mixture}} \cdot \rho
+\end{equation}
+
+
+\noindent By gathering all the acoustic properties of the composite that were calculated above. The data were then implemented into SPYDER and was evaluated from a range volume fraction from 0$\%$ to 50$\%$ \cite{franco2005determination}. The model shows the longitudinal velocity and acoustic impedance across a range of volume fraction\cite{sayers1984ultrasonic,franco2005determination}. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\linewidth]{Figures//Images/Figure 2026-04-20 004739.png}
+    \caption{Performance  of the tungsten epoxy backing layer at different volume fraction}
+    \label{fig:placeholder22}
+\end{figure}
+\cite{Courtney2012ManipulationWaves}. 
+
+\noindent By analyzing the acoustic properties from the diagrams, 10$\%$ tungsten powder volume fraction\cite{Courtney2012ManipulationWaves} was selection.  As at this loading the composite achieves a significant increase impedance whilst maintaining a reduced wave velocity. The increased in impedance improve coupling of rearward energy from the PZT into the backing layer, whilst the reduced of wave velocity increase the traveling time for the acoustic wave propagate through the backing layer, allowing more energy to be absorbed by the backing layer. Although higher volume fraction would provide greater attenuation and impedance, the composite would become to viscous to cast and work with\cite{wu2008new}. Therefore the 10$\%$ tungsten powder volume fraction to epoxy was selected
+
+To further ensure the performance of the backing, the transmission coefficient with a backing layer can be found:
+\begin{equation}
+T_{\text{back}} = 1-(\frac{Z_{\text{pzt}} - Z_{\text{back}}}{Z_{\text{pzt}} + Z_{\text{back}}})
+\end{equation}
+This equation shows that around 46$\%$ of the rearward energy now enters the backing on each encounter with interface. This transmitted energy was then absorbed as it propagates through the 9mm backing thickness\cite{Courtney2012ManipulationWaves}. This confirms that the composite provides sufficient acoustic loading to effectively suppress rearward reflection.
+
+\subsection{Matching Layer Study (JY)}
+
+The purpose of the matching layer is to improve the impedance mismatch between two medium\cite{zhou2009alumina}. When the standing wave device is in operation, the acoustic impedance mismatch between the PZT front face ($Z_{pzt}$ = 35  MRayl) and water ($Z_{water}$ =  1.48 MRAyl) would lead to energy loss. The energy loss is mainly caused by the reflection and transmission of acoustic waves at the interface between two materials.The reflection coefficient and transmission coefficient can be calculate as\cite{rathod2020review}:
+\begin{equation}
+R = \left( \frac{Z_{pzt} - Z_{water}}{Z_{pzt} + Z_{water}} \right)^2
+\end{equation}
+where R is the reflection coefficient and the value is calculated as 0.825.
+
+\begin{equation}
+T = 1 - R
+\end{equation}
+where T is the transmission coefficient and the value was calculated as 0.175 which mean 82.5$\%$ of acoustic energy would be reflected and only 17.5$\%$ would be transmitted to the fluid cavity
+The impedance transformation achieved by a matching layer can be derived from acoustic transmission line theory\cite{rathod2020review}: 
+
+\begin{equation}
+Z_{in} = Z_m \frac{Z_L + j Z_m \tan\theta}{Z_m + j Z_L \tan\theta}
+\end{equation}
+where $Z_{in}$ is the import impedance, $Z_m$ is the acoustic impedance of the matching layer material, $Z_L$ is the  load impedance(water).
+
+When the matching layer thickness is set to exactly one quarter of the acoustic wavelength in the layer material, the phase thickness become $\theta = \frac{\pi}{2} $ and $\tan\theta \to \infty$, which simplify the equation into\cite{rathod2020review}:
+
+\begin{equation}
+Z_{in} = Z_m \frac{Z_m}{Z_L} = \frac{Z_m^2}{Z_L}
+\end{equation}
+To achieve zero reflection, the input impedance must equal to the source impedance therefore:
+\begin{equation}
+Z_{in} = \frac{\left(\sqrt{Z_{pzt} Z_L}\right)^2}{Z_L}
+= \frac{Z_{pzt} Z_L}{Z_L}
+= Z_{pzt}
+\end{equation}
+so that for the present device to achieve zero reflection for the device the ideal matching layer impedance would be 6.75 MRayl.
+
+\subsubsection{Material and Thickness Selection for the Matching Layer (JY)}
+
+Alumina doped epoxy was selected as the matching-layer material because when it is dispersed in an epoxy matrix, it allows the acoustic impedance of the layer to be tuned toward the range needed between the high-impedance piezoelectric element and the much lower-impedance medium, which helps reduce reflection and improve ultrasound transmission \cite{zhou2009alumina}. However to achieve the ideal matching layer impedance would need to be at least 30$\%$ volume fraction of alumina to epoxy\cite{wang2001high}, at this level of volume fraction of alumina the matrix it would be too thick to work with. Therefore, the device uses the concentration that Courtney suggest which is 10$\%$ volume fraction of alumina to epoxy\cite{Courtney2012ManipulationWaves} 
+
+The thickness of the matching layer was determined by using the quarter-wavelength relation\cite{rathod2020review}:
+\begin{equation}
+t=\frac{c_m}{4f_0}
+\end{equation}
+where $c_m$ is the longitudinal wave speed in the matching-layer material which is 2650 m/s \cite{wang2001high} and $f_0$ is the is the target operating frequency which is 2.3 MHz. This provided the initial estimate for the required thickness which is 0.288mm. To verify the estimation , the thickness was then swept in a one-dimensional acoustic model and the reflection coefficient was evaluated over a range of frequencies, allowing the thickness giving the lowest reflection at the design frequency to be identified \cite{Courtney2012ManipulationWaves}.
+
+Figure \ref{fig:placeholdertt} was generated using a one dimensional transfer matrix simulation  that was implemented into SPYDER\cite{Courtney2012ManipulationWaves,rathod2020review}. The acoustic stack was modeled as a sequence of planar layers which include water, matching layer, PZT transducer and the backing layer. They are represented by a 2x2 transfer matrix that was characterized by the acoustic impedance, thickness and complex wavenumber. The individual matrices were multiplied in sequence to obtain the total transfer matrix which the input impedance and intensity reflection coefficent were simulated at each combination of frequency and matching layer thickness.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{Figures//Images/Figure 2026-04-30 164944.png}
+    \caption{Reflection coefficient for transducers as function of frequency with varied matching layer thickness}
+    \label{fig:placeholdertt}
+\end{figure}
+
+
+Figure \ref{fig:placeholdertt} shows the reflection coefficient map and how the predicted acoustic reflection varies with both operating frequency and matching layer thickness for the transducer stack. At 2.3 Mhz which is the operating frequency for the mode, the best quarter length thickness is 0.897 which is the same as the result that was calculated by equation (63) and the selected thickness gives a reflection coefficient around 11.3 $\%$ which give a value 87.9$\%$ for the transmission coefficient. 
+
+Although the modeling shows that the matching layer can reduce the reflection of the transducer, it was not implemented in the final prototype. This was due to fabrication constraints associated with producing a uniform sub-millimeter layer.
+
+\subsubsubsection{Signal Generation and Synchronisation (DA)}
+
+To carry out the experiment, four independent signals were required to achieve the necessary phase difference between paired transducers. This was achieved with the use of two MP750510 signal generators. Each capable of producing two distinct signals via two channels, furthermore, they posses the ability of syncing between channels. With this, it was important that each generator was connected to an opposing pair of transducers, enabling the ability to dictate the phase difference independently. 
+
+When monitored using an oscilloscope, it was noted that although all signals were configured at the same frequency of 2.3MHz, a slight frequency difference between devices was still present. This was resolved by setting one of the generators to use an external clock reference and having the other generator output a reference signal, therefore establishing a shared timebase. Figure \ref{} showcases the difference between before and after establishing a shared timebase. Both generators were then connected to a computer via USB-B cables allowing for programmable control.
+
+-Insert Oscilliscope before and after
+
+\subsubsubsection{Simulation-Driven Control Software (DA)}
+
+The experiment was controlled via a program operating on a host laptop. This program was developed using the model discussed in section \ref{Phase_and_freq_model}. By predetermining the location/shape desired, the model would simulate the process, hence pre-computing the phase sequence required to move a particle along a desired trajectory. The phase sequence would then be uploaded to the signal generators with the help of a custom built library that provides the necessary SCPI commands. A telescopic camera was also incorporated into the setup and was integrated into the program to provide live video to monitor the particle. With this camera, a closed loop feedback was used to improve the trajectory of the particle. 
+
+\subsubsubsection{Vision-Based Closed Loop Feedback (DA)}
+
+-Visual tracking
+-Calibration
+-PI system
+
+\subsubsubsection{Results (DA, JY)}
+
+\subsubsubsection{Limitations (DA)}
+
+- predetermined frequency cause resource available
+- 130 um would slip trap and float
+- 90 um was used instead
+- voltage not amplified
+- reflection coefficient not taken into account
+
+\subsubsubsection{Discussion (DA)}
+
+\section{Testing and Results of Robotically Controlled Acoustic Lens}
+\label{rbclens} 
+
+\subsection{Experimental Set Up for the Robotically Controlled Lens (JC)}
+
+The experimental setup used to validate the acoustic lens designs is shown in Fig.~\ref{fig:rbclexp}, where a sinusoidal drive signal is generated by a TiePie HS5 handyscope, 
+amplified to the required output voltage, and fed to the lens-transducer assembly. For the FZP vortex lens, the driving frequency was $f = 2.44$~MHz and for the C-shape holographic lens the driving frequency was $f = 1.65$~MHz, consistent with the models in \S~\ref{sec:acoustic-lens-dev}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{Figures/Exp Setup RBCL.png}
+    \caption{Annotated photograph of the experimental setup for the 
+robotically controlled acoustic lens.}
+    \label{fig:rbclexp}
+\end{figure}
+
+\noindent The lens and transducer body is submerged in the water tank, which provides acoustic coupling to the base of the acrylic plastic, and attached to the robotic translation stage using the magnetic coupling seen in \S~\ref{sUBSEC:MCOUPLING}. The height adjustable particle support frame is a wooden frame, featuring an acrylic plastic sheet in the middle to support particles. The frame height was set so that the acrylic sheet was at the respective focal planes for the lenses, which for the FZP vortex lens was $z_f = 40$~mm, and $z_f = 50$~mm for the C-shape holographic lens. The positioning of the lens-transducer body is controlled in the $x,y$ plane by the robotic translation stage, detailed in \S~\ref{sec:testingrcl}. 
+
+For the initial cinnamon particle tests, the robotic stage was kept stationary whilst the transducer was driven, allowing the trapping behaviour of each lens to be observed in isolation and compared directly against the modelled Gorkov potential maps in \S~\ref{sec:acoustic-lens-dev}.
+
+
+\subsection{Manufacturing Undertaken for Robotically Controlled Lens}
+\label{sec:testingrcl}
+
+Introduction paragraph  
+
+\subsubsection{Robotic Translation Stage (DA)}
+
+To control the position of the lens, a robotically controlled translation stage was used, allowing greater precision in manipulating the acoustic beam and meeting objective (number). The translation stage was assembled using two FSL40 Linear Actuators connected to each other, allowing for translation in the x-y plane. The FSL40 utilises stepper motors, which move in discrete increments locking its position at a standpoint and have the capability of providing high torque at low speeds. Furthermore, these properties allow the actuator to operate at high precision with each FSL40 having an error of +- 0.03 mm producing a positioning error of +- 0.042 mm.
+
+The use of a micro-controller allows for complex control over the FSL40 with the benefits of programs to control the motion of the actuator. In this design an Arudino Uno R3 was used. The FSL40 can not be powered directly by a low-power control signal, hence drivers and an external power source was also required for the design of the stage. Two TB6600 drivers were used for this design, one for each actuator, as well as a traditional bench power supply powered at 20 V DC. The breakdown of the overall circuit is seen in figure \ref{fig:circuit}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{Figures/Cicuit-Diagram-Translation-Stage.png}
+    \caption{System Block Diagram of Robotic Translation Stage}
+    \label{fig:circuit}
+\end{figure}
+
+To develop the control program for the stage, a Graphical User Interface (GUI) was developed. The Arduino IDE is based upon C++, however with a reduced instruction set and so a C++ script was made responsible for initializing the necessary pins and controlling the motors via serial commands. With the use of a library, the python script is then capable of accessing the serial port and send the necessary commands allowing for the development of the GUI.
+
+The GUI allows a user to control the movement of the stage via a keyboard using the keys W, A, S, D representing the directions of up, left, down and right. A user is also capable to dictate the speed at which the stage moves at by using the +/- keys to increase or decrease the speed. This works by altering the microseconds between steps of the motor, hence altering the rotational speed, and is highlighted in real time by the GUI. An emergency stop function was also implemented into the program in case of any incidents, and can be activated either by pressing the ESC key or pressing the red button in the GUI. An example of the GUI is shown in figure \ref{fig:circuit}.
+
+\begin{figure}[H]
+    \centering
+
+    % Left image
+    \begin{subfigure}[t]{0.30\textwidth}
+        \centering
+        \includegraphics[height=4.8cm,trim=2 2 2 2,clip]{Figures/GUI for Stage.png}
+        \caption{GUI to Control Robotic Translation Stage}
+        \label{fig:gui_stage}
+    \end{subfigure}
+    \hspace{0.02\textwidth}
+    % Right image
+    \begin{subfigure}[t]{0.55\textwidth}
+        \centering
+        \includegraphics[height=4.8cm]{Figures/Photo-Translation-Stage.jpg}
+        \caption{Image of Robotic Translation Stage}
+        \label{fig:robot_stage}
+    \end{subfigure}
+
+    \caption{Robotic Translation Stage and Control Interface}
+    \label{fig:combined_stage}
+\end{figure}
+
+\subsubsection{Manufacturing the Lenses (JC)}
+
+Once the design was modelled and analytically verified, the code for both lenses turns the thickness map into an STL by treating the thickness values as the z-height of a surface over the x-y grid. It then builds a 3D mesh from the bottom and top point arrays, cleans the geometry, and exports the finished surface as an STL file, ready for 3D printing. The lens is oriented with the flat face down on the build platform to minimise support structures on the acoustic surface and preserve surface fidelity \cite{additiveAcousticHologram2025}.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.23\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/FZP STL.png}
+        \caption{STL render of the FZP vortex lens.}
+        \label{fig:fzpstl}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.2\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/STL File Image.png}
+        \caption{STL render of the C-shape holographic lens.}
+        \label{fig:cstl}
+    \end{subfigure}
+    \caption{STL render of both the FZP and Acoustic Hologram lenses.}
+    \label{fig:stls}
+\end{figure}
+
+\noindent It was then 3D printed using Formlabs Grey V4.1 resin and a Formlabs Form 4 printer.
+
+An issue encountered when printing the first hologram lens was the printing quality. The Formlabs 4 has a resolution o $\Delta T$ = 25 $\mu m$, meaning we could be confident that this was a design issue, not merely a restriction placed by the standard o the 3D printer. It was found that the critical fabrication constraint is that the pixel pitch must not fall below the lateral resolution of the printer $\Delta T_{printer}$ \cite{additiveAcousticHologram2025}:
+
+\begin{equation}
+\frac{d_{\text{pixel}}}{\Delta T_{\text{printer}}} \geq 1
+\end{equation}
+
+\noindent Where $d_{\text{pixel}} = \frac{D}{N}$ and $D$ is the diameter of the len, $N$ is the grid resolution. The first C-shape lens was printed at $N = 1000$, $d_{pixel}$ = 20 $\mu m$ and therefore the ratio of $20/25 = 0.8 < 1$ means that each simulated pixel therefore mapped to fewer than one printer pixel, meaning sub-pixel phase transitions in the hologram could not be reproduced, causing the surface roughness and merging of fine features on the lens face, seen in \ref{fig:blurryc}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.2\linewidth}
+        \centering
+s        \includegraphics[width=\linewidth]{Figures/FZP lens.jpeg}
+        \caption{3D-printed FZP vortex lens, showing the continuous spiral 
+    thickness profile resolved in Formlabs Grey Resin V4}
+        \label{fig:fzplens}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.2\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Better C.jpeg}
+        \caption{Photograph of the C-shape holographic lens (second print), 
+    showing refined definition.}
+        \label{fig:Clens}
+    \end{subfigure}
+        \hspace{0.05\linewidth}
+    \begin{subfigure}{0.2\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Blurry C.jpeg}
+        \caption{Photograph of the C-shape holographic lens (first print), 
+    showing the array on the lens face.}
+        \label{fig:blurryc}
+    \end{subfigure}
+    \caption{Photographs of the 3D-printed acoustic lenses manufactured 
+in Formlabs Grey Resin V4 via SLA printing.}
+    \label{fig:fzpandClens}
+\end{figure}
+
+
+\noindent A second lens was  then printed at $N = 666$, giving $d_{\text{pixel}} \approx 30,\mu\text{m} > 25,\mu$m, bringing the design within the printer's reliable capability. As seen in Fig. \ref{fig:Clens}, the iterated print produces the lens structure with greater fidelity, showing significantly sharper boundaries and finer detail, closely matching the lens thickness map, Fig. \ref{fig:Cthickness}. This improvement is attributed directly to the reduction in $d_{\text{pixel}}$. 
+
+\subsubsection{Coupling Methods for the Transducer and Lens (JC)}
+
+The interface between the PZT transducer and the resin lens, seen in Fig. \ref{fig:acoustictolens} presents a fundamental acoustic impedance mismatch and the transmission co-efficient at the interface can be described using Equation [X - This is in the petri dish model not in this document. Need to resolve]. In order to harness all available acoustic pressure force, a coupling method between the transducer and the lens is required. The couplant must have a high transmission coefficient and a uniform, consistent application, since non-uniform bonding introduces spatially varying phase errors across the aperture \cite{dumas2004matching}.
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.3\linewidth]{Figures/Acoustic - Lens.png}
+    \caption{Schematic of the acoustic lens--transducer assembly, showing the 3D-printed lens, water coupling layer, and piezoelectric transducer.}
+    \label{fig:acoustictolens}
+\end{figure}
+
+\noindent It was decided to use epoxy resin ($Z \approx 3$--$5$ MRayl) as the coupling medium in this project, bonding the lens permanently to the transducer face. At the quarter-wave matching thickness $t_{match} = c_{epoxy}/4f \approx 256\mu mm$, the epoxy acts as an impedance transformer maximizing transmission \cite{hossack2012bonding}.
+
+Two other mediums were considered. Ultrasonic gel, which has a very high transmission co-efficient, was not used due to it's non permanent nature as it would require an additional process to hold both the transducer and the lens together \cite{evident2024couplant}. 
+
+Glycerin paste ($Z = 2.42$ MRayl), also offers a high transmission co-efficient but is hygroscopic and degrades with prolonged water exposure, and was therefore unsuitable to be used \cite{echoGlycerin2018}.
+
+
+
+\subsubsection{Magnetic Coupling (JY, DA)}
+\label{sUBSEC:MCOUPLING}
+
+
+A water bath was chosen as the primary coupling medium between the transducer lens assembly and the petri dish. Water offers an ideal acoustic coupling characteristic as it introduces minimal phase distortion compared to alternatives such as ultrasonic gels. However, the use of a water bath presents a practical challenge which is the transducer and its lens must be submerged in the fluid but their position needs to be controllable from outside the bath. However, introducing motorized stages directly into the water would require them to be waterproof which add complexity and cost to the overall project. Therefore, magnetic coupling was adopted to allow the transducer assembly to be driven from outside the bath without any physical penetration of the bath walls.
+
+The coupling system relies on the attractive force between two magnets that is separated by the bath wall. The external magnet would be mounted on a positioning stage underneath the water bath and is paired with the internal magnet which is secured in a 3D printed holder that is also carried the transducer and the lens. As the external magnet is translated by the motorised stage. The internal magnet would track its position without direct mechanical contact. This keeps all drive electronics and moving parts outside the fluid while still providing positional control of the transducer within the coupling medium.
+
+The internal magnet holder was designed using Fusion 360 (Bambu X1 Carbon) . The magnet holders have two slots for retaining the magnet.  The main design consideration of the design was the friction between the holder and the inner surface of the bath floor. Since the internal assembly is driven purely by magnetic attraction through the wall therefore when the external magnet is trying to mo. To address this, ball bearings were introduce into the base of the 3D-printed holder. These sit in middle of the magnet holder and when the internal magnet move it will make direct rolling contact with the bath floor, which changes the overall motion of the coupler from sliding to rolling. This modification reduced the “latency” of the inner coupler and provide a smoother and a more accurate motion profile.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.25\linewidth]{Figures/ChatGPT Image Apr 24, 2026, 05_48_24 PM.png}
+    \caption{Magnetic coupling housing with magnet and ball bearing}
+    \label{fig:placeholder}
+\end{figure}
+
+Table \ref{tab:magnet-comparison} outlines the comparison made to help decide what magnet to use for the magnetic coupling. 
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+\textbf{Category}       & \textbf{Alnico} & \textbf{Ceramic} & \textbf{NdFeB} & \textbf{SmCo} \\ \hline
+Strength              & High               & Weak               & High               & High               \\ \hline
+Size                  & Large               & Small - Large               & Small - Large               & Small - Large               \\ \hline
+Waterproof  & Yes               & Yes               & No               & Yes               \\ \hline
+Cost                 & High                & Low                 & Medium                & High                \\ \hline
+\end{tabular}
+\caption{Comparison of Four Magnets}
+\label{tab:magnet-comparison}
+\end{table}
+
+For our device, the most important factor is that the magnet is water resistant as it would be submerged in a water bath. The obvious constraint of the transducer size, also the size of the magnet very important. It was decided that samarium cobalt (SmCo) would be used because it matched the needs required for the task while also providing a strong magnetic field capable of working through the medium of the bath. SmCo does have the drawback of generally being expensive; however, as the size of the magnet required is small, the cost was not substantial.
+
+
+\subsubsection{Design of Bespoke Components (JY)}
+Three bespoke component were designed using CAD and was 3D print (Bambu Lab X1 Carbon) to support the experimental setup, as shown in Figure\ref{CAD Design}. Each component address a specific mechanical requirement within the experimental setup.
+\begin{figure}[H]
+    \centering
+
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures//Images/bracket for magnetic coupling v1.png}
+        \caption{Mounting Bracket for the Magnetic Coupler Housing}
+        \label{fig:photo1}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{bracket 2 (v2~recovered).png}
+        \caption{Stabilising Bracket for the Robotic Translation Stage}
+        \label{Stabilising Bracket for the Robotic Translation Stage}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Untitled (~recovered).png}
+        \caption{Support Stand for the Water Bath}
+        \label{Support Stand for the Water Bath}
+    \end{subfigure}
+    \caption{CAD Design}
+    \label{CAD Design}
+\end{figure}
+
+\subsection{Robotically Controlled Acoustic Lens Results}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.35\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/Cinnamon Vortex Photo.jpg}
+        \caption{}
+        \label{fig:vortexcinnamon}
+    \end{subfigure}
+    \hspace{0.05\linewidth}
+    \begin{subfigure}{0.25\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Figures/More Zoomed out cinnamon photo.jpg}
+        \caption{}
+        \label{fig:cinnamonC}
+    \end{subfigure}
+    \caption{}
+    \label{fig:cinnamon}
+\end{figure}
+
+Explanation of Bjerknes present here:
+
+\noindent Due to the nature of using Cinnamon as a tracer particle in our experiment, it is deposited at a high surface density, meaning that a large number of particles are driven to the same nodal positions by the primary Gor'Kov force. When these particles are at sub-wavelength separations the secondary Bjerkenes forces causes particles to cluster into discrete aggregates rather than distributing uniformly. This is seen in Figure [PHOTO OF FZP WITH CINNAMON] where the general concentric ring shape expected is seen, but is not as distinctly as expected due to the clumps of cinnamon particles along the ring radii. Similarly for the holographic lens, we can see that the same attractive interaction causes the particles to form a single visible aggregate instead of filling the region uniformly \cite{inpetridish2025}\cite{silva2014}.
+
+Explanation of Bjerkenes for polyester:
+
+\noindent The Bjerknes forces for the main experiment [REFERENCE OR RE-WORD THAT], where particles are present at a low concentration, were deemed negligible. For a = 62.5 $\mu$m (corresponding to particle diameter of 125 $\mu$m), r = 344 $\mu$m, $k_p /k_0$ = 0.365, $\Phi$ = 0.229, and $\lambda$ = 688 $\mu$m. Here, r = $\lambda$/2 corresponds to the minimum inter-particle separation for particles that are sitting adjacent traps in the standing-wave pressure field. Under these assumptions, secondary interactions were found to be roughly three orders of magnitude smaller than the Gor’kov trapping force (Eq 3) and were therefore acceptably neglected.
+
+
+\subsection{Device Design For Experiments (Evelyn)}
+
+The experimental setup was designed to mirror the initial concept as closely as possible. The setup was built such that the standing wave generator and acoustic tweezer could be used simultaneously as well as individually, providing flexibility to what experiments could be performed.
+
+Pre-made orthogonal transducers arrays were acquired from lab staff. These were housed in a laser cut acrylic casing. The bottom of which was a thin, transparent plastic sheet, allowing ultrasonic radiation to pass through with relatively little absorption or scattering. Rectangular piezoceramic plates with resonances of 2.15Mhz are positioned at the centre of each edge of the central reservoir, allowing a grid of stationary acoustic traps to be created in the middle.
+A microscope was positioned above the setup to capture the contents of the chamber. The chamber was lit from below.
+[PHOTO]
+
+The chamber and the orthogonal transducer array were held in place with four wooden legs, each with a screw in the foot that allowed the height to be adjusted to place the chamber within the focal point of the vortex beam. This also allowed it to be kept level on uneven surfaces.
+
+The orthogonal transducer array and the acoustic tweezer setup are supplied with signals from separate TiePie HS5 handyscopes with a maximum output voltage of 12V (peak to peak). The output of each was fed into an oscilloscope so that its voltage and frequency could be measured and verified.
+
+To generate the vortex trap, a disc-shaped piezoceramic transducer was used. Two types were used, one was rated at 2.44MHz, 20mm in diameter, and was used to test the vortex lens, the other was rated at 1.65MHz, 25mm in diameter and used to test the c-shaped lens. These were chosen because their removable housing allowed the piezo element to be bonded directly to the lens. Piezoceramic transducers of this type have a low bandwidth in which they run efficiently. Each was had its resonance tested by gathering an impedance spectrum.
+
+The vortex phase control method of particle merging relied on the use of transducers running at the same frequency, across the whole device. However, transducers rated to run at the same frequency for both the acoustic tweezer and standing wave array could not be sourced, therefore, experimental evaluation of this method was not pursued.
+
+\subsubsection{Particles (Evelyn)}
+
+For the testing the functionality of the equipment, a fine particle with suitable acoustic gradient factor was needed. Organic particles were preferred as the manipulation of cells and organoids is the intended application of this investigation. Cinnamon particles were found to be visible under the microscope due to their dark colour as well as extremely cheap and available. When agitated in water, the finer cinnamon particles remained in suspension for longer, thus allowing them to be isolated by letting the larger particles settle to the bottom. The fine sediment was observed gathering in the nodes of the acoustic wavefield, allowing the position and size of these nodes to be visually identified. To demonstrate particle capture and manipulation, fluorescent polystyrene particles were used. The physical properties of both particle types are detailed in section 4.9.1.
+
+The cinnamon particles displayed a tendency to clump together. This did not occur when particles were small enough, therefore, care had to be taken to remove larger particles. Some particles were observed sticking to the bottom of the reservoir, forming a very fine layer between nodes. The proportion of particles seen doing this was relatively small.
+%Though the cinnamon particles do not display the amplitude of the wavefield directly, the time taken for them to gather in the nodes and reach an equilibrium state may give some indication. However, many factors may affect the amount of time taken, such as the concentration of particles, the amount of acoustic streaming present, and the viscosity of the water, which may be affected by temperature and contaminants. Due to this complexity, this method of estimating amplitude was not considered.
+
+\subsubsectionautorefnamesection{Experimental Setup for []}
+
+The intention of this series of experiments was to assess whether the particle trapping techniques explored with the theoretical modelling could be recreated with the low-cost devices created in the lab. 
+
+The standing wave device was set up and run independently to verify that it worked as intended. A sinuisoidal input signal of frequency 2.15 MHz was fed into each transducer in parallel. The signal was amplified to [20V] with an amplifier. A split cable fed the output into an oscilloscope to measure its voltage and frequency. A mixture of cinnamon particles and water was placed in the reservoir with a depth of 5mm, just enough to fully cover the transducers. The impedance of each transducer was measured to verify that they were all roughly intact and had the same resonance. The contents of the reservoir were recorded with a digital microscope and series of images were captured.
+
+The physical behavior of the acoustic tweezer with the vortex lens was tested. The depth of water in the reservoir was [5mm]. The height of the reservoir was adjusted such that the focal point of the acoustic tweezer was placed at a depth of 2.5mm at the centre of it. The cinnamon particles were agitated so that they were evenly distributed throughout the reservoir, and the device was powered for one minute with a sinusoidal signal with a frequency of 1.65 MHz and a peak-to-peak amplitude of 12V. The signal was also fed into an oscilloscope to verify its frequency and amplitude. After one minute passed, an image of the contents of the reservoir was captured. The distribution of particles indicated the position of the nodes of the wavefield generated by the acoustic tweezer device.
+
+This method was repeated using the c-shaped lens to capture another series of images. In this case, the experiment was performed with the 1.65MHz transducer as there was no more 2.15MHz transducers.
+
+In each experiment, the feed from the microscope was recorded with the software OBS. In some cases, some post processing was performed in the imaging editing software GIMP to increase the contrast and make the patterns formed in the cinnamon particles more legible.
+
+\subsubsection{Resonance and damage assessment of transducers}
+
+The impedance of each transducer was measured with a Trewmac impedance analyser and plotted digitally within a frequency range of 0.3MHz to around double the expected resonance. This served two purposes, verifying the true resonances of the transducer and assessing whether damage may have occurred. Impedance and phase were plotted on separate spectrums with the frequency on the x-axis.
+
+By assessing the position of the peaks in the impedance and phase spectrum, the resonances of the transducer can be assessed.[https://www.nature.com/articles/s41598-019-55333-1].
+
+The impedance profiled of a transducer is sensitive to structural changes of the transducer itself or the structures it is attached too [reference]. Therefore, variations in the impedance profile may indicate structural damage to the transducer, given that the surrounding structural conditions of the transducer are the same. It can be assumed that damage to the electrodes will also affect the impedance profile, as the electric excitement of the piezoelectric material would be altered. Therefore, comparing the impedance spectrums of transducers that should be identical was used as a possible indicator of damage.
+%https://www.sciencedirect.com/science/article/pii/S0022460X16303996?casa_token=afEAEdhjIfAAAAAA:zs2QalcleKVKUgNdSlphnzhZLmgYZJJfIb9JR2zmndXoud7WtJXzhorlpnlUt3XcJnSGrTezzLyc
+
+\subsection{Experimental Discussion}
+
+\section{Cellular Viability}
+\label{subsec:cell-viability}
+The intention of this investigation into acoustic tweezers is ultimately to look at alternative methods to the current options in favor of reducing the cost of using an acoustic tweezer device. This is to open more opportunities for biologists and medic to explore the capabilities of such devices in the field of tissue engineering. For this reason, it is also important to consider the feasibility of the methods explored regarding the handling of living cells. The key benefit of acoustic tweezers using non-contact forces to manipulate cells and tissues makes it very appealing as the hope is that it can lead to better handling minimising damage. However, there are still issues that can arise from the use of acoustic tweezers.
+
+Living cells and tissues are sensitive to change in temperature and an increase of a few degrees in temperature can be the difference between healthy cells and damaged cells. A study in 2020 investigated the effects of acoustic standing waves on cellular viability and metabolic activity \cite{Levario-Diaz2020EffectActivity}, the findings highlighted the importance of controlling the temperature of the cell's environment noting that at colder temperatures (20-22$^{\circ}$C) there is better cell viability, but worse metabolic activity than at 34$^{\circ}$C. Hence, it was deemed important to investigate the effects of the device on the temperature experience of the particle.
+
+The study also highlighted that direct heat generation due to the absorption from the waves is small, however significant heating may occur from conduction with the transducer and other mounted components. For this reason, a simple test observing temperature change over a period of time was deemed sufficient in evaluating potential cell damage due to heat.
+
+Temperature is not the only factor that can cause cell damage. Ultrasound is capable of causing cavitation in fluids that impact cell structure. Nevertheless this effect is proportional to ${1/\sqrt{f}}$ and for frequencies in excess of 1 MHz, the case for our device, this effect is very small and not significant enough to be a concern, so no experiment was planned for this effect. Acoustic forces and acoustic streaming can also be an area of concern on the health of a cell, as it can give rise to mechanical stress and loading of a cell leading to destruction and fragmentation. To accurately explore the effects of these forces a tool called Acoustic Force Spectroscopy has been developed \cite{Taris2024Single-CellAFS}, but without this tool only simple observation on the particle's behavior and the forces computed in the model could be made.
+
+Although research has been carried out regarding the effects of ultrasound on cells, currently the effects of ultrasound continue to be difficult to predict, with studies highlighting that the same frequency can affect cells differently \cite{Levario-Diaz2020EffectActivity}. With this information, although the initial tests and further tests could give an insight on the device's performance with cells, it is not definite and depending on the cell very different outcomes could occur.
+
+
+\section{Discussion (DA, ZN, JY, JC)} 
+
+JY discuss limitations and improvement with matching  
+
+DA and ZN to produce a warp around on incorporating the phase/freq in future 
+
+ZN discuss cost implications 
+
+JC discuss use of holograms 
+
+\section{Conclusion (ZN, DA, JC)}
+
+DA and JC to provide couple sentences encapsulating the result and prove ZN 
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% REFERENCES
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{thebibliography}{9}
+
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+\end{thebibliography}
+
+
+
+\end{document}

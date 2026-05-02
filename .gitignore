@@ -6,8 +6,19 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Data / results (heavy outputs live in OneDrive, not the repo)
-results/
+results/*
+!results/README.md
+!results/report/
+results/report/*
+!results/report/README.md
+!results/comsol_comparison/
+!results/comsol_comparison/**
+!results/fem_standing_wave_cache/
+!results/fem_standing_wave_cache/**
 Deliverables/
+archive/deliverables_snapshots/
+archive/results/
+archive/legacy_experiments/results/
 *.npz
 *.csv
 

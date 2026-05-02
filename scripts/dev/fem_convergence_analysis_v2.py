@@ -543,8 +543,69 @@ def match_traps_hungarian(ref_pos: np.ndarray,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — RICHARDSON EXTRAPOLATION + GCI
+# SECTION 2 — OBSERVED CONVERGENCE ORDERS + RICHARDSON EXTRAPOLATION + GCI
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_observed_orders(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute local observed convergence orders between consecutive EPL levels.
+
+        p_obs[i→i+1] = log(e_i / e_{i+1}) / log(h_i / h_{i+1})
+                     = log(e_i / e_{i+1}) / log(EPL_{i+1} / EPL_i)
+
+    Interpretation
+    --------------
+    P2 Lagrange (L2 error) asymptotic expectation: p_obs ≈ 3.
+    Pollution-dominated regime: p_obs ≈ 0–2, possibly negative if plateau.
+    Onset of asymptotic regime: p_obs increases towards 3.
+
+    Returns a DataFrame with one row per EPL pair; columns include
+    epl_lo, epl_hi, h_lo_mm, h_hi_mm, p_obs_L2_roi, p_obs_gorkov, p_obs_trap.
+    """
+    conv = df[
+        (df["physical_size_mm"].round(1) == 3.0)
+        & (df["pml_n_wavelengths_xy"].round(1) == 1.0)
+        & df["eps_L2_roi"].notna()
+        & np.isfinite(df["eps_L2_roi"])
+    ].copy().sort_values("epl").reset_index(drop=True)
+
+    rows = []
+    for i in range(len(conv) - 1):
+        r_lo = conv.iloc[i]
+        r_hi = conv.iloc[i + 1]
+        epl_lo, epl_hi = r_lo["epl"], r_hi["epl"]
+        h_lo = WAVELENGTH_M / epl_lo
+        h_hi = WAVELENGTH_M / epl_hi
+        log_h_ratio = np.log(h_lo / h_hi)   # > 0 since h_lo > h_hi
+
+        def _p(e_lo, e_hi):
+            if (not np.isfinite(e_lo) or not np.isfinite(e_hi)
+                    or e_lo <= 0 or e_hi <= 0 or log_h_ratio == 0):
+                return np.nan
+            return np.log(e_lo / e_hi) / log_h_ratio
+
+        p_L2    = _p(r_lo["eps_L2_roi"], r_hi["eps_L2_roi"])
+        p_gorkov = _p(
+            r_lo.get("eps_gorkov_roi", np.nan),
+            r_hi.get("eps_gorkov_roi", np.nan),
+        ) if "eps_gorkov_roi" in conv.columns else np.nan
+        p_trap  = _p(
+            r_lo.get("mean_trap_err_m", np.nan),
+            r_hi.get("mean_trap_err_m", np.nan),
+        ) if "mean_trap_err_m" in conv.columns else np.nan
+
+        rows.append({
+            "epl_lo"       : epl_lo,
+            "epl_hi"       : epl_hi,
+            "h_lo_mm"      : h_lo * 1e3,
+            "h_hi_mm"      : h_hi * 1e3,
+            "p_obs_L2_roi" : p_L2,
+            "p_obs_gorkov" : p_gorkov,
+            "p_obs_trap"   : p_trap,
+            "converging"   : (p_L2 > 0.5) if np.isfinite(p_L2) else None,
+        })
+    return pd.DataFrame(rows)
+
 
 def richardson_gci(f1: float, f2: float, f3: float,
                    h1: float, h2: float, h3: float,
@@ -594,9 +655,13 @@ def richardson_gci(f1: float, f2: float, f3: float,
             p_app = np.log(abs(eps32 / eps21)) / np.log(r21)
 
     # Flag whether p_app is physically plausible for FEM (P1–P3: order 2–4)
+    # For a P2 Lagrange Helmholtz solve we expect p_obs ≈ 3 in the asymptotic
+    # regime.  In the pollution-dominated regime p_obs can be 0.5–2.  Accept
+    # anything in [0.5, 6] as "reliable" for GCI purposes; tighter values
+    # (~[2.5, 4]) indicate asymptotic behaviour.
     p_reliable = not np.isnan(p_app) and 0.5 <= p_app <= 6.0
-    # For GCI arithmetic use theoretical P2 order when p_app is unreliable
-    p_gci = p_app if p_reliable else 2.0
+    # For GCI arithmetic use theoretical P2 order (p=3) when p_app is unreliable
+    p_gci = p_app if p_reliable else 3.0
 
     # Extrapolated value — only meaningful when convergence is asymptotic
     if not p_reliable:
@@ -699,62 +764,169 @@ def _remove_if_exists(path: Path):
         print(f"  [removed stale] {path.name}")
 
 
-# ─── Figure 1: ε vs h (log-log) ───────────────────────────────────────────────
+# ─── Figure 1: main convergence figure (log-log ε vs h, observed orders) ─────
 
-def fig_error_vs_h(df: pd.DataFrame, out_dir: Path):
+def fig_convergence_main(df: pd.DataFrame,
+                         obs_orders: pd.DataFrame,
+                         gci: dict,
+                         out_dir: Path):
+    """
+    Primary convergence figure for the report.
+
+    Left panel  — log-log ε_L2_ROI vs h (mm)
+        • P2 data points with connecting line
+        • O(h^3) reference slope (P2 asymptotic expectation)
+        • Local observed order p_obs annotated between each pair
+        • Pre-asymptotic / asymptotic region shaded if distinguishable
+        • Richardson-extrapolated ε* (only when regime is asymptotic)
+
+    Right panel — p_obs vs EPL mid-point
+        • Horizontal dashed at p=3 (P2 theory)
+        • Horizontal dashed at p=2 (lower bound, pollution)
+        • Marker colour: green (p≥2.5), amber (1≤p<2.5), red (p<1)
+        • Clear annotation if pre-asymptotic throughout
+
+    Saves as fig1_convergence_main.png  (300 dpi).
+    DO NOT call this fig1_error_vs_h.png — the old figure is superseded.
+    """
     conv = df[
-        (df["physical_size_mm"].round(1) == 3.0) &
-        (df["pml_n_wavelengths_xy"].round(1) == 1.0) &
-        (df["epl"] < REFERENCE_EPL) &
-        df["eps_L2_roi"].notna() &
-        np.isfinite(df["eps_L2_roi"])
+        (df["physical_size_mm"].round(1) == 3.0)
+        & (df["pml_n_wavelengths_xy"].round(1) == 1.0)
+        & (df["epl"] < REFERENCE_EPL)
+        & df["eps_L2_roi"].notna()
+        & np.isfinite(df["eps_L2_roi"])
     ].sort_values("epl")
 
     h_vals = WAVELENGTH_M / conv["epl"].values * 1e3   # mm
-    eps = conv["eps_L2_roi"].values
+    eps    = conv["eps_L2_roi"].values
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, (ax_main, ax_pobs) = plt.subplots(1, 2, figsize=(13, 5.5))
 
-    # Main convergence data
-    ax.loglog(
-        h_vals, eps, "o-",
-        color=COLORS["primary"],
-        ms=7, lw=1.8,
-        label=r"FEM P1  $\varepsilon_{L2}$ ROI"
-    )
+    # ── Left: log-log ε vs h ─────────────────────────────────────────────────
+    ax = ax_main
+    ax.loglog(h_vals, eps, "o-", color=COLORS["primary"], ms=8, lw=2,
+              label=r"P2 FEM  $\varepsilon_{L2}$ ROI", zorder=5)
 
-    # Reference slope for P1: O(h^2)
+    # O(h^3) reference slope anchored at finest data point
     h_ref = np.logspace(
-        np.log10(h_vals[-1] * 0.7),
-        np.log10(h_vals[0] * 1.3),
-        80
+        np.log10(h_vals[-1] * 0.65),
+        np.log10(h_vals[0]  * 1.35),
+        80,
     )
-    slope = eps[-1] * (h_ref / h_vals[-1]) ** 2
-    ax.loglog(
-        h_ref, slope, "--",
-        color="#888780", lw=1.2,
-        label=r"$O(h^2)$ expected (P1)"
-    )
+    slope3 = eps[-1] * (h_ref / h_vals[-1]) ** 3
+    slope2 = eps[-1] * (h_ref / h_vals[-1]) ** 2
+    ax.loglog(h_ref, slope3, "--", color="#888780", lw=1.4,
+              label=r"$O(h^3)$ asymptotic expectation (P2)")
+    ax.loglog(h_ref, slope2, ":", color="#aaaaaa", lw=1.2,
+              label=r"$O(h^2)$ pollution-regime reference")
 
-    # Annotate EPL values
-    offsets = [(5, 8), (-40, 8), (5, -14), (-40, -14), (5, 8)]
-    for i, (h, e, epl) in enumerate(zip(h_vals, eps, conv["epl"].values)):
-        dx, dy = offsets[i % len(offsets)]
-        ax.annotate(
-            f"EPL={epl:.1f}",
-            xy=(h, e),
-            xytext=(dx, dy),
-            textcoords="offset points",
-            fontsize=8
-        )
+    # Richardson-extrapolated ε* if reliable
+    if gci and gci.get("p_reliable", False) and not np.isnan(gci.get("f_exact", np.nan)):
+        ax.axhline(gci["f_exact"], color=COLORS["re"], lw=1.4, ls="-.",
+                   label=rf"$\varepsilon^* = {gci['f_exact']:.2e}$  (Richardson)")
+
+    # Annotate EPL values and p_obs midpoint labels
+    offsets_xy = [(5, 8), (-42, 8), (5, -15), (-42, -15), (5, 8)]
+    for idx, (h, e, epl) in enumerate(zip(h_vals, eps, conv["epl"].values)):
+        dx, dy = offsets_xy[idx % len(offsets_xy)]
+        ax.annotate(f"EPL={epl:.1f}", xy=(h, e),
+                    xytext=(dx, dy), textcoords="offset points", fontsize=8)
+
+    # Shade pre-asymptotic region (all data if no asymptotic onset found)
+    max_p_obs = (obs_orders["p_obs_L2_roi"].max()
+                 if not obs_orders.empty else np.nan)
+    asymptotic_onset_h = None
+    if not obs_orders.empty:
+        asymp_rows = obs_orders[obs_orders["p_obs_L2_roi"] >= 2.5]
+        if not asymp_rows.empty:
+            # Use the h_hi of the first asymptotic pair (finest h where onset occurs)
+            asymptotic_onset_h = asymp_rows.iloc[-1]["h_hi_mm"]
+
+    if asymptotic_onset_h is not None:
+        ax.axvspan(asymptotic_onset_h, h_vals[0] * 1.5,
+                   color="#FFD580", alpha=0.18, label="Pre-asymptotic (plateau)")
+        ax.axvspan(h_vals[-1] * 0.7, asymptotic_onset_h,
+                   color="#C8EEC8", alpha=0.18, label="Asymptotic onset")
+    else:
+        ax.axvspan(h_vals[-1] * 0.7, h_vals[0] * 1.5,
+                   color="#FFD580", alpha=0.15,
+                   label="Pre-asymptotic (pollution-dominated)")
 
     ax.set_xlabel(r"$h = \lambda/\mathrm{EPL}$  (mm)")
-    ax.set_ylabel(r"Relative $L_2$ error in ROI, $\varepsilon$")
-    ax.set_title("Mesh convergence — ROI field error vs element size")
-    ax.legend(loc="upper left", framealpha=0.9)
+    ax.set_ylabel(r"Relative $L_2$ error in ROI,  $\varepsilon$")
+    ax.set_title("Mesh convergence — ROI field error vs element size\n"
+                 "(P2 Lagrange, MUMPS direct solver)")
+    ax.legend(loc="upper left", framealpha=0.9, fontsize=8)
     ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
 
-    _save(fig, "fig1_error_vs_h.png", out_dir)
+    # ── Right: observed order p_obs vs EPL ───────────────────────────────────
+    ax = ax_pobs
+    if not obs_orders.empty:
+        epl_mid = 0.5 * (obs_orders["epl_lo"].values + obs_orders["epl_hi"].values)
+        p_vals  = obs_orders["p_obs_L2_roi"].values
+
+        colors_p = []
+        for p in p_vals:
+            if not np.isfinite(p):
+                colors_p.append("#AAAAAA")
+            elif p >= 2.5:
+                colors_p.append("#3B6D11")   # green — approaching asymptotic
+            elif p >= 1.0:
+                colors_p.append("#E88600")   # amber — moderate convergence
+            else:
+                colors_p.append("#D85A30")   # red   — plateau / diverging
+
+        for i, (em, pv, c) in enumerate(zip(epl_mid, p_vals, colors_p)):
+            label_i = None
+            if i == 0:
+                label_i = r"$p_\mathrm{obs}$ (L2 ROI)"
+            ax.scatter(em, pv, color=c, s=80, zorder=5, label=label_i)
+        if len(epl_mid) > 1:
+            ax.plot(epl_mid, p_vals, "-", color="#999999", lw=1, zorder=3)
+
+        # Annotate values
+        for em, pv in zip(epl_mid, p_vals):
+            if np.isfinite(pv):
+                ax.annotate(f"{pv:.2f}", xy=(em, pv),
+                            xytext=(0, 9), textcoords="offset points",
+                            fontsize=8, ha="center")
+
+    ax.axhline(3.0, color="#3B6D11", lw=1.3, ls="--",
+               label=r"$p=3$  P2 asymptotic expectation")
+    ax.axhline(2.0, color="#888780", lw=1.0, ls=":",
+               label=r"$p=2$  lower pollution-regime bound")
+    ax.axhline(0.0, color="#D85A30", lw=0.8, ls="-.",
+               label=r"$p=0$  stagnation")
+
+    # Summary verdict
+    if not obs_orders.empty:
+        max_p = obs_orders["p_obs_L2_roi"].max()
+        if np.isfinite(max_p) and max_p >= 2.5:
+            verdict = f"Partial asymptotic onset detected\n(max $p_{{obs}}$ = {max_p:.2f})"
+            vcolor  = "#3B6D11"
+        else:
+            verdict = (f"Pre-asymptotic throughout\n"
+                       f"(max $p_{{obs}}$ = {max_p:.2f if np.isfinite(max_p) else 'N/A'})\n"
+                       "Increase EPL or reduce domain to resolve asymptotic regime")
+            vcolor  = "#D85A30"
+        ax.text(0.05, 0.06, verdict, transform=ax.transAxes, fontsize=9,
+                color=vcolor, va="bottom",
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.85))
+
+    ax.set_xlabel("EPL  (midpoint between pair)")
+    ax.set_ylabel(r"Local observed order  $p_\mathrm{obs}$")
+    ax.set_title("Local convergence rate between consecutive levels\n"
+                 r"P2 asymptotic target: $p_\mathrm{obs} \rightarrow 3$")
+    ax.legend(fontsize=8, loc="upper left", framealpha=0.9)
+    ax.set_ylim(min(-0.5, obs_orders["p_obs_L2_roi"].min() - 0.3
+                    if not obs_orders.empty else -0.5),
+                max(4.5, obs_orders["p_obs_L2_roi"].max() + 0.5
+                    if not obs_orders.empty else 4.5))
+
+    fig.suptitle("FEM Mesh Convergence Study  —  P2 Lagrange, 2.15 MHz standing wave",
+                 fontsize=11, y=1.01)
+    fig.tight_layout()
+    _save(fig, "fig1_convergence_main.png", out_dir)
 
 
 # ─── Figure 2: 3-panel ε, spacing, trap error vs EPL ─────────────────────────
@@ -800,6 +972,109 @@ def fig_error_vs_epl(df: pd.DataFrame, out_dir: Path):
     )
     fig.tight_layout()
     _save(fig, "fig2_error_vs_epl.png", out_dir)
+
+
+# ─── Figure 2b: physics-based convergence (trap metrics vs h) ────────────────
+
+def fig_physics_convergence(df: pd.DataFrame, out_dir: Path):
+    """
+    Trap-based convergence evidence independent of field-norm metrics.
+
+    Panel A — mean matched-trap position error [µm] vs h (log-log).
+    Panel B — fraction of reference traps matched vs EPL.
+    Panel C — detected trap count in ROI vs EPL (should be stable).
+
+    These demonstrate physical convergence: the solver produces correct
+    trap geometry as resolution increases, not just a converging norm.
+    """
+    conv = df[
+        (df["physical_size_mm"].round(1) == 3.0)
+        & (df["pml_n_wavelengths_xy"].round(1) == 1.0)
+        & (df["epl"] < REFERENCE_EPL)
+    ].sort_values("epl").copy()
+
+    h_vals = (WAVELENGTH_M / conv["epl"].values * 1e3)   # mm
+
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
+
+    # ── Panel A: mean trap position error vs h ───────────────────────────────
+    ax = axes[0]
+    col_terr = ("mean_trap_err_m" if "mean_trap_err_m" in conv.columns
+                else "mean_trap_error_m" if "mean_trap_error_m" in conv.columns
+                else None)
+    if col_terr and conv[col_terr].notna().any():
+        valid = conv[col_terr].notna() & np.isfinite(conv[col_terr])
+        ax.loglog(h_vals[valid.values], conv[col_terr][valid].values * 1e6,
+                  "^-", color=COLORS["tertiary"], ms=8, lw=2,
+                  label="Mean matched trap error")
+        # O(h^3) reference for comparison
+        mask_v = valid.values
+        if mask_v.sum() > 1:
+            h_ref2 = np.logspace(np.log10(h_vals[mask_v][-1] * 0.7),
+                                 np.log10(h_vals[mask_v][0]  * 1.3), 50)
+            e0 = conv[col_terr][valid].values[-1] * 1e6
+            ax.loglog(h_ref2, e0 * (h_ref2 / h_vals[mask_v][-1])**3,
+                      "--", color="#888780", lw=1.2,
+                      label=r"$O(h^3)$ reference")
+    else:
+        ax.text(0.5, 0.5, "No trap error data\n(run EPL=5 reference first)",
+                transform=ax.transAxes, ha="center", va="center",
+                fontsize=9, color="#888")
+    ax.set_xlabel(r"$h = \lambda/\mathrm{EPL}$  (mm)")
+    ax.set_ylabel(r"Mean trap position error  ($\mu$m)")
+    ax.set_title("Trap position convergence\n(physical metric)")
+    handles, labels = ax.get_legend_handles_labels()
+    if labels:
+        ax.legend(fontsize=8)
+    ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
+
+    # ── Panel B: fraction reference traps matched ────────────────────────────
+    ax = axes[1]
+    col_frac = ("fraction_reference_traps_matched"
+                if "fraction_reference_traps_matched" in conv.columns else None)
+    if col_frac:
+        frac_vals = pd.to_numeric(conv[col_frac], errors="coerce")
+        valid_f = frac_vals.notna() & np.isfinite(frac_vals)
+        ax.plot(conv["epl"][valid_f], frac_vals[valid_f] * 100,
+                "o-", color=COLORS["secondary"], ms=8, lw=2)
+        ax.axhline(100, color="#3B6D11", lw=1.2, ls="--",
+                   label="100 % matched (ideal)")
+        ax.set_ylim(-5, 110)
+        ax.legend(fontsize=8)
+    else:
+        ax.text(0.5, 0.5, "No match-fraction data\n(new runs needed after driver update)",
+                transform=ax.transAxes, ha="center", va="center",
+                fontsize=9, color="#888")
+    ax.set_xlabel("EPL  (elements per λ)")
+    ax.set_ylabel("Fraction of reference traps matched  (%)")
+    ax.set_title("Trap matching completeness\nvs resolution")
+
+    # ── Panel C: detected trap count vs EPL ──────────────────────────────────
+    ax = axes[2]
+    col_nt = "n_traps" if "n_traps" in conv.columns else "n_traps_roi"
+    if col_nt in conv.columns:
+        nt_ref = pd.to_numeric(df.loc[
+            (df["epl"].round(1) == REFERENCE_EPL) &
+            (df["physical_size_mm"].round(1) == 3.0), col_nt
+        ], errors="coerce")
+        ref_count = int(nt_ref.iloc[0]) if not nt_ref.empty else None
+        ax.bar(conv["epl"].astype(str),
+               pd.to_numeric(conv[col_nt], errors="coerce"),
+               color=COLORS["primary"], alpha=0.75)
+        if ref_count is not None:
+            ax.axhline(ref_count, color=COLORS["re"], lw=1.5, ls="--",
+                       label=f"Reference count (EPL={REFERENCE_EPL:.0f}): {ref_count}")
+            ax.legend(fontsize=8)
+    ax.set_xlabel("EPL  (elements per λ)")
+    ax.set_ylabel("Detected trap count in ROI")
+    ax.set_title("Trap count stability vs resolution\n(should be constant if converged)")
+
+    fig.suptitle(
+        "Physical convergence — trap-based metrics  |  3.0 mm domain",
+        fontsize=11, y=1.02,
+    )
+    fig.tight_layout()
+    _save(fig, "fig2b_physics_convergence.png", out_dir)
 
 
 # ─── Figure 3: Richardson extrapolation summary ───────────────────────────────
@@ -913,12 +1188,19 @@ def fig_richardson_gci(df: pd.DataFrame, gci: dict, out_dir: Path):
 
     # Asymptotic convergence verdict
     ratio = gci.get("gci_ratio", float("nan"))
-    verdict = "Asymptotic convergence confirmed" if (
-        not np.isnan(ratio) and 0.8 < ratio < 1.2) else \
-        "Not yet in asymptotic regime"
+    if pre_asymp:
+        verdict = ("NOT in asymptotic regime  \u2014  Richardson extrapolation UNRELIABLE.\n"
+                   "GCI values are conservative bounds only.\n"
+                   "DO NOT cite extrapolated \u03b5* as a reliable estimate.")
+        vcolor = "#D85A30"
+    elif not np.isnan(ratio) and 0.8 < ratio < 1.2:
+        verdict = "Asymptotic convergence confirmed\n(GCI ratio \u2248 1.0)"
+        vcolor = "#3B6D11"
+    else:
+        verdict = f"Convergence regime uncertain\n(GCI ratio = {ratio:.3f}, target \u2248 1.0)"
+        vcolor = "#E88600"
     ax2.text(0.02, y_pos - 0.02, verdict, fontsize=9,
-             color="#3B6D11" if verdict.startswith("Asymptotic") else "#D85A30",
-             transform=ax2.transAxes, fontweight="bold")
+             color=vcolor, transform=ax2.transAxes, fontweight="bold")
 
     fig.suptitle("Richardson Extrapolation and Grid Convergence Index",
                  fontsize=11, y=1.01)
@@ -1236,42 +1518,63 @@ def main():
     print(f"  Columns: {list(df.columns)}")
     print()
 
+    # ── Observed convergence orders ───────────────────────────────────────────
+    print("[0/9] Computing observed local convergence orders")
+    obs_orders = compute_observed_orders(df)
+    if not obs_orders.empty:
+        for _, row in obs_orders.iterrows():
+            p_str = f"{row['p_obs_L2_roi']:.2f}" if np.isfinite(row['p_obs_L2_roi']) else "N/A"
+            print(f"  EPL {row['epl_lo']:.1f} → {row['epl_hi']:.1f}:  "
+                  f"p_obs(L2) = {p_str}")
+        max_p = obs_orders["p_obs_L2_roi"].max()
+        if np.isfinite(max_p) and max_p >= 2.5:
+            print(f"  [!] Partial asymptotic onset detected (max p_obs = {max_p:.2f})")
+        else:
+            print(f"  [!] Pre-asymptotic throughout (max p_obs = {max_p:.2f if np.isfinite(max_p) else 'N/A'})")
+            print("      Increase EPL or reduce vertical domain to approach asymptotic regime.")
+    print()
+
     # ── Richardson extrapolation ──────────────────────────────────────────────
-    print("[1/8] Richardson extrapolation + GCI")
+    print("[1/9] Richardson extrapolation + GCI")
     gci = compute_re_gci(df)
     if gci:
-        rel = "" if gci.get("p_reliable", True) else "  [UNRELIABLE — pre-asymptotic; GCI uses p=2]"
+        rel = "" if gci.get("p_reliable", True) else "  [UNRELIABLE \u2014 pre-asymptotic; GCI uses p=2]"
+        f_ext_str = (f"{gci['f_exact']:.4e}" if not np.isnan(gci["f_exact"])
+                     else "N/A (pre-asymptotic, not reliable)")
         print(f"  Apparent order p = {gci['p_app']:.3f}{rel}")
-        print(f"  Extrapolated ε*  = {gci['f_exact']:.4e}")
+        print(f"  Extrapolated \u03b5*  = {f_ext_str}")
         print(f"  GCI fine grid    = {gci['gci_fine']*100:.2f} %  (conservative upper bound)")
-        print(f"  Asymptotic ratio = {gci['gci_ratio']:.4f}  (target ≈ 1.0)")
+        print(f"  Asymptotic ratio = {gci['gci_ratio']:.4f}  (target \u2248 1.0)")
     else:
-        print("  [skip] GCI unavailable — need three finite reduced-domain error levels")
+        print("  [skip] GCI unavailable \u2014 need three finite reduced-domain error levels")
         _remove_if_exists(OUTPUT_DIR / "fig3_richardson_gci.png")
     save_gci_csv(gci, OUTPUT_DIR)
     save_metrics_csv(df, OUTPUT_DIR)
 
     # ── Figures from CSV (no field arrays needed) ─────────────────────────────
-    print("\n[2/8] Figure 1 — error vs h (log-log)")
-    fig_error_vs_h(df, OUTPUT_DIR)
+    print("\n[2/9] Figure 1 \u2014 main convergence figure (log-log + observed orders)")
+    fig_convergence_main(df, obs_orders, gci, OUTPUT_DIR)
 
-    print("[3/8] Figure 2 — error vs EPL (3-panel)")
+    print("[3/9] Figure 2 \u2014 error vs EPL (3-panel)")
     fig_error_vs_epl(df, OUTPUT_DIR)
 
-    print("[4/8] Figure 3 — Richardson extrapolation summary")
+    print("[4/9] Figure 2b \u2014 physics convergence (trap-based metrics)")
+    fig_physics_convergence(df, OUTPUT_DIR)
+
+    print("[5/9] Figure 3 \u2014 Richardson extrapolation summary")
     fig_richardson_gci(df, gci, OUTPUT_DIR)
 
-    print("[5/8] Figure 6 — domain-size sensitivity")
+    print("[6/9] Figure 6 \u2014 domain-size sensitivity")
     fig_domain_sensitivity(df, OUTPUT_DIR)
 
-    print("[6/8] Figure 7 — PML sensitivity")
+    print("[7/9] Figure 7 \u2014 PML sensitivity")
     fig_pml_sensitivity(df, OUTPUT_DIR)
 
-    print("[7/8] Figure 8 — solve time vs DOFs")
+    print("[8/9] Figure 8 \u2014 solve time vs DOFs")
     fig_solve_time(df, OUTPUT_DIR)
 
     # ── Figures 4 & 5: trap overlays from pre-computed NPZ files ─────────────
-    print("\n[8/8] Figures 4 & 5 — trap overlays (loading from NPZ files)")
+    print("\n[9/9] Figures 4 & 5 \u2014 trap overlays (loading from NPZ files)")
     npz_files = discover_npz_files(STUDY_DIR)
 
     if not npz_files:
@@ -1336,11 +1639,21 @@ def main():
     print()
     print("  Figures:")
     for p in sorted(OUTPUT_DIR.glob("*.png")):
-        print(f"    {p.name}")
+        flag = " [REPORT]" if p.name in (
+            "fig1_convergence_main.png",
+            "fig2b_physics_convergence.png",
+            "fig3_richardson_gci.png",
+        ) else ""
+        print(f"    {p.name}{flag}")
     print()
     print("  Tables:")
     for p in sorted(OUTPUT_DIR.glob("*.csv")):
         print(f"    {p.name}")
+    print()
+    print("  REPORT FIGURE GUIDE:")
+    print("    fig1_convergence_main.png  — primary convergence plot (log-log + p_obs)")
+    print("    fig2b_physics_convergence.png — trap-based physical convergence")
+    print("    fig3_richardson_gci.png    — GCI table (only if asymptotic regime reached)")
     print("=" * 70)
 
 
